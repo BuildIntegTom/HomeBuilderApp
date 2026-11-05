@@ -268,7 +268,16 @@ Both have real members (`buildSafetyGapMembers`, `buildWindowHeaderMembers` /
 `buildDoorHeaderMembers`) and both reach the cut list — so this is the
 framed view's own member selection dropping them, not missing geometry.
 
-### B5. Gable girt rules by the SHORT stud
+### B5. Gable girt rules by the SHORT stud — DONE (shipped before 2026-11-04)
+
+**Already built and live when it came up again on 2026-11-04.** The rule is
+`gableGirtPlan` in `gablePanelMembers.ts`, wired into `buildGablePanelMembers`
+and covered by its own `describe` block in `gablePanelMembers.test.ts` (none /
+one / the even spread, the one row solved backwards from the short stud's butt
+corner, and a test that the tall point does not enter into it). The flat
+`GABLE_GIRT_ROW_COUNT = 2` it replaced is gone from the file. Only this queue
+entry was never marked.
+
 > *"If the shorter height of a stud on a Gable end panel is less than 2',
 > then no girts are needed. I am seeing a lot of girts/noggings very close
 > to each other on gable end panels. If the shorter stud length (or really
@@ -2441,3 +2450,107 @@ is **exactly where the exterior girt stands** — an out-of-range column positio
 on a girted end would stack two girts in one place. It predates B23 and nothing
 reaches it: the app only ever passes `spanIn / 2`. Left alone rather than
 changed blind, and written down rather than left latent.
+
+---
+
+# B25 — BUILT 2026-11-04: the sheet's own name, its colour, and the shop's order
+
+> *"I would rather see on a shop fabrication sheet. 10 ft super carrot ... can
+> we do a little bit of color coding for the different panel types incorporated
+> into the fabrication sheets as well as the primary label being the height and
+> distinct name of the panel as it appears in the panel library through the
+> right click options"*
+
+## The name
+
+`distinctPanelName` in `apps/web/app/panelSheetIdentity.ts` — height, figure,
+width, and `(edited)` where the panel's members are its own. Off the drawn
+23'6" x 20'5" test building, read out of the app:
+
+| was | is |
+| --- | --- |
+| `Standard Panel 48in (6)` | `10' Super Carrot (L) 48" (6)` |
+| `Standard Panel 48in (1)` | `10' Super Carrot (R) 48" (1)` |
+| `Standard Panel 41.125in (1)` | `10' Little Carrot (L) 41⅛" (1)` |
+| `Gable Panel 31in (2)` | `2'2¾" Gable End 31" (2)` |
+
+⚠ **The pair HALF had to go in.** `groupKeyFor` already splits a pair's two
+mirror-image panels onto separate sheets; without `(L)`/`(R)` the two sheets
+read identically, which is the same defect one level down.
+
+⚠ **Derived, never stored** — his *"not from a memory file"* rule applied to
+the name. It reads the same fields `groupKeyFor` splits on, so a name cannot
+describe a panel the builder no longer makes.
+
+⚠ **It was written out by hand in THREE places and they had drifted.** The
+document page index built its own label and said *"Braced Panel"* for all four
+braced styles while the sheet itself said *"Hatch Back Panel"*. All three now
+read one `distinctName` computed once per group.
+
+## The order — his, 2026-11-04
+
+> *"Let's order shop fabrication sheets prioritizing all widths 48" or less,
+> then height, then figure, then more than 48" widths. ... switching the pusher
+> head on the pusher is a step of the process that takes time, so minimizing
+> pusher head changes via similar width panels with be ideal."*
+
+`comparePanelSheets`: width bucket (≤48in first), height, figure, then **width**
+as the tiebreak — the only variable his three keys leave free, and the one his
+reason is actually about. 48in itself is in the first bucket (it is the wall
+module), with a 1/64in tolerance rather than float epsilon.
+
+⚠ **This retires the type blocks.** `SHOP_DRAWING_PANEL_TYPES`' hardcoded array
+was the primary order; Standard sheets are no longer contiguous and an 8ft
+Corner can sit between two 8ft Standards. His own framing: *"This is going to
+seem like a change but why not just make it easy for the shop."* The array
+still decides which types get sheets at all.
+
+## The colour
+
+From `panelColors.ts` — the same hex the plan canvas, the legend, the
+right-click menu's swatch and the 3D accents already use. Verified live, each
+sheet's own title zone: Standard `#d9c9a3`, Corner `#8a8a8a`, Column `#4a90a4`,
+Gable `#9fb8e0`, Header `#c9a63f`, Sill `#6fa87a`, Safety/Gap `#e08a3c`.
+
+⚠ **It costs the sheet no height, on purpose.** A fabrication sheet comes in
+under a letter page by only ~12-22px in the tightest measured case and goes over
+as soon as one plaster coat is selected — a banner above the cut list would have
+put common sheets onto a second page, which is the exact bug he reported in
+August. The colour goes in the title zone that already carries the sheet's name:
+one 10px swatch, the type's name beside it, inside an existing zone.
+
+⚠ **Full strength would not have survived the printer.** Measured, not assumed:
+the braced purple and the safety-oct-corner brown both fail black text at full
+strength. The zone is the colour mixed 18% towards white — every type then holds
+black text at better than 7:1 in colour and stays above 0.70 luminance in
+greyscale (the tightest is the corner brown at 0.735). Tests measure both per
+type. `print-color-adjust: exact` is declared so a browser does not drop the
+fill when printing; if a printer overrides it anyway the row degrades to black
+on white and loses only the hue, because the type's NAME is in the row too.
+
+## Deliberately not done
+
+- **Truss plate, box beam, floor and roof sheets get NO band.** Those types have
+  no entry in `panelColors.ts` and inventing one would be a second palette by
+  the back door. Spanning Header takes the header colour and Tilted Gable takes
+  the gable colour, because those genuinely ARE those types. **Open: what colour
+  a floor panel and a roof panel should be.**
+- **The order applies to the wall-panel packet only.** Floor, roof, truss plate,
+  box beam, spanning header and tilted gable are separate render blocks after
+  it, each in its own existing order. Folding every family into one stream is a
+  JSX restructure, not a sort.
+
+# Added to the interview list 2026-11-04 — shipping/packing bundles
+
+> *"I would also like to add shipping packing calculator edits to the interview
+> list - bundled into full panel height x 3 panel depths twll. tall."*
+
+A bundle is **full panel height x 3 panel depths tall** — three panels deep,
+stacked, rather than whatever the packer does today. Not sized or built. Note
+what it touches: `shipping_feature_pending_bi_confirmation` already flags the
+truck-bed dimensions as industry-typical placeholders and the packing maths as
+simplified/illustrative, so a real bundle rule is the first piece of that
+feature that would be HIS number rather than a researched stand-in. Worth
+asking, when it is picked up, whether 3 deep is a fixed rule or a maximum, and
+whether a bundle may mix panel types (B25's new sheet order bundles similar
+widths, which is a related answer about the shop floor but not about the truck).

@@ -122,6 +122,36 @@
   margin: 0;
 }
 
+/* B25's colour-coding row: the type's own plan colour as a swatch, with the
+   type's name beside it, at the top of the title zone. Deliberately ONE short
+   row inside an existing zone — see SheetTitleBlock.tsx's `accent` prop for
+   why a fabrication sheet cannot afford a banner. */
+.accentRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+
+.accentSwatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #333;
+  border-radius: 2px;
+}
+
+.accentLabel {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .description {
   font-size: 11px;
   color: #333;
@@ -249,6 +279,19 @@
 
    Screen appearance is untouched; all of this is inside @media print. */
 @media print {
+  /* ⚠ A browser drops background colours when it prints unless asked not
+     to, and the colour coding IS the point of B25 — so the two painted
+     elements opt in explicitly. If a printer or a user setting overrides it
+     anyway, the row degrades to black text on white and the sheet loses
+     nothing but the hue: the type's NAME is in the row, not just its colour.
+     Verified as a RULE (the declarations are present and computed), not as
+     printed output — same honest limit this file's own print notes carry. */
+  .titleZone,
+  .accentSwatch {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   .sheet {
     aspect-ratio: auto;
     min-height: 0;

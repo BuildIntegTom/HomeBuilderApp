@@ -17,6 +17,28 @@ export interface SheetTitleBlockProps {
    * pass this should shrink their own diagram to fit (~230-250px wide) —
    * this prop just provides the slot, not any scaling. */
   sideDiagram?: ReactNode;
+  /**
+   * ⚠ **B25's colour coding — a tinted title zone and a type swatch, and it
+   * costs the sheet NO height.**
+   *
+   * > *"can we do a little bit of color coding for the different panel types
+   * > incorporated into the fabrication sheets"* — Tommy, 2026-11-03
+   *
+   * It goes here, on the strip that already carries the sheet's name, rather
+   * than as a banner above the cut list, because a fabrication sheet comes in
+   * UNDER a letter page by only ~12-22px in the tightest measured case (see
+   * this file's print block) and goes over as soon as one plaster coat is
+   * selected. A ~24px banner would have put common sheets onto a second page
+   * — the exact bug Tommy reported — to say something the title zone can say
+   * for free.
+   *
+   * `color` is the type's own plan/legend/right-click colour from
+   * `panelColors.ts`; the zone's fill is that colour tinted towards white so
+   * black text still holds better than 7:1, in colour and printed in
+   * greyscale (measured per type in `panelSheetIdentity.test.ts`). Undefined
+   * on every non-panel caller, which renders exactly as before.
+   */
+  accent?: { color: string; tint: string; label: string };
 }
 
 /**
@@ -30,7 +52,7 @@ export interface SheetTitleBlockProps {
  * zones. Project/site/date/sheet-number come from DocumentMetaContext
  * (see that file's doc comment for why — too many call sites to prop-drill).
  */
-export default function SheetTitleBlock({ title, description, role, children, sideDiagram }: SheetTitleBlockProps) {
+export default function SheetTitleBlock({ title, description, role, children, sideDiagram, accent }: SheetTitleBlockProps) {
   const disclaimer = roleDisclaimers[role];
   const meta = useDocumentMeta();
 
@@ -62,7 +84,19 @@ export default function SheetTitleBlock({ title, description, role, children, si
             </div>
           )}
         </div>
-        <div className={sideDiagram ? `${styles.titleZone} ${styles.titleZoneCompact}` : styles.titleZone}>
+        <div
+          className={sideDiagram ? `${styles.titleZone} ${styles.titleZoneCompact}` : styles.titleZone}
+          style={accent ? { background: accent.tint } : undefined}
+        >
+          {accent && (
+            /* The full-strength colour is carried by the swatch, not by the
+               fill: at full strength the braced purple and the corner brown
+               both fail black text (measured in `panelSheetIdentity.test.ts`). */
+            <div className={styles.accentRow}>
+              <span className={styles.accentSwatch} style={{ background: accent.color }} aria-hidden="true" />
+              <span className={styles.accentLabel}>{accent.label}</span>
+            </div>
+          )}
           <h3 className={styles.title}>{title}</h3>
           <div className={styles.description}>{description}</div>
         </div>

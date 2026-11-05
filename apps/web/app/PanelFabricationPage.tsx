@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { computePanelCutList, type PanelMember, type PanelStructuralStatus } from "@building-integrity/panel-catalog";
 import type { PanelWeightBreakdown } from "@building-integrity/calc-engine";
 import SheetTitleBlock from "./SheetTitleBlock";
+import { tintTowardsWhite } from "./panelSheetIdentity";
 import PanelElevationDiagram from "./PanelElevationDiagram";
 import type { ViewerRole } from "./viewerRole";
 import styles from "./PanelFabricationPage.module.css";
@@ -39,6 +40,14 @@ export interface PanelFabricationPageProps {
   estimatedBearingLb?: number;
   estimatedShearLb?: number;
   estimatedBearingMethodLabel?: string;
+  /** B25 — the catalog type's own label (`Standard Panel`), shown beside the
+   * colour swatch. The `title` carries the DISTINCT name now, so without this
+   * a sheet would no longer say anywhere which type it belongs to. */
+  typeLabel?: string;
+  /** B25 — the type's colour from `panelColors.ts`, or null for a type the
+   * plan has never drawn (floor, roof, truss plate, box beam), which gets no
+   * band rather than an invented colour. */
+  accentColor?: string | null;
   role: ViewerRole;
 }
 
@@ -64,15 +73,22 @@ export default function PanelFabricationPage({
   estimatedBearingLb,
   estimatedShearLb,
   estimatedBearingMethodLabel = "double stud pack",
+  typeLabel,
+  accentColor,
   role,
 }: PanelFabricationPageProps) {
   const cutList = computePanelCutList(members);
+  const accent =
+    accentColor != null && typeLabel !== undefined
+      ? { color: accentColor, tint: tintTowardsWhite(accentColor), label: typeLabel }
+      : undefined;
 
   return (
     <SheetTitleBlock
       title={title}
       description={panelDescription}
       role={role}
+      accent={accent}
       /* ⚠ THE SHOP DRAWING IMAGE IS THE 3D VIEW, WITH ITS LETTERS. Tommy,
          2026-10-11: *"the shop drawing image of each panel should be what that
          panel looks like from the exterior up and left tilted as it would

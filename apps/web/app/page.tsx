@@ -484,7 +484,11 @@ import CourtyardPanel from "./CourtyardPanel";
 import OctagonRingPreview from "./OctagonRingPreview";
 import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
-import { PANEL_TYPE_LABELS } from "./panelColors";
+import { NAMED_PANEL_TYPE_COLORS, PANEL_TYPE_LABELS } from "./panelColors";
+/* B25 — one derived name per fabrication sheet, the shop's own sheet order,
+   and the band colour, all from `panelColors.ts`. See that module's own doc
+   comment for why the name is never stored and why the type blocks are gone. */
+import { comparePanelSheets, distinctPanelName, panelSheetAccentColor, type PanelSheetIdentity } from "./panelSheetIdentity";
 import ProjectSummaryPage from "./ProjectSummaryPage";
 import { SectionSurfaceProvider, type SectionSurfaceValue } from "./SectionSurfaceContext";
 import { hostSurfaceForSection, unreachableSections } from "./sectionSurfaces";
@@ -8884,9 +8888,30 @@ export default function LayoutEditor() {
               first.heightOverrideIn,
               first,
             ) ?? [];
+          /* ⚠ B25 — the sheet's own identity, derived here ONCE and read by
+             all three places that used to spell a label out by hand (the
+             document page index, the sticky-note header, the sheet title).
+             Those three had already drifted: only two of them knew a braced
+             panel's four styles apart. */
+          const identity: PanelSheetIdentity = {
+            panelTypeId: panelType.id,
+            panelTypeLabel: panelType.label,
+            widthIn: panelWidthInFor(panelType.id, first),
+            heightIn: panelHeightInFor(panelType.id, first),
+            ...(bracedStyle ? { bracedPattern: bracedStyle.pattern, bracedMirrored: bracedStyle.mirrored } : {}),
+            ...(first.bracePairPattern !== undefined && { bracePairPattern: first.bracePairPattern }),
+            ...(first.bracePairHalf !== undefined && { bracePairHalf: first.bracePairHalf }),
+            ...(first.braceFigure !== undefined && { braceFigure: first.braceFigure }),
+            /* A hand-edited panel is its own part (B19) and gets its own
+               sheet; the name has to say so or two sheets read alike. */
+            ...(first.editedMembers !== undefined && { isEdited: true }),
+          };
           return {
             uniqueKey: `${panelType.id}-${key}`,
             panelType,
+            identity,
+            distinctName: distinctPanelName(identity, unitSystem),
+            accentColor: panelSheetAccentColor(panelType.id),
             widthIn: panelWidthInFor(panelType.id, first),
             heightIn: panelHeightInFor(panelType.id, first),
             members,
@@ -8910,7 +8935,14 @@ export default function LayoutEditor() {
             }),
           };
         });
-      });
+      })
+      /* ⚠ B25 — THE PACKET'S ORDER IS THE SHOP'S NOW, not the plan's:
+         everything 48in and under first, then height, then figure, then width.
+         `SHOP_DRAWING_PANEL_TYPES`' hardcoded type array used to be the
+         primary order, so this is what retires the type blocks — see
+         `comparePanelSheets` for his reasoning (the pusher head) and for the
+         consequence (Standard sheets are no longer contiguous). */
+      .sort(comparePanelSheets);
     // `spanningHeaderCrossReference` is listed because a panel's sheet now
     // carries the header above it — without it, adding a header would leave
     // every panel sheet claiming there is none. The stale-memo defect Stage
@@ -8925,6 +8957,10 @@ export default function LayoutEditor() {
     doorHeaderHeightIn,
     sillHeightIn,
     spanningHeaderCrossReference,
+    /* B25's name carries the height and width in the current units, so the
+       unit toggle has to re-derive it — otherwise a metric project reads
+       `8' Super Carrot 48"` on every sheet. */
+    unitSystem,
   ]);
 
   // Real per-wall (or per-section-of-a-wall) roof-bearing (truss plate /
@@ -9720,14 +9756,14 @@ export default function LayoutEditor() {
           }
         }
         // Every other type: one page per unique panel (exact copies grouped together).
+        /* ⚠ B25 — reads the group's own derived `distinctName`. This index
+           used to build its own label and said "Braced Panel" for all four
+           braced styles, where the sheet itself said "Hatch Back Panel": one
+           of the three copies of this label that had drifted. */
         for (const group of panelFabricationGroups) {
-          const label =
-            group.panelType.id === "braced" && group.bracedPattern !== undefined && group.bracedMirrored !== undefined
-              ? bracedPanelDisplayLabel(group.bracedPattern, group.bracedMirrored)
-              : group.panelType.label;
           pages.push({
             id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: ${label} ${group.widthIn}in (${group.instances.length} copies)`,
+            label: `Panel Fabrication: ${group.distinctName} (${group.instances.length} copies)`,
           });
         }
       }
@@ -16143,22 +16179,19 @@ export default function LayoutEditor() {
               ))}
 
             {panelFabricationGroups.map((group) => {
-              // Hatch Forward/Back panels are still "braced"-typed slots
-              // under the hood (no new PanelSlotType), but Tommy wants
-              // them to literally read as "Hatch Forward Panel"/"Hatch
-              // Back Panel" wherever a user actually sees the name — the
-              // shared catalog label stays generically "Braced Panel" so
-              // structural notes stay correct for the whole family.
-              const displayLabel =
-                group.panelType.id === "braced" && group.bracedPattern !== undefined && group.bracedMirrored !== undefined
-                  ? bracedPanelDisplayLabel(group.bracedPattern, group.bracedMirrored)
-                  : group.panelType.label;
+              /* Hatch Forward/Back panels are still "braced"-typed slots under
+                 the hood (no new PanelSlotType), but Tommy wants them to
+                 literally read as "Hatch Forward"/"Hatch Back" wherever a user
+                 actually sees the name — the shared catalog label stays
+                 generically "Braced Panel" so structural notes stay correct for
+                 the whole family. That distinction lives in
+                 `panelSheetFigureLabel` now, inside the one derived name. */
               const noteId = `shop-fab-${group.uniqueKey}`;
               return (
                 <StickyNote
                   key={group.uniqueKey}
                   id={noteId}
-                  label={`Panel Fabrication: ${displayLabel} ${group.widthIn}in (${group.instances.length})`}
+                  label={`Panel Fabrication: ${group.distinctName} (${group.instances.length})`}
                   isOpen={openNoteIds.has(noteId)}
                   isFullscreen={fullscreenNoteId === noteId}
                   cascadeIndex={noteOpenOrder.indexOf(noteId)}
@@ -16178,7 +16211,14 @@ export default function LayoutEditor() {
                     and a weight checker with a blank line for the shop&apos;s own measured weight.
                   </p>
                   <PanelFabricationPage
-                    title={`Panel Fabrication — ${displayLabel}${displayLabel.toLowerCase().includes("panel") ? "" : " Panel"}`}
+                    /* ⚠ B25 — the sheet's own primary label is the height and
+                       the distinct name, the two things that let him build the
+                       panel from the title. `panelType.label` is still the
+                       description's subject below, and the band carries the
+                       type's own plan colour. */
+                    title={`Panel Fabrication — ${group.distinctName}`}
+                    typeLabel={group.panelType.label}
+                    accentColor={group.accentColor}
                     panelDescription={group.panelType.description}
                     widthIn={group.widthIn}
                     heightIn={group.heightIn}
@@ -16227,6 +16267,11 @@ export default function LayoutEditor() {
                     this header in return.
                   </p>
                   <PanelFabricationPage
+                    /* B25's band — a spanning header IS a header, so it takes
+                       the header colour the plan already draws rather than one
+                       of its own. */
+                    typeLabel="Spanning Header"
+                    accentColor={NAMED_PANEL_TYPE_COLORS.header}
                     title="Panel Fabrication — Spanning Header"
                     panelDescription={`One header panel sitting on top of the panels it spans — flat chords with a repeating W-truss web on both wythes plus two jack studs, the same construction a Big Header uses, built to the combined width of the panels beneath it. Its width is ${formatLengthIn(group.widthIn, unitSystem)} because that is what those panels add up to; it adds nothing to the wall's own length. Building Integrity's stated span range for a header is ${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in, still pending their confirmation.`}
                     widthIn={group.widthIn}
@@ -16355,6 +16400,13 @@ export default function LayoutEditor() {
                     one takeoff, so this sheet and the model cannot describe different panels.
                   </p>
                   <PanelFabricationPage
+                    /* B25's band, in the gable colour — a cross-tilted row is
+                       a gable panel laid over. Truss plate, box beam, floor
+                       and roof sheets get NO band: those types have no entry
+                       in `panelColors.ts`, and what colour they should be is
+                       Tommy's call, not a default. */
+                    typeLabel="Tilted Gable Panel"
+                    accentColor={NAMED_PANEL_TYPE_COLORS.gable}
                     title={`Panel Fabrication — Tilted Gable Panel (${formatLengthIn(group.widthIn, unitSystem)})`}
                     panelDescription={
                       <>
