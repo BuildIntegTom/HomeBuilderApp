@@ -18,27 +18,35 @@ One page for the meeting. The long history stays in
 | **B26** | The packet prints in install order: floor → walls → roof. |
 | **B27** | Straw drawn as a 3D volume with a texture toggle; floor/roof sheet colours. |
 | **B28** | Box beam green, truss plate blue; plywood outermost on both lids; mid-wall beam back with the walls. |
+| **B29** | Panel editor stride 2 — move with snapping, the four member actions, and a brace dragged plumb now stops counting as a brace. |
 
-## B. Waiting on Tommy — nothing moves until these are answered
+## B. Answered 2026-11-05 — nothing is blocked
 
-| # | question | why it is stuck |
-| --- | --- | --- |
-| 1 | **Ring girt placement** — how many rings per panel, and at what heights? | His 2026-11-05 spec gives the parts (four 2x4s on edge: two 45″, two 12½″ on a 4ft panel) and the screws, but not **how many rings a panel gets or where they sit** — the straight girt rule is one per 3ft of span. |
-| 2 | **Does a ring girt change where a brace lands?** | A brace's low point rides the girt bar's top face (his 2026-10-13 rule). A ring stands on edge, 3½″ not 1½″, so every diagonal in a ring-girt panel moves up 1″ unless he says otherwise. |
-| 3 | **Big Header price rate** | He said build the sheet AND the rate. A $/unit is his number, not a researched placeholder — or it ships flagged pending-BI. |
-| 4 | **Second-storey floor deck in the packet** | The deck sheets print once, at the front. A two-storey building sets its upper deck *after* the ground-floor walls. |
+| asked | his answer |
+| --- | --- |
+| How many ring girts per panel, and where? | **The same rule as a straight girt** — one per 3ft of stud span. |
+| Does a ring change where a brace lands? | **Yes — the brace rides the ring's top face**, so diagonals sit 1″ higher in a ring-girt panel and the angle follows. |
+| Big Header price rate | **$25/sq ft.** His number, not a placeholder. |
+| Second-storey deck in the packet | **Leave it** — all deck sheets at the front. |
+
+⚠ One thing from the same round that I had wrong and he corrected: a **Ring
+Girt is not curved**. It is a rectangle of four 2x4s on edge holding the straw
+— two 45″ and two 12½″ on a 4ft panel. Everything I had refused it for (how it
+is cut, what sets the radius) was answering the wrong question.
+
 
 ## C. Next up, in order, all unblocked
 
-1. **Panel editor stride 2** — interviewed 2026-11-05, all four answers in hand:
-   drag snaps to neighbour faces then ⅛″; a diagonal dragged plumb **converts**
-   to a nailer and says so; member right-click offers delete / duplicate /
-   change lumber size / move to the other wythe; an overlapping drop is
-   **refused** and snaps back.
-2. **Ring girts** — the parts and the fastening are settled (28 × 3½″ #10 per
-   ring: 4 per corner, 3 at each of the four frame contacts). Blocked only on
-   B1 and B2 above.
-3. **Big Header's own fabrication sheet** — the last panel type without one.
+1. **Ring girts** — everything needed is now in hand: four 2x4s on edge per
+   ring (two 45″, two 12½″ on a 4ft panel), one ring per 3ft of stud span,
+   28 × 3½″ #10 screws per ring (4 at each of the 4 corners, 3 at each of the 4
+   frame contacts), and braces ride the ring's 3½″ top face.
+2. **Big Header's own fabrication sheet**, at **$25/sq ft** — the last panel
+   type without either.
+3. **The 3D member hit test** — unblocks BOTH the pointer-drag gesture in the
+   panel editor and the right-click menu in the 3D view. One piece, two
+   surfaces; building it twice is how they come to disagree about what you
+   clicked.
 4. **Starter templates** — the single highest-value idea out of the PBM
    teardown; see `pbm-designer-teardown-2026-11-05.md`.
 
@@ -62,6 +70,8 @@ One page for the meeting. The long history stays in
 - **3/4″ vs 1/2″ girt web plywood** — asked four times, now moot: the **default
   Blocking girt has no plywood in it at all** (a centred depthwise 2x6), and
   floors and roofs are 3/4″ throughout. Nothing to change.
+- **Panel editor stride 2** — interviewed and built the same day. What is left
+  of it is the pointer-drag GESTURE, which needs the 3D member hit test.
 - **Floor lid asymmetry** — found 2026-11-04, answered and fixed 2026-11-05:
   *"Plywood should always be on the exterior side for lids/plates."*
 - **Mid-wall beam's place in the packet** — he overruled my reading; it sits

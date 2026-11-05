@@ -287,6 +287,16 @@ export interface StoredPanelMemberSpec {
    * two lists together.
    */
   role?: "stud" | "plate" | "girt" | "girt_web" | "nailer" | "brace" | "skin" | "blocking" | "jack_stud";
+  /**
+   * Which stick a `straight` board is cut from — B19 stride 2, 2026-11-05,
+   * his *"change lumber size"* menu action. Absent means 2x4, which is what
+   * every member stored before today meant, so no migration.
+   *
+   * ⚠ Diagonals have no size: a brace's mitres and cut length are built on
+   * the 2x4 brace geometry, and changing that is a building decision rather
+   * than a menu item — see `setMemberNominalSize`.
+   */
+  nominalSize?: "2x4" | "2x6";
   notes?: string;
 }
 

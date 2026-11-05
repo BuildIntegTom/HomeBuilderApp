@@ -1,5 +1,6 @@
 import type { MemberRole, PanelMember } from "./componentSchema";
 import {
+  LUMBER_2X6_WIDTH_IN,
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
@@ -88,6 +89,21 @@ export type AddedMemberSpec =
        * different panels with two different shop sheets.
        */
       role?: MemberRole;
+      /**
+       * ⚠ **Which stick it is cut from — B19 stride 2, 2026-11-05.** Absent
+       * means 2x4, which is what every spec written before this field existed
+       * meant and what every stored project file still says, so no migration
+       * and no re-reading of old panels.
+       *
+       * It is in `recipeFingerprint` because two panels whose boards differ
+       * only in SIZE are two different panels with two different shop sheets
+       * — the same reason `role` is in there.
+       *
+       * Straight boards only. A diagonal has no size field on purpose: see
+       * `setMemberNominalSize` for why a 2x6 brace is a building decision
+       * rather than a menu item.
+       */
+      nominalSize?: "2x4" | "2x6";
       notes?: string;
     };
 
@@ -176,17 +192,22 @@ function buildStraightFromSpec(spec: Extract<AddedMemberSpec, { kind: "straight"
   const runZIn = Math.abs(spec.toZIn - spec.fromZIn);
   const isVertical = runZIn >= runXIn;
   const lengthIn = isVertical ? runZIn : runXIn;
+  /* ⚠ A 2x6 is WIDER, not thicker: both sticks are 1.5in through, and the
+     6 is 5.5in across where the 4 is 3.5in. So the size changes how far into
+     the panel a vertical reaches and how tall a horizontal stands — it does
+     not change either one's 1.5in face. */
+  const widthIn = spec.nominalSize === "2x6" ? LUMBER_2X6_WIDTH_IN : PLATE_2X4_WIDTH_IN;
   /* How deep into the panel this member's own cross-section reaches, which
      is what decides where the interior wythe's copy starts. */
-  const throughDepthIn = isVertical ? PLATE_2X4_WIDTH_IN : PLATE_2X4_THICKNESS_IN;
+  const throughDepthIn = isVertical ? widthIn : PLATE_2X4_THICKNESS_IN;
   const yIn = spec.wythe === "exterior" ? 0 : depthIn - throughDepthIn;
   return {
     memberId: spec.id,
     material: "dimensional_lumber",
     speciesGrade: LUMBER_SPECIES_GRADE,
     plySpec: null,
-    nominalSize: "2x4",
-    actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
+    nominalSize: spec.nominalSize ?? "2x4",
+    actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn },
     orientation: isVertical ? "vertical" : "horizontal",
     position: {
       xIn: Math.min(spec.fromXIn, spec.toXIn),
@@ -322,7 +343,7 @@ export function recipeFingerprint(recipe: PanelRecipe): string {
       .map((spec) =>
         spec.kind === "diagonal"
           ? `D:${spec.wythe}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`
-          : `S:${spec.wythe}:${spec.role ?? "-"}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
+          : `S:${spec.wythe}:${spec.role ?? "-"}:${spec.nominalSize ?? "2x4"}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
       )
       /* Sorted, because two panels with the same members added in a different
          order are the same panel. Member IDs are deliberately left out for the

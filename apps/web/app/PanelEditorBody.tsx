@@ -5,8 +5,17 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { PanelSlotType, PanelTypeChoice, StoredPanelMemberSpec } from "@building-integrity/geometry";
 import {
+  type EditorOpResult,
   type PanelMember,
+  type PanelRecipe,
+  SNAP_TOLERANCE_IN,
+  deleteMemberSpec,
+  dragMemberSpec,
+  duplicateMemberSpec,
   editorClearArea,
+  newEditorMemberId,
+  setMemberNominalSize,
+  setMemberWythe,
   newDiagonalSpec,
   newHorizontalSpec,
   newVerticalSpec,
@@ -46,6 +55,11 @@ import { toAddedMemberSpecs } from "./standardPanelMembers";
  */
 
 const IN_PER_FT = 12;
+
+/** How far one press of a move button shifts a board. Half a 2x4's width, so
+ * two presses clear a stud and one press is still fine enough to walk a board
+ * into a snap. */
+const EDITOR_NUDGE_IN = 1.75;
 /* The camera rule is `StandardPanel3DView`'s, and deliberately the same
    numbers: a panel isolated in 3D should look the way it looks on its own shop
    drawing. See that file for why -62deg rather than -35. */
@@ -116,6 +130,9 @@ export default function PanelEditorBody({
   const [wythe, setWythe] = useState<"exterior" | "interior">("exterior");
   const [customRotateDeg, setCustomRotateDeg] = useState(15);
   const [rotateNotice, setRotateNotice] = useState<string | null>(null);
+  /** What the last stride-2 op had to say — a refusal's reason, or the notice
+   * that a dragged brace became a nailer. */
+  const [memberNotice, setMemberNotice] = useState<string | null>(null);
   const [showStraw, setShowStraw] = useState(false);
 
   const area = useMemo(() => editorClearArea(panel), [panel]);
@@ -138,6 +155,35 @@ export default function PanelEditorBody({
     onSetSpecs([...specs, spec]);
     setSelectedId(spec.id);
     setRotateNotice(null);
+  };
+
+  /**
+   * ⚠ **Every stride-2 action goes through one runner, and through the
+   * catalog's pure ops — 2026-11-05.**
+   *
+   * The ops take a recipe and hand back a recipe plus a verdict. Running them
+   * here rather than reimplementing the rules in the component is the whole
+   * point: the snapping, the retype and the overlap refusal are rules about
+   * the building, and a second copy of them living in a React file is how the
+   * editor and the shop sheet come to disagree about what a panel is.
+   *
+   * A refused op changes NOTHING — `out.recipe` is the recipe it was given —
+   * and its reason goes on screen.
+   */
+  const runOp = (op: (recipe: PanelRecipe) => EditorOpResult) => {
+    const out = op({ name: seriesLabel, ...panel, added: toAddedMemberSpecs(specs) });
+    setMemberNotice(out.message);
+    if (!out.accepted) return;
+    onSetSpecs(out.recipe.added as StoredPanelMemberSpec[]);
+    if (!out.recipe.added.some((s) => s.id === selectedId)) setSelectedId(null);
+  };
+
+  /** His answer on the drag, applied to a keyboard/button nudge: the move goes
+   * through the SAME pipeline a pointer drag will — translate, snap to the
+   * neighbours' faces, retype if it lands on an axis, refuse if it overlaps. */
+  const nudge = (dxIn: number, dzIn: number) => {
+    if (!selectedId) return;
+    runOp((recipe) => dragMemberSpec(recipe, selectedId, dxIn, dzIn));
   };
 
   const rotate = (deg: number) => {
@@ -350,6 +396,52 @@ export default function PanelEditorBody({
                 </label>
               ))}
             </div>
+            {sectionHeading("Move it")}
+            <p style={{ fontSize: 11, opacity: 0.65, margin: "0 0 4px" }}>
+              Snaps flush to a neighbour&apos;s face if one is within {SNAP_TOLERANCE_IN}″, and to the ⅛″ grid
+              otherwise. A move that would put two boards through each other is refused.
+            </p>
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {barButton("←", () => nudge(-EDITOR_NUDGE_IN, 0), { title: `Left ${EDITOR_NUDGE_IN}″` })}
+              {barButton("→", () => nudge(EDITOR_NUDGE_IN, 0), { title: `Right ${EDITOR_NUDGE_IN}″` })}
+              {barButton("↓", () => nudge(0, -EDITOR_NUDGE_IN), { title: `Down ${EDITOR_NUDGE_IN}″` })}
+              {barButton("↑", () => nudge(0, EDITOR_NUDGE_IN), { title: `Up ${EDITOR_NUDGE_IN}″` })}
+            </div>
+
+            {sectionHeading("This member")}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+              {barButton("Duplicate", () => runOp((r) => duplicateMemberSpec(r, selected.id, newEditorMemberId())), {
+                title: "Drop an identical board beside this one",
+              })}
+              {barButton("Delete", () => runOp((r) => deleteMemberSpec(r, selected.id)), {
+                title: "Take this board out of the panel",
+              })}
+              {barButton(
+                selected.kind === "straight" && selected.nominalSize === "2x6" ? "Make it a 2x4" : "Make it a 2x6",
+                () =>
+                  runOp((r) =>
+                    setMemberNominalSize(r, selected.id, selected.kind === "straight" && selected.nominalSize === "2x6" ? "2x4" : "2x6"),
+                  ),
+                {
+                  disabled: selected.kind === "diagonal",
+                  title:
+                    selected.kind === "diagonal"
+                      ? "A brace's mitres and cut length are built on the 2x4 brace geometry — resizing one is a building decision, not a menu item."
+                      : "Swap this board between 2x4 and 2x6",
+                },
+              )}
+              {barButton(
+                selected.wythe === "exterior" ? "Send to interior face" : "Send to exterior face",
+                () => runOp((r) => setMemberWythe(r, selected.id, selected.wythe === "exterior" ? "interior" : "exterior")),
+                { title: "Move it through the panel's depth to the other face" },
+              )}
+            </div>
+            {memberNotice && (
+              <p style={{ fontSize: 11, color: "#a33", margin: "0 0 6px" }} role="status">
+                {memberNotice}
+              </p>
+            )}
+
             <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
               {barButton("Rotate 90°", () => rotate(90))}
               {barButton("Rotate −90°", () => rotate(-90))}

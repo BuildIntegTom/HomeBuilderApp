@@ -2682,3 +2682,67 @@ nothing about size or span is wrong — but **one lid presents plywood to the ne
 panel and the other presents board ends**, which makes them two different parts
 on one sheet. `strawFillBox.test.ts` pins what the builder does today so it
 cannot change unnoticed. Whether it is intended is Tommy's call.
+
+---
+
+# B29 — BUILT 2026-11-05: panel editor stride 2
+
+Interviewed first, as he asked. His four answers:
+
+| asked | answered |
+| --- | --- |
+| what a dragged member snaps to | **neighbour faces, then the ⅛″ grid** |
+| a diagonal dragged plumb | **convert it, and say so** |
+| the member menu | delete · duplicate · change lumber size · move to the other wythe |
+| a drop that overlaps | **refuse it and snap back** |
+
+**All four live in `panelEditorOps.ts`, not in the component.** Each one is a
+rule about the building, and a second copy living in a React file is how the
+editor and the shop sheet come to disagree about what a panel is. The component
+holds one `runOp` that hands a recipe in and takes a verdict out.
+
+⚠ **The retype is now symmetric, and that was the live hazard.** `retypeByAngle`
+turned a `straight` dragged off-axis into a `diagonal` and never the reverse,
+*"because it is what the user drew"* — true when the only way to move a member
+was to type its ends. A drag can land on plumb by accident, and a plumb board
+kept its `brace` role, so **the shear check went on crediting a board that
+resists no racking**. A diagonal that lands plumb is now a vertical nailer,
+reseated on edge through the depth and out of the shear count, and the editor
+says so on screen. One that lands level becomes blocking, not a nailer.
+
+⚠ **Overlap refusal is measured as a DELTA**, not an absolute count: a panel
+can arrive carrying an overlap that is not this drag's fault, and refusing every
+drag on such a panel would make it uneditable. Only a pair the op created counts
+against it.
+
+## Found by writing the tests
+
+⚠ **A full-height vertical cannot be a 2x6, and the refusal is correct.** A 2x6
+on edge flush with the exterior face reaches 5½″ into a 15½″ panel, and the girt
+web sits across the middle of that depth — so every full-height vertical that
+crosses a girt row collides with its web. Live in the app it reads *"A 2x6 there
+would run into girt_1_web, girt_2_web. Move it clear first."* **Worth knowing
+before anyone expects "change lumber size" to work on a full stud: in a girted
+panel it mostly will not.** The honest answer is the refusal rather than a 2x6
+modelled passing through a sheet of plywood.
+
+⚠ **A diagonal cannot be resized at all, and that is stated rather than
+silently skipped.** `buildDiagonalFromSpec` builds a brace through
+`computeBraceBoardCornersIn` and `braceLongestEdgeIn`, which carry the settled
+trapezoid geometry — the rigid shift keeping a long point flush with the panel
+edge, and the cut length across the longest edge. Those measure off a 2x4's
+width; handing them 5.5in would move the mitres and the bearing point of every
+brace in the app. The menu item is disabled with that reason in its tooltip.
+
+## What is NOT done
+
+⚠ **The pointer drag gesture in the 3D view.** Moving a member goes through the
+whole pipeline — translate, snap, retype, refuse — but it is driven by a move
+pad (← → ↓ ↑, 1¾″ a press) and the numeric end fields, not by grabbing the
+board on screen. The gesture needs a **member hit test in the 3D view**, which
+is the same piece of work the 3D right-click menu is waiting on. Doing it once
+serves both; doing it twice is how two surfaces come to disagree about what you
+clicked.
+
+Also still open from stride 2's original list: the ghost-the-rest toggle, and
+per-panel girt editing.

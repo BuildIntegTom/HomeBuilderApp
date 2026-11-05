@@ -1,5 +1,6 @@
-import type { AddedMemberSpec, PanelWythe } from "./panelRecipe";
-import { recipeClearHeightIn } from "./panelRecipe";
+import type { AddedMemberSpec, PanelRecipe, PanelWythe } from "./panelRecipe";
+import { buildPanelFromRecipe, recipeClearHeightIn } from "./panelRecipe";
+import { overlappingMemberPairs } from "./memberPrism";
 import { PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, memberBoxSizeIn } from "./panelMemberHelpers";
 import type { PanelMember } from "./componentSchema";
 
@@ -440,4 +441,262 @@ export function snapValueIn(valueIn: number, targets: readonly number[], toleran
     }
   }
   return best;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   STRIDE 2 — dragging a member, and the four things the right-click menu does.
+
+   Interviewed 2026-11-05. His four answers, in effect:
+
+   1. A dragged member snaps to **neighbour faces, then the 1/8in grid**.
+   2. A diagonal dragged until it stands plumb **converts** to a vertical
+      nailer, and the editor says so.
+   3. The member menu offers **delete, duplicate, change lumber size, move to
+      the other wythe**.
+   4. A drop that would overlap another board is **refused** and snaps back.
+
+   Every one of these is pure and tested here rather than in the component,
+   because each is a rule about the building rather than about the UI.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** What a drag or a menu action did, in the terms the editor has to report. */
+export interface EditorOpResult {
+  /** The recipe to keep — unchanged when `accepted` is false. */
+  recipe: PanelRecipe;
+  accepted: boolean;
+  /**
+   * What to put on screen. Set on a refusal (why it was refused) AND on an
+   * accepted op that changed something the user did not ask for — a retype.
+   * Null means "it did exactly what you did".
+   */
+  message: string | null;
+}
+
+/** Inside an eighth of plumb or level IS plumb or level — measured over the
+ * board's own run rather than as an angle, so a long board is judged by where
+ * its ends actually are. */
+const AXIS_TOLERANCE_IN = EDITOR_GRID_IN;
+
+function specById(recipe: PanelRecipe, specId: string): AddedMemberSpec | undefined {
+  return recipe.added.find((s) => s.id === specId);
+}
+
+function withSpec(recipe: PanelRecipe, specId: string, next: AddedMemberSpec): PanelRecipe {
+  return { ...recipe, added: recipe.added.map((s) => (s.id === specId ? next : s)) };
+}
+
+function panelSizeOf(recipe: PanelRecipe): EditorPanelSize {
+  return { widthIn: recipe.widthIn, heightIn: recipe.heightIn, depthIn: recipe.depthIn };
+}
+
+/**
+ * ⚠ **The symmetric half of `retypeByAngle`, and the reason stride 2 needed
+ * it.**
+ *
+ * `retypeByAngle` turns a `straight` dragged off-axis into a `diagonal`, one
+ * direction only, *"because it is what the user drew"* — which was true when
+ * the only way to move a member was to TYPE its ends. A drag changes that: you
+ * can land on plumb by accident. Two things are wrong if it stays a diagonal:
+ *
+ * 1. **It seats differently through the depth.** `buildStraightFromSpec` gives
+ *    a vertical a `throughDepthIn` of 3.5in — a stud on edge. A diagonal seats
+ *    on the brace's own flat inset, 1.5in deep. Same lumber, same cut length,
+ *    a board turned 90 degrees about its own long axis. A different part.
+ * 2. **Its role stays `brace`**, so the shear check keeps crediting it while a
+ *    plumb board resists no racking. That is the live hazard, and it is why
+ *    his answer was *"convert it, and say so"* rather than *"flag it"*.
+ *
+ * A board that lands LEVEL is not a nailer — it is blocking — so only the
+ * plumb case takes the nailer role.
+ */
+export function retypeDiagonalOnAxis(spec: AddedMemberSpec): { spec: AddedMemberSpec; message: string | null } {
+  if (spec.kind !== "diagonal") return { spec, message: null };
+  const runX = Math.abs(spec.toXIn - spec.fromXIn);
+  const runZ = Math.abs(spec.toZIn - spec.fromZIn);
+  if (runX >= AXIS_TOLERANCE_IN && runZ >= AXIS_TOLERANCE_IN) return { spec, message: null };
+  const plumb = runX < AXIS_TOLERANCE_IN;
+  const { wythe, id, fromXIn, fromZIn, toXIn, toZIn } = spec;
+  return {
+    spec: {
+      kind: "straight",
+      id,
+      wythe,
+      fromXIn,
+      fromZIn,
+      toXIn,
+      toZIn,
+      ...(plumb ? { role: "nailer" as const } : {}),
+      notes: plumb
+        ? "was a brace; dragged plumb, so it is a vertical nailer now"
+        : "was a brace; dragged level, so it is blocking now",
+    },
+    message: plumb
+      ? "That brace is standing plumb, so it is a vertical nailer now — reseated on edge through the depth, and out of the shear count. A plumb board resists no racking."
+      : "That brace is lying level, so it is blocking now — reseated flat through the depth, and out of the shear count.",
+  };
+}
+
+/**
+ * Slide the whole board by one snap delta per axis.
+ *
+ * ⚠ **The board moves rigidly.** Snapping each end to its own nearest target
+ * would change the angle and the cut length of a diagonal — the same mistake
+ * `translateSpec` already refuses to make when it clamps. So each axis gets
+ * ONE delta, chosen from whichever of the board's two faces lands closest to a
+ * target, and both ends take it.
+ */
+function snapDeltaIn(loIn: number, hiIn: number, targets: readonly number[], toleranceIn: number): number {
+  let best = 0;
+  let bestGap = toleranceIn;
+  for (const edge of [loIn, hiIn]) {
+    const snapped = snapValueIn(edge, targets, toleranceIn);
+    const gap = Math.abs(snapped - edge);
+    if (gap < bestGap) {
+      best = snapped - edge;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+/**
+ * Which pairs overlap that did not overlap before, naming the member we moved.
+ *
+ * ⚠ Measured as a DELTA against the recipe as it stood, not as an absolute
+ * count. A panel can arrive carrying an overlap that is not this drag's fault
+ * — a stored file from before a builder changed, say — and refusing every drag
+ * on such a panel would make it uneditable. Only a pair this op created counts
+ * against it.
+ */
+function newOverlapsFor(before: PanelRecipe, after: PanelRecipe, specId: string): string[] {
+  const was = new Set(overlappingMemberPairs(buildPanelFromRecipe(before)));
+  return overlappingMemberPairs(buildPanelFromRecipe(after)).filter((pair) => !was.has(pair) && pair.includes(specId));
+}
+
+/**
+ * **Drag one member by (dx, dz).** His rules 1 and 4, in one call.
+ *
+ * The order is his: translate (clamped into the clear area), then snap the
+ * board's faces to its neighbours' faces and centres if any are within reach,
+ * then fall back to the 1/8in grid — which `translateSpec` has already
+ * applied, so the fallback costs nothing. Then retype if it landed on an axis.
+ * Then, and only then, check for overlaps: a drag that snapped flush against a
+ * stud has not overlapped it, and checking before the snap would refuse
+ * exactly the drops the snapping exists to make easy.
+ */
+export function dragMemberSpec(recipe: PanelRecipe, specId: string, dxIn: number, dzIn: number): EditorOpResult {
+  const spec = specById(recipe, specId);
+  if (!spec) return { recipe, accepted: false, message: "That member is not part of this panel." };
+  const area = editorClearArea(panelSizeOf(recipe));
+  const others = buildPanelFromRecipe({ ...recipe, added: recipe.added.filter((s) => s.id !== specId) });
+  const targets = snapTargetsIn(others, area);
+
+  const moved = translateSpec(spec, dxIn, dzIn, area);
+  const dX = snapDeltaIn(
+    Math.min(moved.fromXIn, moved.toXIn),
+    Math.max(moved.fromXIn, moved.toXIn),
+    targets.xIn,
+    SNAP_TOLERANCE_IN,
+  );
+  const dZ = snapDeltaIn(
+    Math.min(moved.fromZIn, moved.toZIn),
+    Math.max(moved.fromZIn, moved.toZIn),
+    targets.zIn,
+    SNAP_TOLERANCE_IN,
+  );
+  const snapped = dX === 0 && dZ === 0 ? moved : translateSpec(moved, dX, dZ, area);
+  const { spec: retyped, message: retypeMessage } = retypeDiagonalOnAxis(snapped);
+
+  const next = withSpec(recipe, specId, retyped);
+  const clashes = newOverlapsFor(recipe, next, specId);
+  if (clashes.length > 0) {
+    return {
+      recipe,
+      accepted: false,
+      message: `That lands on ${clashes.length === 1 ? "another board" : `${clashes.length} other boards`} — ${clashes.join(", ")}. Two solids cannot share a volume, so it snapped back.`,
+    };
+  }
+  return { recipe: next, accepted: true, message: retypeMessage };
+}
+
+/** Take a board out. A panel with one fewer member is a different part, which
+ * `recipeFingerprint` works out on its own. */
+export function deleteMemberSpec(recipe: PanelRecipe, specId: string): EditorOpResult {
+  if (!specById(recipe, specId)) return { recipe, accepted: false, message: "That member is not part of this panel." };
+  return { recipe: { ...recipe, added: recipe.added.filter((s) => s.id !== specId) }, accepted: true, message: null };
+}
+
+/**
+ * Drop an identical board beside the one you right-clicked.
+ *
+ * ⚠ **Offset, not on top.** A copy placed exactly over its original is two
+ * solids in one volume — the standing rule — so it would be refused the moment
+ * it was created. It lands one 2x4 width away along the panel's width, or back
+ * the other way if that would not fit, and is refused outright if neither
+ * does, which is honest rather than stacking boards.
+ */
+export function duplicateMemberSpec(recipe: PanelRecipe, specId: string, newId: string): EditorOpResult {
+  const spec = specById(recipe, specId);
+  if (!spec) return { recipe, accepted: false, message: "That member is not part of this panel." };
+  const area = editorClearArea(panelSizeOf(recipe));
+  for (const offsetIn of [PLATE_2X4_WIDTH_IN, -PLATE_2X4_WIDTH_IN]) {
+    const copy = translateSpec({ ...spec, id: newId }, offsetIn, 0, area);
+    const next = { ...recipe, added: [...recipe.added, copy] };
+    if (newOverlapsFor(recipe, next, newId).length === 0) return { recipe: next, accepted: true, message: null };
+  }
+  return {
+    recipe,
+    accepted: false,
+    message: "There is no room beside that board for a copy — move it first, or add a new member instead.",
+  };
+}
+
+/**
+ * Change a board's lumber size in place.
+ *
+ * ⚠ **STRAIGHT boards only, and a diagonal is refused with its reason rather
+ * than approximated.** `buildDiagonalFromSpec` builds a brace through
+ * `computeBraceBoardCornersIn` and `braceLongestEdgeIn`, which carry the
+ * settled trapezoid geometry — the rigid shift that keeps a long point flush
+ * with the panel edge, and the cut length taken across the longest edge. Those
+ * are written around a 2x4's own width; handing them 5.5in would move the
+ * mitres and the bearing point of every brace in the app, which is a building
+ * decision and not a menu item.
+ */
+export function setMemberNominalSize(recipe: PanelRecipe, specId: string, nominalSize: "2x4" | "2x6"): EditorOpResult {
+  const spec = specById(recipe, specId);
+  if (!spec) return { recipe, accepted: false, message: "That member is not part of this panel." };
+  if (spec.kind === "diagonal") {
+    return {
+      recipe,
+      accepted: false,
+      message:
+        "A brace is built on the 2x4 brace geometry — its mitres, its flush long point and its cut length all measure off that width. Changing a diagonal to a 2x6 is a building decision, not a menu item.",
+    };
+  }
+  const next = withSpec(recipe, specId, { ...spec, nominalSize });
+  const clashes = newOverlapsFor(recipe, next, specId);
+  if (clashes.length > 0) {
+    return { recipe, accepted: false, message: `A ${nominalSize} there would run into ${clashes.join(", ")}. Move it clear first.` };
+  }
+  return { recipe: next, accepted: true, message: null };
+}
+
+/**
+ * Send a board to the other face of the panel.
+ *
+ * ⚠ **The one move that is almost impossible to do by dragging**, which is why
+ * it is on the menu: the editor draws the panel in elevation, and a wythe
+ * change moves the board through the screen rather than across it.
+ */
+export function setMemberWythe(recipe: PanelRecipe, specId: string, wythe: PanelWythe): EditorOpResult {
+  const spec = specById(recipe, specId);
+  if (!spec) return { recipe, accepted: false, message: "That member is not part of this panel." };
+  if (spec.wythe === wythe) return { recipe, accepted: true, message: null };
+  const next = withSpec(recipe, specId, { ...spec, wythe });
+  const clashes = newOverlapsFor(recipe, next, specId);
+  if (clashes.length > 0) {
+    return { recipe, accepted: false, message: `The ${wythe} face is already occupied there — ${clashes.join(", ")}.` };
+  }
+  return { recipe: next, accepted: true, message: null };
 }
