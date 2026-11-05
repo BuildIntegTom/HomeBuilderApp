@@ -84,21 +84,18 @@ describe("strawFillBoxIn", () => {
     }
   });
 
-  it("⚠ a floor panel fills between its two LID SKINS, which are not symmetric", () => {
+  it("⚠ a floor panel fills between its two LIDS, and they are symmetric now", () => {
     /* A floor panel is a standard panel laid over, so the caps at each end of
        its span are its lids. Nothing here knows that; it finds them the same
        way it finds a wall panel's skins.
 
-       ⚠ **FOUND HERE, NOT FIXED: the two lids stack their layers in opposite
-       orders.** Measured on a 144in floor panel — at the START the plywood is
-       the outer layer (0–0.75) with its 2x4 face inboard (0.75–2.25); at the
-       END the plywood is the INNER layer (141.75–142.5) with the 2x4 face
-       outboard (142.5–144). Both lids are 2.25in thick and the joists span
-       2.25–141.75 either way, so nothing about size or span is wrong — but one
-       lid presents plywood to the next panel and the other presents board
-       ends, which makes them two different parts. This test pins what the
-       builder does TODAY so the asymmetry cannot change unnoticed; whether it
-       is intended is Tommy's call. */
+       ⚠ **This test pinned a real defect for one day.** It used to assert
+       141.75 at the top against 0.75 at the bottom, because the two lids
+       stacked their layers in OPPOSITE orders — plywood outboard at the
+       start, inboard at the end — so one lid presented plywood to the next
+       panel and the other presented board ends. Tommy's answer, 2026-11-05:
+       *"Plywood should always be on the exterior side for lids/plates."* Both
+       lids now read skin outermost, and the cavity is symmetric. */
     const members = buildFloorRoofPanelMembers({
       kind: "floor",
       widthIn: 24,
@@ -110,15 +107,37 @@ describe("strawFillBoxIn", () => {
     const bottomIn = box.centerIn[1] - box.sizeIn[1] / 2;
     const topIn = box.centerIn[1] + box.sizeIn[1] / 2;
     expect(bottomIn).toBeCloseTo(SKIN_THICKNESS_IN, 6);
-    expect(topIn).toBeCloseTo(141.75, 6);
+    expect(topIn).toBeCloseTo(144 - SKIN_THICKNESS_IN, 6);
     const lidSkins = members
       .filter((m) => m.role === "skin")
       .map((m) => memberLocalCornersIn(m).map((c) => c[1]))
       .map((ys) => [Math.min(...ys), Math.max(...ys)]);
     expect(lidSkins).toEqual([
       [0, 0.75],
-      [141.75, 142.5],
+      [143.25, 144],
     ]);
+  });
+
+  it("⚠ and the lid is still 2.25in thick, with the joists where B23 put them", () => {
+    /* The layers swapped; nothing else moved. If this ever fails alongside the
+       test above, the fix went further than it was meant to. */
+    const members = buildFloorRoofPanelMembers({
+      kind: "floor",
+      widthIn: 24,
+      depthIn: DEPTH_IN,
+      lengthIn: 144,
+      structuralGirtEnds: ["start", "end"],
+    });
+    const joistYs = members
+      .filter((m) => m.memberId.startsWith("joist-"))
+      .map((m) => memberLocalCornersIn(m).map((c) => c[1]))
+      .map((ys) => [Math.min(...ys), Math.max(...ys)]);
+    for (const [lo, hi] of joistYs) expect([lo, hi]).toEqual([2.25, 141.75]);
+    const faceYs = members
+      .filter((m) => m.memberId.startsWith("lid-end-face-"))
+      .map((m) => memberLocalCornersIn(m).map((c) => c[1]))
+      .map((ys) => [Math.min(...ys), Math.max(...ys)]);
+    for (const [lo, hi] of faceYs) expect([lo, hi]).toEqual([141.75, 143.25]);
   });
 
   it("refuses rather than drawing a degenerate box", () => {

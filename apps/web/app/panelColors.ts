@@ -44,6 +44,17 @@ export const DECK_PANEL_COLORS: Record<"floor" | "roof", string> = {
   roof: "#b98b5e",
 };
 
+/**
+ * ⚠ **The two assemblies' colours — his, 2026-11-05:** *"Box beam green and
+ * truss plate blue."* The last two fabrication sheets without a band. Kept
+ * apart from the panel maps above because these are not panels: they are
+ * beams that run along the top of a wall, and nothing tiles them.
+ */
+export const ASSEMBLY_COLORS: Record<"truss-plate" | "box-beam", string> = {
+  "truss-plate": "#4a7fb5",
+  "box-beam": "#4f9456",
+};
+
 export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
   standard: "Standard",
   corner: "Corner",

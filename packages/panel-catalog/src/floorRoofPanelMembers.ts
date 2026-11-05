@@ -1189,15 +1189,32 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
   const plumb = atEnd === "end" ? plumbEndCut(o, atEnd) : null;
   if (plumb) return buildPlumbEndPlate(o, plumb);
 
-  const zBase = atEnd === "start" ? 0 : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
+  /* ⚠ **PLYWOOD OUTERMOST AT BOTH ENDS — his rule, 2026-11-05:** *"Plywood
+     should always be on the exterior side for lids/plates."*
+
+     It was not. Both lids were laid skin-then-faces from one `zBase`, which
+     puts the plywood outboard at the START and INBOARD at the END: measured on
+     a 144in floor panel, the start lid read skin 0–0.75 with its 2x4 face
+     0.75–2.25, and the end lid read skin 141.75–142.5 with its face
+     142.5–144. One lid presented plywood to the next panel and the other
+     presented board ends — two different parts on one shop sheet.
+
+     Each layer is now placed from the end it faces. Nothing else moves: the
+     lid is still 2.25in thick, the joists still span 2.25 to lengthIn–2.25,
+     and B23's girt stations still measure off `lidFaceIn`. The eave fascia and
+     the plumb tall-end plate were already built this way (skin at perpendicular
+     0, outermost) — only this plain lid disagreed with them. */
+  const isStart = atEnd === "start";
+  const skinZIn = isStart ? 0 : o.lengthIn - SKIN_THICKNESS_IN;
+  const faceZIn = isStart ? SKIN_THICKNESS_IN : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const out: PanelMember[] = [
     sheet(
       `lid-${atEnd}-skin`,
       "skin",
       SKIN_PLY_SPEC,
       { thicknessIn: SKIN_THICKNESS_IN, widthIn: o.depthIn, lengthIn: o.widthIn },
-      { xIn: 0, yIn: 0, zIn: zBase },
-      `${atEnd} lid skin`,
+      { xIn: 0, yIn: 0, zIn: skinZIn },
+      `${atEnd} lid skin — the OUTER layer of the lid, plywood facing out`,
     ),
   ];
   // The face of 2x4s, laid across the width, each running through the depth.
@@ -1214,7 +1231,7 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
         { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: o.depthIn },
         "horizontal",
         180,
-        { xIn, yIn: 0, zIn: zBase + SKIN_THICKNESS_IN },
+        { xIn, yIn: 0, zIn: faceZIn },
         ripped ? `ripped to ${widthIn}in wide — the last one on the lid` : undefined,
       ),
     );

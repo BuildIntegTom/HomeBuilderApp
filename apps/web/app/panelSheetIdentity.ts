@@ -1,6 +1,6 @@
 import { formatImperialFractionIn, formatLengthIn } from "@building-integrity/calc-engine";
 import { bracedPanelDisplayLabel, type BraceFigure, type BracePairPattern, type BracePattern } from "@building-integrity/panel-catalog";
-import { DECK_PANEL_COLORS, NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import { ASSEMBLY_COLORS, DECK_PANEL_COLORS, NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import type { NamedPanelType } from "./panelInstances";
 
 /**
@@ -212,12 +212,14 @@ export function comparePanelSheets(a: PanelSheetSortable, b: PanelSheetSortable)
  * ⚠ **Floor and roof were refused a colour until he gave one.** They are the
  * two types the plan has never drawn, so B25 returned null rather than picking
  * for him; on 2026-11-04 he said *"Floors should be dark grey and roofs light
- * brown"* and `DECK_PANEL_COLORS` is that answer. Truss plate and box beam are
- * still unanswered and still return null — they are assemblies rather than
- * panels, and nothing here invents a colour.
+ * brown"* and `DECK_PANEL_COLORS` is that answer. Truss plate and box beam
+ * followed on 2026-11-05 — *"Box beam green and truss plate blue"* — so every
+ * fabrication sheet in the packet carries a band now. Anything still unnamed
+ * returns null rather than being given a default.
  */
 export function panelSheetAccentColor(panelTypeId: string): string | null {
   if (panelTypeId === "floor" || panelTypeId === "roof") return DECK_PANEL_COLORS[panelTypeId];
+  if (panelTypeId === "truss-plate" || panelTypeId === "box-beam") return ASSEMBLY_COLORS[panelTypeId];
   return NAMED_PANEL_TYPE_COLORS[panelTypeId as NamedPanelType] ?? null;
 }
 

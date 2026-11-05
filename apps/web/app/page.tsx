@@ -9760,7 +9760,18 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`,
           });
         }
-        /* 5. The cross-tilted row, which stands above the wall on the roof
+        /* ⚠ 5. The Mid-Wall Bond Beam goes in WITH its wall — his correction,
+           2026-11-05, over my own reading that a beam belongs with the truss
+           plate at the back. Independent of roofEnabled: a beam can exist on
+           either story regardless of the roof system. */
+        for (const group of midWallBondBeamFabricationGroups) {
+          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+          });
+        }
+        /* 6. The cross-tilted row, which stands above the wall on the roof
            plane. ⚠ Registered here for the reason every family below is:
            the sheets render, and without a line in this list nobody can
            reach them — measured on a 46'8" x 14'2" shed, where the Project
@@ -9772,7 +9783,7 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: Tilted Gable Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
           });
         }
-        /* 6. Roof panels — the last PANELS. Registered under the walls gate
+        /* 7. Roof panels — the last PANELS. Registered under the walls gate
            rather than the roof one because they are panels: a building has
            them whether or not a truss roof system is selected. */
         for (const group of floorRoofPanelFabricationGroups) {
@@ -9780,17 +9791,6 @@ export default function LayoutEditor() {
           pages.push({
             id: `shop-fab-${group.key}`,
             label: `Panel Fabrication: Roof Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
-          });
-        }
-        /* 7. The Mid-Wall Bond Beam — a fabricated BEAM, not a panel, so it
-           goes after every panel with the truss plate rather than stranded in
-           the middle of them. Independent of roofEnabled (a beam can exist on
-           either story regardless of the roof system). */
-        for (const group of midWallBondBeamFabricationGroups) {
-          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
-          pages.push({
-            id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
           });
         }
       }
@@ -16503,6 +16503,65 @@ export default function LayoutEditor() {
               );
             })}
 
+            {/* ⚠ The Mid-Wall Bond Beam sits WITH the walls — his correction,
+                2026-11-05. I had moved it to the back with the truss plate on
+                the grounds that it is a beam and not a panel; he put it back,
+                because it goes in with the wall it lives inside. Only the
+                truss plate and box beam are at the back now. */}
+            {midWallBondBeamFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
+              const sizeLabel = group.kind === "box-beam" ? BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label : `${group.heightIn.toFixed(1)}in tall`;
+              const panelDescription =
+                group.kind === "box-beam"
+                  ? `Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`
+                  : `A Big Header (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  {/* Screen-only orientation text: on paper it just pushes the framed
+                      sheet down the page. Opt-in `print-hidden-chrome` rather
+                      than blanket-hiding styles.note -- several of its other
+                      uses are honest caveats that SHOULD print (spec open item:
+                      "Print audit of the other sections' styles.note
+                      paragraphs"). */}
+                  <p className={`${styles.note} print-hidden-chrome`}>
+                    Fabricator/detailer document — one sheet per unique size + wall length (walls/stories sharing
+                    both grouped together), with a to-scale lettered elevation, a materials cut list, which
+                    walls this segment is used on, and a weight checker with a blank line for the shop&apos;s own
+                    measured weight.
+                  </p>
+                  <PanelFabricationPage
+                    /* ⚠ His two assembly colours, 2026-11-05: *"Box beam green
+                       and truss plate blue."* A Big Header mid-wall beam is a
+                       box beam's sibling and takes the same green — both are
+                       the beam that runs along a wall. */
+                    typeLabel={kindLabel}
+                    accentColor={panelSheetAccentColor("box-beam")}
+                    title={`Panel Fabrication — ${kindLabel} (${sizeLabel})`}
+                    panelDescription={panelDescription}
+                    widthIn={group.lengthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
+                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
+                    role={role}
+                  />
+                </StickyNote>
+              );
+            })}
+
             {crossTiltFabricationGroups.map((group) => {
               const noteId = `shop-fab-${group.key}`;
               return (
@@ -16595,54 +16654,6 @@ export default function LayoutEditor() {
                 rendered at the top of this section, ahead of the walls. */}
             {floorRoofPanelFabricationGroups.filter((g) => g.kind === "roof").map(renderDeckPanelSheet)}
 
-            {midWallBondBeamFabricationGroups.map((group) => {
-              const noteId = `shop-fab-${group.uniqueKey}`;
-              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
-              const sizeLabel = group.kind === "box-beam" ? BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label : `${group.heightIn.toFixed(1)}in tall`;
-              const panelDescription =
-                group.kind === "box-beam"
-                  ? `Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`
-                  : `A Big Header (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
-              return (
-                <StickyNote
-                  key={group.uniqueKey}
-                  id={noteId}
-                  label={`Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
-                  isOpen={openNoteIds.has(noteId)}
-                  isFullscreen={fullscreenNoteId === noteId}
-                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
-                  onClose={() => handleToggleNote(noteId)}
-                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
-                  onPrint={() => handlePrintNote(noteId)}
-                >
-                  {/* Screen-only orientation text: on paper it just pushes the framed
-                      sheet down the page. Opt-in `print-hidden-chrome` rather
-                      than blanket-hiding styles.note -- several of its other
-                      uses are honest caveats that SHOULD print (spec open item:
-                      "Print audit of the other sections' styles.note
-                      paragraphs"). */}
-                  <p className={`${styles.note} print-hidden-chrome`}>
-                    Fabricator/detailer document — one sheet per unique size + wall length (walls/stories sharing
-                    both grouped together), with a to-scale lettered elevation, a materials cut list, which
-                    walls this segment is used on, and a weight checker with a blank line for the shop&apos;s own
-                    measured weight.
-                  </p>
-                  <PanelFabricationPage
-                    title={`Panel Fabrication — ${kindLabel} (${sizeLabel})`}
-                    panelDescription={panelDescription}
-                    widthIn={group.lengthIn}
-                    heightIn={group.heightIn}
-                    members={group.members}
-                    instances={group.instances}
-                    weightBreakdown={group.weightBreakdown}
-                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
-                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
-                    role={role}
-                  />
-                </StickyNote>
-              );
-            })}
-
             {/* ⚠ **TRUSS PLATE AND BOX BEAM LAST — his call, 2026-11-04.**
 
                 > *"Truss plate should be after all panel fab sheets and panel
@@ -16686,6 +16697,8 @@ export default function LayoutEditor() {
                     used on, and a weight checker with a blank line for the shop&apos;s own measured weight.
                   </p>
                   <PanelFabricationPage
+                    typeLabel={group.kindLabel}
+                    accentColor={panelSheetAccentColor(group.kind)}
                     title={`Panel Fabrication — ${group.kindLabel}`}
                     panelDescription={panelDescription}
                     widthIn={group.lengthIn}
