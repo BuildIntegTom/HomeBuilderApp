@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
+import type { ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { memberBoxSizeIn, memberFaceIndices, memberLocalCornersIn, strawFillBoxIn, type PanelMember } from "@building-integrity/panel-catalog";
 
@@ -190,6 +191,49 @@ export interface PanelMembersGroupProps {
    * at typical zoom; this makes it read as the same distinct orange as its
    * 2D panel-type color instead). */
   colorOverride?: string;
+  /**
+   * **THE 3D MEMBER HIT TEST — B30, 2026-11-05.** *"3D member hit test and
+   * those other surfaces."*
+   *
+   * Which BOARD the pointer is on, not just which panel. Until this, the only
+   * thing a click in 3D could resolve was the `<group>` a panel is wrapped in
+   * — so the panel editor's drag had to be buttons and the member menu had
+   * nowhere to be raised from.
+   *
+   * ⚠ **Optional, and absent costs nothing.** r3f builds its interaction list
+   * from objects that actually carry handlers, so the eleven
+   * `PanelMembersGroup`s in `Building3DView` that pass none are raycast
+   * exactly as before. It is one component rather than a second renderer for
+   * the editor, because a hit test written twice is two answers to *"which
+   * board did I click"*.
+   *
+   * ⚠ **The handler must decide whether to `stopPropagation`.** In the
+   * building view each panel's own `<group>` carries a click handler above
+   * these meshes; a member handler that swallowed every event would break
+   * panel selection, and one that swallowed none would select the panel
+   * instead of the board. Only the caller knows which it wants.
+   *
+   * ⚠ **Raised on ONE group, not on each mesh, and that is not a tidiness
+   * choice — measured 2026-11-05.** Per-mesh `onPointerDown` registered
+   * nothing: a sweep of the editor's whole canvas, every 12px by 14px,
+   * produced zero hits while `onPointerMissed` fired on each one. The same
+   * scene picks up fine from a handler on an enclosing `<group>`, which is how
+   * `Building3DView` has always selected a panel. So the member's id travels
+   * on `userData` and the group handler reads it off `event.object` — the mesh
+   * the ray actually struck, as distinct from `event.eventObject`, which is
+   * the group the handler sits on.
+   *
+   * ⚠ **`pointerdown` only — there is deliberately no `onMemberContextMenu`.**
+   * An `onContextMenu` on the same group never fired, at any point on the
+   * canvas, with or without a preceding `pointerdown` on the object (r3f gates
+   * its click-family events on the hits it recorded at pointer-down, and these
+   * objects never satisfied it). A right-click still arrives here as a
+   * `pointerdown` with `button === 2`, which is one path instead of two and
+   * cannot disagree with itself about which board was hit. Callers that want a
+   * menu read the button and suppress the browser's own menu on the DOM
+   * element wrapping the canvas.
+   */
+  onMemberPointerDown?: (memberId: string, event: ThreeEvent<PointerEvent>) => void;
 }
 
 /** Renders one box mesh per member, in VIEW SPACE (Y-up) — X=width from the
@@ -202,7 +246,11 @@ export interface PanelMembersGroupProps {
  * placed around a whole footprint, each wrapped in its own positioned/rotated
  * `<group>` — since this renders purely in the panel's own local frame, it
  * composes correctly either way without knowing which context it's in). */
-export default function PanelMembersGroup({ members, colorOverride }: PanelMembersGroupProps) {
+export default function PanelMembersGroup({
+  members,
+  colorOverride,
+  onMemberPointerDown,
+}: PanelMembersGroupProps) {
   const straw = useContext(StrawFillContext);
   /* ⚠ Derived from the members themselves, in `panel-catalog`, so the whole
      building and the single-panel preview cannot draw the straw in two
@@ -213,7 +261,11 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
     straw.show && straw.textured && strawBox
       ? getStrawTexture(strawBox.sizeIn[0] / IN_PER_FT, strawBox.sizeIn[1] / IN_PER_FT)
       : null;
-  return (
+  /* ⚠ The group exists ONLY when a caller wants hits. A bare fragment, as
+     before, for every other caller — an extra Object3D in eleven places in
+     the building view is eleven more matrices to update per frame for nothing. */
+  const wrapped = onMemberPointerDown !== undefined;
+  const content = (
     <>
       {strawBox && (
         <mesh
@@ -251,7 +303,11 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
       {members.map((member) => {
         if (member.position.trapezoidCornersIn || member.position.planPolygonCornersIn || member.position.sectionCornersIn) {
           return (
-            <mesh key={member.memberId} geometry={buildPrismGeometry(member)}>
+            <mesh
+              key={member.memberId}
+              geometry={buildPrismGeometry(member)}
+              userData={{ memberId: member.memberId }}
+            >
               <meshStandardMaterial
                 color={colorOverride ?? MATERIAL_COLOR[member.material]}
                 transparent={resolveOpacity(member) !== undefined}
@@ -282,7 +338,12 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
             ];
         const rotation: [number, number, number] = isTilted ? [0, 0, ((tiltDeg as number) * Math.PI) / 180] : [0, 0, 0];
         return (
-          <mesh key={member.memberId} position={centerPos} rotation={rotation}>
+          <mesh
+            key={member.memberId}
+            position={centerPos}
+            rotation={rotation}
+            userData={{ memberId: member.memberId }}
+          >
             <boxGeometry args={sizeFt} />
             <meshStandardMaterial
               color={colorOverride ?? MATERIAL_COLOR[member.material]}
@@ -293,5 +354,19 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
         );
       })}
     </>
+  );
+  if (!wrapped) return content;
+  return (
+    <group
+      onPointerDown={(e) => {
+        /* Which board the ray actually struck. `event.object` is the mesh; the
+           group this handler is on is `event.eventObject`, which would always
+           be the same object and tell the caller nothing. */
+        const id = e.object?.userData?.memberId;
+        if (typeof id === "string") onMemberPointerDown?.(id, e);
+      }}
+    >
+      {content}
+    </group>
   );
 }

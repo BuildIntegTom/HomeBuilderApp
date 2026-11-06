@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useEffect, useMemo, useState } from "react";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
+import * as THREE from "three";
 import { OrbitControls } from "@react-three/drei";
 import type { PanelSlotType, PanelTypeChoice, StoredPanelMemberSpec } from "@building-integrity/geometry";
 import {
   type EditorOpResult,
   type PanelMember,
   type PanelRecipe,
+  EDITOR_GRID_IN,
   SNAP_TOLERANCE_IN,
   deleteMemberSpec,
   dragMemberSpec,
@@ -15,6 +17,7 @@ import {
   editorClearArea,
   newEditorMemberId,
   setMemberNominalSize,
+  setMemberOnEdge,
   setMemberWythe,
   newDiagonalSpec,
   newHorizontalSpec,
@@ -26,6 +29,7 @@ import {
   specAngleDeg,
 } from "@building-integrity/panel-catalog";
 import PanelMembersGroup from "./PanelMembersGroup";
+import { MemberContextMenu, type MemberContextMenuTarget, type MemberMenuAction } from "./MemberContextMenu";
 import LengthInput from "./LengthInput";
 import { PANEL_TYPE_LABELS } from "./panelColors";
 import { toAddedMemberSpecs } from "./standardPanelMembers";
@@ -108,7 +112,35 @@ function describeSpec(spec: StoredPanelMemberSpec): string {
   const lengthIn = specAnchorLengthIn(spec);
   const angleDeg = Math.abs(specAngleDeg(spec));
   const run = angleDeg > 89.9 && angleDeg < 90.1 ? "vertical" : angleDeg < 0.1 || angleDeg > 179.9 ? "horizontal" : `${angleDeg.toFixed(1)}°`;
-  return `${spec.kind === "diagonal" ? "Diagonal" : "Straight"} · ${run} · ${lengthIn.toFixed(2)}″ · ${spec.wythe}`;
+  /* ⚠ The SIZE and the SEATING are both on the label, because B30 made them
+     two independent things: a board can be a 2x6 and still only 1.5in into the
+     panel. A label that named one and not the other would make the other look
+     like it had no setting. */
+  const size = spec.kind === "straight" ? ` · ${spec.nominalSize ?? "2x4"}${spec.onEdge === true ? " on edge" : " flat"}` : "";
+  return `${spec.kind === "diagonal" ? "Diagonal" : "Straight"} · ${run} · ${lengthIn.toFixed(2)}″ · ${spec.wythe}${size}`;
+}
+
+/**
+ * **A POINTER DRAG IN PROGRESS — B30's half of the 3D member hit test.**
+ *
+ * The grab point and the plane it is dragged on, both in the scene's own feet,
+ * plus the delta so far in inches. The board is NOT moved while the pointer is
+ * down: `dragMemberSpec` is run once, on release, which is what makes his
+ * *"refuse the drop and snap back"* answer the literal behaviour rather than a
+ * description of it. What follows the cursor meanwhile is the selected
+ * member's real geometry in a translated group — the same renderer, so the
+ * preview cannot show a shape the panel would not build.
+ */
+interface MemberDragState {
+  specId: string;
+  grabXFt: number;
+  grabYFt: number;
+  /** The depth the grab landed at. The drag runs in the panel's own
+   * width/height plane THROUGH that point, so a board stays on its own wythe
+   * however the camera is orbited. */
+  planeZFt: number;
+  dxIn: number;
+  dzIn: number;
 }
 
 export default function PanelEditorBody({
@@ -134,6 +166,27 @@ export default function PanelEditorBody({
    * that a dragged brace became a nailer. */
   const [memberNotice, setMemberNotice] = useState<string | null>(null);
   const [showStraw, setShowStraw] = useState(false);
+  const [drag, setDrag] = useState<MemberDragState | null>(null);
+  const [menu, setMenu] = useState<MemberContextMenuTarget | null>(null);
+
+  /**
+   * ⚠ **The drag always ends, even when the pointer comes up somewhere the
+   * scene cannot see.** The drag plane's own `onPointerUp` is what COMMITS;
+   * this is the release that happens off the canvas entirely — out of the
+   * window, over the left bar — and it cancels rather than committing, because
+   * a drop whose landing point was never measured is not a drop.
+   *
+   * Registered once rather than while dragging: `setDrag` is stable, so there
+   * is nothing to re-subscribe for, and a listener added on every pointer-move
+   * is a listener added sixty times a second. Canvas handlers run before this
+   * one — the event reaches the canvas first and bubbles to the window — so a
+   * release over the panel still commits before this clears it.
+   */
+  useEffect(() => {
+    const onUp = () => setDrag(null);
+    window.addEventListener("pointerup", onUp);
+    return () => window.removeEventListener("pointerup", onUp);
+  }, []);
 
   const area = useMemo(() => editorClearArea(panel), [panel]);
   const selected = specs.find((s) => s.id === selectedId) ?? null;
@@ -197,6 +250,130 @@ export default function PanelEditorBody({
     );
   };
 
+  /**
+   * ⚠ **One list of member actions, two doors onto it** — the left bar and the
+   * right-click menu both render this. The claim that the menu is *"a second
+   * door, not a second set of rules"* is only true if there is literally one
+   * list, so there is.
+   */
+  const memberActions = (spec: StoredPanelMemberSpec): MemberMenuAction[] => {
+    const isStraight = spec.kind === "straight";
+    const onEdge = spec.onEdge === true;
+    const is2x6 = isStraight && spec.nominalSize === "2x6";
+    return [
+      {
+        key: "duplicate",
+        label: "Duplicate",
+        enabled: true,
+        title: "Drop an identical board beside this one",
+        onPick: () => runOp((r) => duplicateMemberSpec(r, spec.id, newEditorMemberId())),
+      },
+      {
+        key: "delete",
+        label: "Delete",
+        enabled: true,
+        title: "Take this board out of the panel",
+        onPick: () => runOp((r) => deleteMemberSpec(r, spec.id)),
+      },
+      {
+        key: "size",
+        label: is2x6 ? "Make it a 2x4" : "Make it a 2x6",
+        enabled: isStraight,
+        title: isStraight
+          ? "Swap this board between 2x4 and 2x6. Laid flat it reaches 1.5″ into the panel either way, so the size is free of the depth."
+          : "A brace's mitres and cut length are built on the 2x4 brace geometry — resizing one is a building decision, not a menu item.",
+        onPick: () => runOp((r) => setMemberNominalSize(r, spec.id, is2x6 ? "2x4" : "2x6")),
+      },
+      {
+        key: "seating",
+        label: onEdge ? "Lay it flat" : "Stand it on edge",
+        enabled: isStraight,
+        title: isStraight
+          ? onEdge
+            ? "Turn it back flat against the face — 1.5″ into the panel, wide face out."
+            : `Turn it 90° in plan so its wide face runs through the depth. Refused if it would run into the girt — a 2x6 on edge reaches 5.5″ in, and the girt web lies across the middle of a ${panel.depthIn.toFixed(2)}″ panel.`
+          : "A brace is let into the straw on one flat inset, and its mitres are cut for that seating.",
+        onPick: () => runOp((r) => setMemberOnEdge(r, spec.id, !onEdge)),
+      },
+      {
+        key: "wythe",
+        label: spec.wythe === "exterior" ? "Send to interior face" : "Send to exterior face",
+        enabled: true,
+        title: "Move it through the panel's depth to the other face",
+        onPick: () => runOp((r) => setMemberWythe(r, spec.id, spec.wythe === "exterior" ? "interior" : "exterior")),
+      },
+      {
+        key: "rot90",
+        label: "Rotate 90° in the wall",
+        enabled: true,
+        title: "Swing it about its own midpoint within the panel's face — a vertical becomes a horizontal. Not the same as standing it on edge.",
+        onPick: () => rotate(90),
+      },
+    ];
+  };
+
+  /** Which of the panel's boards this editor can act on: the ones it added. A
+   * base member — a plate, a girt, a corner post — is pickable in 3D and says
+   * so rather than silently doing nothing, because "the click did not land" and
+   * "that board is not yours to move" are different problems. */
+  const specFor = (memberId: string): StoredPanelMemberSpec | undefined => specs.find((s) => s.id === memberId);
+
+  /**
+   * **ONE handler for both gestures — B30.**
+   *
+   * Left button grabs the board; the secondary button raises its menu. They
+   * share a path on purpose: see `PanelMembersGroup`'s own note for why
+   * `onContextMenu` is not used, and note what the sharing buys here — the
+   * menu and the drag cannot disagree about which board the pointer was on,
+   * because there is only one answer to read.
+   */
+  const onMemberPointerDown = (memberId: string, e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    setMenu(null);
+    setRotateNotice(null);
+    const spec = specFor(memberId);
+    const secondary = e.button === 2;
+    if (!spec) {
+      setSelectedId(null);
+      setMemberNotice(
+        secondary
+          ? `${memberId} is part of the base panel — there is nothing on the menu that applies to it.`
+          : `${memberId} is part of the base panel — the editor moves the members it added. Add one, or edit the panel's type.`,
+      );
+      return;
+    }
+    setSelectedId(spec.id);
+    setMemberNotice(null);
+    if (secondary) {
+      setMenu({
+        clientX: e.nativeEvent.clientX,
+        clientY: e.nativeEvent.clientY,
+        heading: describeSpec(spec),
+        actions: memberActions(spec),
+      });
+      return;
+    }
+    /* Middle button and anything else: select, but do not pick the board up.
+       A drag the user cannot finish with the button they started it with is a
+       board stuck to the cursor. */
+    if (e.button !== 0) return;
+    setDrag({ specId: spec.id, grabXFt: e.point.x, grabYFt: e.point.y, planeZFt: e.point.z, dxIn: 0, dzIn: 0 });
+  };
+
+  /**
+   * ⚠ **A drag shorter than one grid step is a CLICK, and is thrown away.**
+   * Without this every selection click also ran `dragMemberSpec` with a delta
+   * of a few thousandths, which snapping would then round into a real move —
+   * so picking a board up to look at it would nudge it.
+   */
+  const commitDrag = () => {
+    const d = drag;
+    setDrag(null);
+    if (!d) return;
+    if (Math.abs(d.dxIn) < EDITOR_GRID_IN && Math.abs(d.dzIn) < EDITOR_GRID_IN) return;
+    runOp((recipe) => dragMemberSpec(recipe, d.specId, d.dxIn, d.dzIn));
+  };
+
   const widthFt = panel.widthIn / IN_PER_FT;
   const heightFt = panel.heightIn / IN_PER_FT;
   const depthFt = panel.depthIn / IN_PER_FT;
@@ -218,8 +395,9 @@ export default function PanelEditorBody({
     <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.6, margin: "12px 0 4px" }}>{text}</div>
   );
 
-  const barButton = (label: string, onClick: () => void, opts: { disabled?: boolean; title?: string } = {}) => (
+  const barButton = (label: string, onClick: () => void, opts: { disabled?: boolean; title?: string; key?: string } = {}) => (
     <button
+      key={opts.key}
       type="button"
       onClick={onClick}
       disabled={opts.disabled}
@@ -398,9 +576,17 @@ export default function PanelEditorBody({
             </div>
             {sectionHeading("Move it")}
             <p style={{ fontSize: 11, opacity: 0.65, margin: "0 0 4px" }}>
-              Snaps flush to a neighbour&apos;s face if one is within {SNAP_TOLERANCE_IN}″, and to the ⅛″ grid
-              otherwise. A move that would put two boards through each other is refused.
+              Drag the board in the 3D view, or nudge it with the buttons. Either way it snaps flush to a neighbour&apos;s
+              face if one is within {SNAP_TOLERANCE_IN}″, and to the ⅛″ grid otherwise, and a move that would put two
+              boards through each other is refused on release.
             </p>
+            {drag !== null && (
+              <p style={{ fontSize: 11, margin: "0 0 4px", color: "#1f7ae0" }} role="status">
+                {drag.dxIn >= 0 ? "+" : "−"}
+                {Math.abs(drag.dxIn).toFixed(2)}″ across, {drag.dzIn >= 0 ? "+" : "−"}
+                {Math.abs(drag.dzIn).toFixed(2)}″ up — release to drop.
+              </p>
+            )}
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               {barButton("←", () => nudge(-EDITOR_NUDGE_IN, 0), { title: `Left ${EDITOR_NUDGE_IN}″` })}
               {barButton("→", () => nudge(EDITOR_NUDGE_IN, 0), { title: `Right ${EDITOR_NUDGE_IN}″` })}
@@ -409,31 +595,12 @@ export default function PanelEditorBody({
             </div>
 
             {sectionHeading("This member")}
+            <p style={{ fontSize: 11, opacity: 0.65, margin: "0 0 4px" }}>
+              Right-click the board in the 3D view for the same list.
+            </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-              {barButton("Duplicate", () => runOp((r) => duplicateMemberSpec(r, selected.id, newEditorMemberId())), {
-                title: "Drop an identical board beside this one",
-              })}
-              {barButton("Delete", () => runOp((r) => deleteMemberSpec(r, selected.id)), {
-                title: "Take this board out of the panel",
-              })}
-              {barButton(
-                selected.kind === "straight" && selected.nominalSize === "2x6" ? "Make it a 2x4" : "Make it a 2x6",
-                () =>
-                  runOp((r) =>
-                    setMemberNominalSize(r, selected.id, selected.kind === "straight" && selected.nominalSize === "2x6" ? "2x4" : "2x6"),
-                  ),
-                {
-                  disabled: selected.kind === "diagonal",
-                  title:
-                    selected.kind === "diagonal"
-                      ? "A brace's mitres and cut length are built on the 2x4 brace geometry — resizing one is a building decision, not a menu item."
-                      : "Swap this board between 2x4 and 2x6",
-                },
-              )}
-              {barButton(
-                selected.wythe === "exterior" ? "Send to interior face" : "Send to exterior face",
-                () => runOp((r) => setMemberWythe(r, selected.id, selected.wythe === "exterior" ? "interior" : "exterior")),
-                { title: "Move it through the panel's depth to the other face" },
+              {memberActions(selected).map((action) =>
+                barButton(action.label, action.onPick, { disabled: !action.enabled, title: action.title, key: action.key }),
               )}
             </div>
             {memberNotice && (
@@ -443,8 +610,7 @@ export default function PanelEditorBody({
             )}
 
             <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
-              {barButton("Rotate 90°", () => rotate(90))}
-              {barButton("Rotate −90°", () => rotate(-90))}
+              {barButton("Rotate −90° in the wall", () => rotate(-90))}
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
               <input
@@ -460,7 +626,9 @@ export default function PanelEditorBody({
             {rotateNotice !== null && <p style={{ fontSize: 11, color: "#8a5a00", margin: "2px 0 0" }}>{rotateNotice}</p>}
             <p style={{ fontSize: 11, opacity: 0.65, margin: "6px 0 0" }}>
               A straight board rotated off an axis becomes a diagonal — the two are different cuts, not two labels, so it is
-               retyped rather than drawn in the wrong place.
+               retyped rather than drawn in the wrong place. Rotating <em>in the wall</em> swings the board across the
+               panel&apos;s face; <em>standing it on edge</em> turns it through the panel&apos;s depth. They are different
+               moves and the second one can be refused by the girt.
             </p>
           </>
         )}
@@ -502,9 +670,26 @@ export default function PanelEditorBody({
         )}
       </div>
 
+      <MemberContextMenu target={menu} onClose={() => setMenu(null)} />
+
       {/* ──────────────────── the isolated 3D framed view ──────────────── */}
-      <div style={{ flex: "1 1 260px", minWidth: 200, minHeight: "min(60vh, 420px)", border: "1px solid #ccc" }}>
-        <Canvas camera={{ position: cameraPosition, fov: 45, near: 0.01, far: 1000 }}>
+      {/* ⚠ The browser's own context menu is suppressed HERE, on the DOM
+          element around the canvas, not in the scene — a right-click on a
+          board has to reach r3f as a `pointerdown` before the browser puts its
+          own menu over the top of ours. */}
+      <div
+        style={{ flex: "1 1 260px", minWidth: 200, minHeight: "min(60vh, 420px)", border: "1px solid #ccc" }}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <Canvas
+          camera={{ position: cameraPosition, fov: 45, near: 0.01, far: 1000 }}
+          /* Clicking the empty space around the panel puts the board down —
+             the same gesture as clicking off a selection anywhere else. */
+          onPointerMissed={() => {
+            setSelectedId(null);
+            setMenu(null);
+          }}
+        >
           <ambientLight intensity={0.7} />
           <directionalLight position={[maxDim, maxDim * 2, maxDim]} intensity={0.8} />
           {showStraw && (
@@ -513,13 +698,74 @@ export default function PanelEditorBody({
               <meshStandardMaterial color="#e0c458" transparent opacity={0.35} />
             </mesh>
           )}
-          <PanelMembersGroup members={otherMembers} />
+          <PanelMembersGroup members={otherMembers} onMemberPointerDown={onMemberPointerDown} />
           {/* ⚠ The selected member is its OWN group so it can take
               `colorOverride` — `PanelMembersGroup` colours a whole group, and
               a per-member colour would mean changing a component five other
-              views share for the sake of one. Two groups cost nothing. */}
-          {selectedMembers.length > 0 && <PanelMembersGroup members={selectedMembers} colorOverride={SELECTED_COLOR} />}
-          <OrbitControls target={centre} makeDefault />
+              views share for the sake of one. Two groups cost nothing.
+
+              ⚠ It is also the DRAG PREVIEW: while the pointer is down the
+              group is translated by the delta so far, which moves the member's
+              real geometry rather than a stand-in box. A brace previewed as an
+              upright box around its own trapezoid would show a shape the panel
+              does not contain. */}
+          {selectedMembers.length > 0 && (
+            <group position={drag ? [drag.dxIn / IN_PER_FT, drag.dzIn / IN_PER_FT, 0] : [0, 0, 0]}>
+              <PanelMembersGroup
+                members={selectedMembers}
+                colorOverride={SELECTED_COLOR}
+                onMemberPointerDown={onMemberPointerDown}
+              />
+            </group>
+          )}
+          {/* ⚠ **THE DRAG PLANE.** Mounted only while a board is being
+              dragged, and only then, because it is invisible and raycastable:
+              left in the scene it would swallow every click meant for a
+              member. It lies in the panel's own width/height plane through the
+              grab point, so the pointer's distance across the screen becomes a
+              distance across the PANEL at the board's own depth — not a
+              distance in the camera's frame, which would move a board further
+              the further away it was.
+
+              Generous on purpose (20x the panel's largest dimension): the
+              pointer has to stay over it for the drag to keep measuring, and
+              the camera can be orbited. Orbit it until the plane is edge-on
+              and the drag stops reporting — that release is caught by the
+              window listener above and cancels, which is why the cancel
+              exists. */}
+          {drag && (
+            <mesh
+              position={[centre[0], centre[1], drag.planeZFt]}
+              onPointerMove={(e) => {
+                e.stopPropagation();
+                setDrag((d) =>
+                  d === null
+                    ? null
+                    : { ...d, dxIn: (e.point.x - d.grabXFt) * IN_PER_FT, dzIn: (e.point.y - d.grabYFt) * IN_PER_FT },
+                );
+              }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                commitDrag();
+              }}
+            >
+              <planeGeometry args={[maxDim * 20, maxDim * 20]} />
+              {/* ⚠ **DoubleSide, and the drag does not work without it.**
+                  three.js raycasts a mesh through `material.side`, and a
+                  `planeGeometry` faces +Z. This camera orbits to azimuth
+                  -62deg, which puts it at NEGATIVE Z — behind the plane — so
+                  at `FrontSide` every ray passed straight through and the
+                  move reported +0.00in however far the pointer travelled.
+                  Measured in the browser: the grab registered, the delta
+                  never moved. */}
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+            </mesh>
+          )}
+          {/* ⚠ Orbiting is OFF while a board is in hand. Both gestures are a
+              pointer dragged across the canvas, so leaving the camera live
+              meant every board move also swung the view, and the board
+              appeared to move the wrong way. */}
+          <OrbitControls target={centre} makeDefault enabled={drag === null} />
         </Canvas>
       </div>
     </div>

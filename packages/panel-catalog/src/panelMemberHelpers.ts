@@ -129,7 +129,13 @@ export const NAILER_LENGTH_DEFICIT_IN = standardPanelHeightIn.value - standardPa
  * The X/Y/Z box size (inches) a renderer/exporter should draw for this
  * member, derived from its `actualDimsIn` per (orientation, rotationDeg):
  * - "flat", 0deg (skins, plate 2x4s, girt web): lying flat on the XY plane — X=length, Y=width, Z=thickness.
- * - "vertical", 0deg (studs, nailer): standing upright — X=thickness, Y=width, Z=length.
+ * - "vertical", 0deg (studs): standing upright ON EDGE — X=thickness, Y=width, Z=length. The wide
+ *   face runs through the panel's depth, which is what a frame stud wants: it stiffens the wythe.
+ * - "vertical", 90deg (nailers, every editor-added vertical — Tommy, 2026-11-05: *"A full height
+ *   vertical should be 90 degrees plan view rotated - and should only protrude into the panel it's
+ *   1.5in depth"*): standing upright LAID FLAT against the face — X=width, Y=thickness, Z=length.
+ *   The wide face points out of the wall, which is what a nailer is for, and the board reaches only
+ *   1.5in into the straw whatever size it is — so a 2x6 nailer costs no extra depth at all.
  * - "diagonal", 0deg: tilted brace, wide face spanning Y — X=thickness, Y=width, Z=length (unused today).
  * - "diagonal", 90deg (braced panel's diagonal braces, header/gable/truss web braces): rotated so the
  *   wide face spans X instead — X=width, Y=thickness, Z=length — keeps the brace confined to a thin
@@ -148,6 +154,7 @@ export const NAILER_LENGTH_DEFICIT_IN = standardPanelHeightIn.value - standardPa
 export function memberBoxSizeIn(member: PanelMember): { xIn: number; yIn: number; zIn: number } {
   const { thicknessIn: t, widthIn: w, lengthIn: l } = member.actualDimsIn;
   if (member.orientation === "diagonal" && member.position.rotationDeg === 90) return { xIn: w, yIn: t, zIn: l };
+  if (member.orientation === "vertical" && member.position.rotationDeg === 90) return { xIn: w, yIn: t, zIn: l };
   if (member.orientation === "vertical" || member.orientation === "diagonal") return { xIn: t, yIn: w, zIn: l };
   if (member.orientation === "horizontal" && member.position.rotationDeg === 90) return { xIn: t, yIn: l, zIn: w };
   if (member.orientation === "horizontal" && member.position.rotationDeg === 180) return { xIn: w, yIn: l, zIn: t };
@@ -670,11 +677,18 @@ export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): Pa
     nominalSize: "2x4",
     actualDimsIn: { thicknessIn: NAILER_THICKNESS_IN, widthIn: NAILER_WIDTH_IN, lengthIn: nailerLengthIn },
     orientation: "vertical",
-    position: { xIn: widthIn / 2 - NAILER_THICKNESS_IN / 2 + offsetIn, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
+    /* ⚠ **rotationDeg 90 — LAID FLAT, 2026-11-05.** The note below has said
+       since the first version that the 3.5in face points outward, and the
+       geometry did the opposite: `vertical` at 0deg stands a board on edge, so
+       this nailer showed a 1.5in face to the plasterer and buried 3.5in of
+       itself in the straw. Tommy, 2026-11-05: *"A full height vertical should
+       be 90 degrees plan view rotated - and should only protrude into the
+       panel it's 1.5in depth."* The note was right and the box was wrong. */
+    position: { xIn: widthIn / 2 - NAILER_WIDTH_IN / 2 + offsetIn, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 90 },
     role: "nailer",
     qty: 1,
     notes:
-      "OPTIONAL — \"with nailer\" vs \"bare standard\". 3.5in face oriented outward as exterior surface." +
+      "OPTIONAL — \"with nailer\" vs \"bare standard\". 3.5in face oriented outward as exterior surface, 1.5in into the straw." +
       (offsetIn !== 0 ? ` Slid ${offsetIn > 0 ? "+" : ""}${offsetIn}in from center along the exterior wythe.` : " Centered on exterior wythe."),
   };
 }

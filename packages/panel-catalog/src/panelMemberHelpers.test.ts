@@ -521,7 +521,17 @@ describe("buildHeaderTrussWebBraces", () => {
 describe("buildNailer", () => {
   it("centers the nailer by default (offsetIn = 0)", () => {
     const nailer = buildNailer(40, 120);
-    expect(nailer.position.xIn).toBeCloseTo(40 / 2 - 1.5 / 2, 6);
+    /* Half its 3.5in face — B30 lays the nailer flat. */
+    expect(nailer.position.xIn).toBeCloseTo(40 / 2 - 3.5 / 2, 6);
+  });
+
+  it("⚠ lays the nailer FLAT: 3.5in out at the plasterer, 1.5in into the straw", () => {
+    /* > *"A full height vertical should be 90 degrees plan view rotated - and
+       > should only protrude into the panel it's 1.5in depth."* — Tommy,
+       2026-11-05. The function's own note has said the 3.5in face points
+       outward since the first version; until B30 the box did the opposite. */
+    const box = memberBoxSizeIn(buildNailer(40, 120));
+    expect(box).toEqual({ xIn: 3.5, yIn: 1.5, zIn: 115.5 });
   });
 
   it("slides the nailer by offsetIn from its centered position", () => {

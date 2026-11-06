@@ -1,6 +1,6 @@
 import type { AddedMemberSpec, PanelWythe } from "./panelRecipe";
 import { recipeClearHeightIn } from "./panelRecipe";
-import { PLATE_2X4_THICKNESS_IN, centreNailerStudSpansIn } from "./panelMemberHelpers";
+import { PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, centreNailerStudSpansIn } from "./panelMemberHelpers";
 import { standardGirtRowCentreZsIn } from "./standardPanelMembers";
 import { nailerOverlaySpacingIn } from "./data";
 
@@ -287,12 +287,18 @@ export function verticalNailerSpecs(
     const bayIn = bayToIn - bayFromIn;
     if (bayIn <= 0) continue;
     /* The fewest equal sub-bays that get every gap under the spacing. Each
-       sub-bay is at most bayIn / subBays wide before the nailers' own 1.5in
-       is taken out of it, so this is conservative in the safe direction. */
+       sub-bay is at most bayIn / subBays wide before the nailers' own width is
+       taken out of it, so this is conservative in the safe direction — and
+       more so since B30, because a nailer laid flat is 3.5in across the face
+       rather than 1.5in, which only shrinks the gaps left beside it. */
     const subBays = Math.max(1, Math.ceil(bayIn / spacingIn - 1e-9));
     for (let k = 1; k < subBays; k++) {
       const centreXIn = bayFromIn + (bayIn * k) / subBays;
-      const leftXIn = centreXIn - PLATE_2X4_THICKNESS_IN / 2;
+      /* ⚠ Centred on its own 3.5in face, not on 1.5in. A nailer lies FLAT
+         (Tommy, 2026-11-05) — the half-width that centres it is the width of
+         the board's wide face, which is the one the spacing rule measures
+         face-to-face gaps between. */
+      const leftXIn = centreXIn - PLATE_2X4_WIDTH_IN / 2;
       n++;
       out.push({
         kind: "straight",

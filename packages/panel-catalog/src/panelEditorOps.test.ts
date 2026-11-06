@@ -69,17 +69,21 @@ describe("the three new members", () => {
   it("a vertical stands on the panel's centre LINE when the panel is empty", () => {
     const spec = newVerticalSpec(PANEL, { wythe: "exterior" });
     const area = editorClearArea(PANEL);
-    /* ⚠ 23.25, not 24: a spec's x is the member's left FACE, and a 1.5in stud
-       centred on a 48in panel starts 0.75in before the middle. That is exactly
-       the number `buildCentreNailerStuds` computes for the same panel's own
-       centre stud — `widthIn/2 - PLATE_2X4_THICKNESS_IN/2` — arrived at here by
-       a different route, which is the check worth having.
+    /* ⚠ **22.25, not 23.25 — B30 moved this number and it is worth saying
+       why.** A spec's x is the member's left FACE, and a new vertical now LIES
+       FLAT (Tommy, 2026-11-05), so it is 3.5in across the panel's width rather
+       than 1.5in: centred on a 48in panel it starts 1.75in before the middle.
+       The old 23.25 happened to equal `buildCentreNailerStuds`' own number for
+       the same panel, which this test used to check; the two no longer agree,
+       because the panel's own centre stud is still a stud standing on edge and
+       this is a nailer lying flat. What still holds — and is the claim worth
+       keeping — is that the board's CENTRE is on the panel's centre line.
 
        His reason for wanting it there, per `panel_module_2ft_4ft`: the centre
        of a 48in wall panel is the seam between the two 24in deck panels below,
        so a member there carries load straight down. */
-    expect(spec.fromXIn).toBe(23.25);
-    expect(spec.fromXIn + 1.5 / 2).toBe(PANEL.widthIn / 2);
+    expect(spec.fromXIn).toBe(22.25);
+    expect(spec.fromXIn + 3.5 / 2).toBe(PANEL.widthIn / 2);
     expect(spec.toXIn).toBe(spec.fromXIn);
     expect(spec.fromZIn).toBe(area.minZIn);
     expect(spec.toZIn).toBe(area.maxZIn);
@@ -297,8 +301,10 @@ describe("snapTargetsIn", () => {
     expect(xIn).toContain(x0);
     /* ⚠ "flush with either side ... and center" — his three words, all three
        present for one member. */
-    expect(xIn.some((v) => Math.abs(v - (x0 + 1.5)) < 0.001)).toBe(true);
-    expect(xIn.some((v) => Math.abs(v - (x0 + 0.75)) < 0.001)).toBe(true);
+    /* 3.5in across, not 1.5in: B30 lays the nailer flat, so its far FACE and
+       its CENTRE are both measured off its wide dimension. */
+    expect(xIn.some((v) => Math.abs(v - (x0 + 3.5)) < 0.001)).toBe(true);
+    expect(xIn.some((v) => Math.abs(v - (x0 + 1.75)) < 0.001)).toBe(true);
   });
 
   it("⚠ offers nothing off a diagonal, whose box faces are not on the board", () => {

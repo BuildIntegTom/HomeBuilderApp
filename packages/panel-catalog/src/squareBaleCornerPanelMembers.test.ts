@@ -71,7 +71,9 @@ describe("buildSquareBaleCornerPanelMembers", () => {
     const withNailer = buildSquareBaleCornerPanelMembers(DEPTH_IN, HEIGHT_IN, true, 4);
     const nailer = withNailer.find((m) => m.role === "nailer");
     expect(nailer).toBeDefined();
-    expect(nailer!.position.xIn).toBeCloseTo(squareBalePanel.widthIn / 2 - 1.5 / 2 + 4, 6);
+    /* Half of 3.5in, not of 1.5in: B30 lays the nailer flat, so the dimension
+       that centres it across the width is its wide face. */
+    expect(nailer!.position.xIn).toBeCloseTo(squareBalePanel.widthIn / 2 - 3.5 / 2 + 4, 6);
   });
 });
 

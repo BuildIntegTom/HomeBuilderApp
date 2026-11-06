@@ -101,7 +101,17 @@ describe("buildStandardPanelMembers", () => {
     const withNailer = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, true);
     const nailer = findMember(withNailer, "nailer");
     expect(nailer.actualDimsIn.lengthIn).toBeCloseTo(115.5, 6); // 120 - 4.5 (deficit derived from the 120in reference)
-    expect(nailer.position).toEqual({ xIn: WIDTH_IN / 2 - 0.75, yIn: 0, zIn: 0.75, rotationDeg: 0 });
+    /* ⚠ **rotationDeg 90, and centred on 3.5in rather than 1.5in — B30.** A
+       nailer LIES FLAT against the exterior face (Tommy, 2026-11-05: *"A full
+       height vertical should be 90 degrees plan view rotated - and should only
+       protrude into the panel it's 1.5in depth"*), which is what `buildNailer`'s
+       own note claimed from the first version while the geometry stood the board
+       on edge. So its wide face is the one across the panel's width, and
+       centring it means offsetting by half of 3.5in. */
+    expect(nailer.position).toEqual({ xIn: WIDTH_IN / 2 - 1.75, yIn: 0, zIn: 0.75, rotationDeg: 90 });
+    /* The point of the flip, measured where it bites: 1.5in into the straw
+       whatever the stick, and the 3.5in face pointing out at the plasterer. */
+    expect(memberBoxSizeIn(nailer)).toMatchObject({ xIn: 3.5, yIn: 1.5 });
     expect(withNailer).toHaveLength(19); // 18 plus the nailer
   });
 

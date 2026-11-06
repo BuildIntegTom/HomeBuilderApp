@@ -152,9 +152,14 @@ function obstacleIntervals(
 /** The depth range a straight added member of this kind occupies — the same
  * arithmetic `buildStraightFromSpec` does, and the reason it is repeated here
  * rather than inferred: two members only fight if they share depth, so an
- * exterior stud is free to cross an interior one and a mid-depth girt web. */
-function straightDepthRangeIn(panel: EditorPanelSize, wythe: PanelWythe, vertical: boolean): [number, number] {
-  const throughIn = vertical ? PLATE_2X4_WIDTH_IN : PLATE_2X4_THICKNESS_IN;
+ * exterior stud is free to cross an interior one and a mid-depth girt web.
+ *
+ * ⚠ **1.5in now, whichever way it runs** — B30 lays a new vertical FLAT, so
+ * the depth it occupies no longer depends on its direction or its size. `_`
+ * keeps the parameter, because `onEdge` makes the old 3.5in reachable again
+ * and the one caller reads better naming the axis it asked about. */
+function straightDepthRangeIn(panel: EditorPanelSize, wythe: PanelWythe, _vertical: boolean): [number, number] {
+  const throughIn = PLATE_2X4_THICKNESS_IN;
   const y0 = wythe === "exterior" ? 0 : panel.depthIn - throughIn;
   return [y0, y0 + throughIn];
 }
@@ -209,19 +214,27 @@ function snapInwardIn(valueIn: number, direction: "up" | "down"): number {
  *
  * ⚠ **A spec's `from`/`to` are the member's MIN FACE, not its centreline** —
  * `buildStraightFromSpec` takes `Math.min` of the two and grows the member's
- * 1.5in or 3.5in cross-section upward from there. So centring a board means
- * offsetting by half its own thickness, and on an empty 48in panel that puts a
- * new vertical at x=23.25 — which is exactly the number
- * `buildCentreNailerStuds` uses for the same panel's own centre stud, arrived
- * at independently.
+ * cross-section upward from there. So centring a board means offsetting by
+ * half its own width.
+ *
+ * ⚠ On an empty 48in panel that now lands a new vertical at x=22.25, not the
+ * 23.25 this comment used to record: a board laid flat is 3.5in across the
+ * width where one on edge was 1.5in. The panel's own centre stud is still at
+ * 23.25 and still on edge — the two no longer coincide, and the clear-run
+ * search is what keeps them out of each other rather than the arithmetic
+ * happening to agree.
  */
 function newStraightSpec(panel: EditorPanelSize, opts: NewMemberOptions, vertical: boolean): AddedMemberSpec {
   const area = editorClearArea(panel);
   const existing = opts.existing ?? [];
   const depthIn = straightDepthRangeIn(panel, opts.wythe, vertical);
-  /* The member's own cross-section on the axis it is POSITIONED along: a stud
-     is 1.5in across the panel's width, a tie 3.5in up its height. */
-  const acrossIn = vertical ? PLATE_2X4_THICKNESS_IN : PLATE_2X4_WIDTH_IN;
+  /* The member's own cross-section on the axis it is POSITIONED along. ⚠ 3.5in
+     EITHER WAY since B30: a new vertical lies flat, so its wide face runs
+     across the panel's width exactly as a horizontal tie's runs up its
+     height. A vertical stood back on edge is 1.5in across again, which is why
+     `setMemberOnEdge` re-checks for overlaps rather than assuming the board
+     only ever gets thinner. */
+  const acrossIn = PLATE_2X4_WIDTH_IN;
   const [lineMin, lineMax] = vertical ? [area.minXIn, area.maxXIn] : [area.minZIn, area.maxZIn];
   const [runMin, runMax] = vertical ? [area.minZIn, area.maxZIn] : [area.minXIn, area.maxXIn];
 
@@ -699,4 +712,68 @@ export function setMemberWythe(recipe: PanelRecipe, specId: string, wythe: Panel
     return { recipe, accepted: false, message: `The ${wythe} face is already occupied there — ${clashes.join(", ")}.` };
   }
   return { recipe: next, accepted: true, message: null };
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   B30 — WHICH WAY THE BOARD IS TURNED, 2026-11-05.
+
+   > *"A full height vertical should be 90 degrees plan view rotated - and
+   > should only protrude into the panel it's 1.5in depth. You should very
+   > easily be able to put a 2x6 and other sizes of nailers in. Not really sure
+   > why you would put such a fat nailer in. There should be an option to
+   > rotate it, and unable to do so if it overlaps or would hit the girt."*
+
+   The default moved in `buildStraightFromSpec`; this is the "option to rotate
+   it", and the refusal he asked for is the one the rest of this file already
+   uses — `newOverlapsFor`, measured on the real prisms.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Turn a straight board through the panel's depth: flat against the face
+ * (1.5in in, wide face out — a nailer) or standing on edge (wide face through
+ * the depth — a stud).
+ *
+ * ⚠ **The refusal is the whole feature, not a guard on it.** Standing a board
+ * on edge is the one member change in the editor that grows what it occupies
+ * *through the depth* rather than across the face, and the thing it grows into
+ * is the girt web lying across the middle of that depth. His sentence says so
+ * directly: *"unable to do so if it overlaps or would hit the girt."* So the
+ * message names what it hit, which on a 15.5in panel is almost always a web.
+ *
+ * ⚠ **A diagonal is refused outright and for a different reason than its
+ * lumber size is.** A brace does not have two seatings to choose between: it
+ * is let into the straw on its own flat inset and its trapezoid geometry is
+ * written around that one depth. Turning one on edge is not a rotation of a
+ * board, it is a different part.
+ */
+export function setMemberOnEdge(recipe: PanelRecipe, specId: string, onEdge: boolean): EditorOpResult {
+  const spec = specById(recipe, specId);
+  if (!spec) return { recipe, accepted: false, message: "That member is not part of this panel." };
+  if (spec.kind === "diagonal") {
+    return {
+      recipe,
+      accepted: false,
+      message:
+        "A brace is let into the straw on one flat inset, and its mitres are cut for that seating. Standing one on edge is a different part, not a rotation.",
+    };
+  }
+  if ((spec.onEdge === true) === onEdge) return { recipe, accepted: true, message: null };
+  const next = withSpec(recipe, specId, { ...spec, onEdge: onEdge ? true : undefined });
+  const clashes = newOverlapsFor(recipe, next, specId);
+  if (clashes.length > 0) {
+    return {
+      recipe,
+      accepted: false,
+      message: onEdge
+        ? `On edge that board reaches ${(spec.nominalSize === "2x6" ? 5.5 : 3.5).toFixed(1)}″ into the panel and runs into ${clashes.join(", ")}. It stays flat.`
+        : `Laid flat that board runs into ${clashes.join(", ")}.`,
+    };
+  }
+  return { recipe: next, accepted: true, message: null };
+}
+
+/** Which way a spec is turned through the depth, as the editor labels it. */
+export function memberDepthSeating(spec: AddedMemberSpec): "flat" | "on-edge" | "brace" {
+  if (spec.kind === "diagonal") return "brace";
+  return spec.onEdge === true ? "on-edge" : "flat";
 }

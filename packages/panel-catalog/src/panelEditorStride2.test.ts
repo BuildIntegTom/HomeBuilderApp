@@ -86,8 +86,16 @@ describe("⚠ B19 stride 2 — the drag, and his four answers of 2026-11-05", ()
        drag produced is buildable. Swept across a range of drags rather than
        asserted at one spot. */
     /* The vertical is on the INTERIOR face, so the only thing the diagonal can
-       collide with as it moves is the base panel's own frame. */
-    const recipe = recipeWith(diagonal("d1"), vertical("v1", 40, "interior"));
+       collide with as it moves is the base panel's own frame.
+
+       ⚠ x=36, moved from 40 by B30. A vertical LIES FLAT now, so it is 3.5in
+       across the panel's width rather than 1.5in, and at 40 its far face
+       reached 43.5 — into `girt_N_bar_right`, which spans x 43..46.5 through
+       the panel's whole depth. The fixture started out overlapping and this
+       sweep measures overlaps absolutely, so it read the fixture's own
+       collision as the drag's. The clear band for a full-height board on
+       either face is x 5..39.5, between the two girt bars. */
+    const recipe = recipeWith(diagonal("d1"), vertical("v1", 36, "interior"));
     for (const dx of [-8, -3, -1, 0, 1, 3, 8]) {
       for (const dz of [-6, 0, 6]) {
         const out = dragMemberSpec(recipe, "d1", dx, dz);
@@ -168,18 +176,28 @@ describe("⚠ the member right-click menu — his four actions", () => {
     expect(board.actualDimsIn.thicknessIn).toBe(1.5);
   });
 
-  it("⚠ a FULL-HEIGHT vertical cannot become a 2x6, and that is correct", () => {
-    /* Found by writing this test rather than by reasoning: a 2x6 standing on
-       edge flush with the exterior face reaches 5.5in into a 15.5in panel,
-       and the girt web sits across the middle of that depth — so every
-       full-height vertical that crosses a girt row collides with its web.
-       The refusal names the webs it hit. Worth knowing before anyone expects
-       "change lumber size" to work on a full stud: in a girted panel it
-       mostly will not, and the honest answer is the refusal rather than a
-       2x6 modelled passing through a sheet of plywood. */
+  it("⚠ a FULL-HEIGHT vertical BECOMES a 2x6 — the refusal here was the wrong answer", () => {
+    /* ⚠ **This test asserted the opposite yesterday, and he overruled it.**
+       On 2026-11-04 a 2x6 full-height vertical was refused because, standing
+       ON EDGE flush with the exterior face, it reached 5.5in into a 15.5in
+       panel and ran into the girt web at y 3.5..12. The arithmetic was right.
+       His answer, 2026-11-05:
+
+       > *"A full height vertical should be 90 degrees plan view rotated - and
+       > should only protrude into the panel it's 1.5in depth. You should very
+       > easily be able to put a 2x6 and other sizes of nailers in. Not really
+       > sure why you would put such a fat nailer in."*
+
+       The board was in the wrong orientation, not the wrong size. Laid flat it
+       occupies y 0..1.5 whatever stick it is cut from, so it passes in FRONT
+       of the web and the size stops mattering at all — which is the whole
+       point of the default B30 changed. */
     const out = setMemberNominalSize(recipeWith(vertical()), "v1", "2x6");
-    expect(out.accepted).toBe(false);
-    expect(out.message).toContain("girt");
+    expect(out.accepted).toBe(true);
+    const board = buildPanelFromRecipe(out.recipe).find((m) => m.memberId === "v1")!;
+    expect(board.actualDimsIn.widthIn).toBe(5.5);
+    /* 1.5in into the straw, same as the 2x4 it replaced. */
+    expect(board.position.yIn).toBe(0);
   });
 
   it("⚠ refuses to resize a DIAGONAL, with the reason", () => {

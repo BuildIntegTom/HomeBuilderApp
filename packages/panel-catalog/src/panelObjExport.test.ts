@@ -285,6 +285,18 @@ describe("OBJ golden fixture", () => {
    * drown the surrounding assertions, and compared as raw text (not parsed)
    * so vertex formatting, group names, blank lines and face ordering are all
    * in scope.
+   *
+   * ⚠ **Regenerated once, on 2026-11-05 (B30), and here is how to tell that
+   * apart from the regression the paragraph above warns about.** The fixture's
+   * members come from `buildStandardPanelMembers(..., true)`, so a change to
+   * what that BUILDS rewrites this file even though the exporter is untouched.
+   * B30 laid the nailer flat (Tommy: *"A full height vertical should be 90
+   * degrees plan view rotated"*), and the regenerated file differs in exactly
+   * **64 `v` lines — the 8 vertices of each of the 4 nailer groups, twice over
+   * for the minus and plus side of the diff — and in nothing else**: not one
+   * `f` line, group name or other member moved. That is the test a
+   * regeneration has to pass before anyone accepts it. A real exporter
+   * regression moves faces, ordering or members that nobody touched.
    */
   it("reproduces the pre-n-gon exporter output byte for byte", () => {
     const expected = readFileSync(fileURLToPath(new URL("./objGolden.fixture.obj", import.meta.url)), "utf8");

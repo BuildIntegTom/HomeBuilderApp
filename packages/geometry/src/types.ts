@@ -297,6 +297,20 @@ export interface StoredPanelMemberSpec {
    * than a menu item — see `setMemberNominalSize`.
    */
   nominalSize?: "2x4" | "2x6";
+  /**
+   * Which way a `straight` board is turned through the panel's depth — B30,
+   * 2026-11-05. Absent means LAID FLAT (1.5in into the straw, wide face out),
+   * which is what *"a full height vertical should be 90 degrees plan view
+   * rotated"* makes the default; `true` stands it on edge.
+   *
+   * ⚠ No migration, and the absence is doing real work: every vertical stored
+   * before today was built on edge, and reading those files now draws them
+   * flat. That is deliberate — he called the on-edge vertical wrong, so the
+   * stored panels were drawing a board nobody would build, and a migration
+   * that preserved it would preserve the defect. Nothing about a stored
+   * panel's cut length changes either way; only which way the board turns.
+   */
+  onEdge?: boolean;
   notes?: string;
 }
 

@@ -104,6 +104,36 @@ export type AddedMemberSpec =
        * rather than a menu item.
        */
       nominalSize?: "2x4" | "2x6";
+      /**
+       * ⚠ **Which way the board is turned through the panel's depth — B30,
+       * 2026-11-05.** Absent means LAID FLAT: the wide face against the
+       * panel's own face, 1.5in into the straw whatever size the stick is.
+       * `true` stands it ON EDGE, the wide face running through the depth.
+       *
+       * > *"A full height vertical should be 90 degrees plan view rotated -
+       * > and should only protrude into the panel it's 1.5in depth. You
+       * > should very easily be able to put a 2x6 and other sizes of nailers
+       * > in. Not really sure why you would put such a fat nailer in. There
+       * > should be an option to rotate it, and unable to do so if it
+       * > overlaps or would hit the girt."* — Tommy, 2026-11-05
+       *
+       * ⚠ **This flipped the DEFAULT, and that is the point of it.** Before
+       * this a vertical was built on edge, so it reached a full 3.5in into
+       * the straw and showed the plasterer a 1.5in face — and a 2x6 reached
+       * 5.5in, which in a 15.5in panel runs straight into the girt web. That
+       * refusal was correct arithmetic about a board nobody would build.
+       * Flat, the depth stops being a function of the size at all, which is
+       * what makes *"other sizes of nailers"* easy.
+       *
+       * It applies to a VERTICAL only. A horizontal already lay flat — the
+       * two were inconsistent, not both wrong — so the flag reads as
+       * "on edge" for a horizontal too but changes nothing a builder relies
+       * on today.
+       *
+       * In `recipeFingerprint`: a board turned the other way is a different
+       * part, cut the same and installed differently.
+       */
+      onEdge?: boolean;
       notes?: string;
     };
 
@@ -197,9 +227,15 @@ function buildStraightFromSpec(spec: Extract<AddedMemberSpec, { kind: "straight"
      the panel a vertical reaches and how tall a horizontal stands — it does
      not change either one's 1.5in face. */
   const widthIn = spec.nominalSize === "2x6" ? LUMBER_2X6_WIDTH_IN : PLATE_2X4_WIDTH_IN;
+  /* ⚠ **A vertical lies FLAT unless asked to stand on edge** — see `onEdge`.
+     Laid flat it reaches 1.5in into the straw and shows its wide face out,
+     which is what a nailer is for and what makes a 2x6 cost no extra depth.
+     A horizontal lies flat either way; `onEdge` stands one on its narrow edge
+     for symmetry, which changes nothing a builder relies on today. */
+  const onEdge = spec.onEdge === true;
   /* How deep into the panel this member's own cross-section reaches, which
      is what decides where the interior wythe's copy starts. */
-  const throughDepthIn = isVertical ? widthIn : PLATE_2X4_THICKNESS_IN;
+  const throughDepthIn = onEdge && isVertical ? widthIn : PLATE_2X4_THICKNESS_IN;
   const yIn = spec.wythe === "exterior" ? 0 : depthIn - throughDepthIn;
   return {
     memberId: spec.id,
@@ -213,7 +249,10 @@ function buildStraightFromSpec(spec: Extract<AddedMemberSpec, { kind: "straight"
       xIn: Math.min(spec.fromXIn, spec.toXIn),
       yIn,
       zIn: Math.min(spec.fromZIn, spec.toZIn),
-      rotationDeg: 0,
+      /* 90 is the FLAT vertical — see `memberBoxSizeIn`, where "vertical" at
+         90deg is the only case that puts the wide face across the panel's
+         width. A horizontal is already flat at 0. */
+      rotationDeg: isVertical && !onEdge ? 90 : 0,
     },
     role: spec.role ?? (isVertical ? "stud" : "blocking"),
     qty: 1,
@@ -343,7 +382,7 @@ export function recipeFingerprint(recipe: PanelRecipe): string {
       .map((spec) =>
         spec.kind === "diagonal"
           ? `D:${spec.wythe}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`
-          : `S:${spec.wythe}:${spec.role ?? "-"}:${spec.nominalSize ?? "2x4"}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
+          : `S:${spec.wythe}:${spec.role ?? "-"}:${spec.nominalSize ?? "2x4"}:${spec.onEdge === true ? "edge" : "flat"}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
       )
       /* Sorted, because two panels with the same members added in a different
          order are the same panel. Member IDs are deliberately left out for the

@@ -2717,7 +2717,12 @@ against it.
 
 ## Found by writing the tests
 
-⚠ **A full-height vertical cannot be a 2x6, and the refusal is correct.** A 2x6
+⚠ **SUPERSEDED 2026-11-05 by B30 — read that entry instead.** He overturned
+this: the board was in the wrong ORIENTATION, not the wrong size. A vertical
+lies flat now, 1½″ into the panel whatever stick it is cut from, so a 2x6
+passes in front of the web and is accepted.
+
+⚠ ~~**A full-height vertical cannot be a 2x6, and the refusal is correct.**~~ A 2x6
 on edge flush with the exterior face reaches 5½″ into a 15½″ panel, and the girt
 web sits across the middle of that depth — so every full-height vertical that
 crosses a girt row collides with its web. Live in the app it reads *"A 2x6 there
@@ -2746,3 +2751,105 @@ clicked.
 
 Also still open from stride 2's original list: the ghost-the-rest toggle, and
 per-panel girt editing.
+
+---
+
+# B30 — the board lies flat, and the pointer can pick it up (2026-11-05)
+
+> *"A full height vertical should be 90 degrees plan view rotated - and should
+> only protrude into the panel it's 1.5" depth. You should very easily be able
+> to put a 2x6 and other sizes of nailers in. Not really sure why you would put
+> such a fat nailer in. There should be an option to rotate it, and unable to
+> do so if it overlaps or would hit the girt."*
+>
+> *"3D member hit test and those other surfaces."*
+
+## The orientation, and what it overturns
+
+⚠ **B29's "found by writing the tests" entry above is WRONG, and he overturned
+it the next day.** It says a full-height vertical cannot be a 2x6 because a 2x6
+standing ON EDGE reaches 5½″ into a 15½″ panel and hits the girt web. The
+arithmetic was right and the board was in the wrong orientation. A vertical now
+**lies flat**: 1½″ into the straw whatever stick it is cut from, wide face
+pointing out at the plasterer. The size stops interacting with the depth at all,
+which is exactly what makes *"other sizes of nailers"* easy.
+
+The girt geometry this turns on, measured off a plain 48 × 15½ × 96 panel rather
+than assumed:
+
+| member | x | y (depth) | z |
+| --- | --- | --- | --- |
+| `girt_N_bar_left` / `_right` | 1.5–5 and 43–46.5 | **0–15.5, the whole depth** | the girt row |
+| `girt_N_web` | 1.25–46.75 | **3.5–12, the middle** | just above the bars |
+
+So a board laid flat (y 0–1.5) passes in FRONT of the web; a 2x4 on edge
+(0–3.5) just touches it; a 2x6 on edge (0–5.5) runs through it. The clear band
+for any full-height board is **x 5–39.5**, between the two bars.
+
+⚠ **`buildNailer`'s own note has claimed since the first version that the 3.5in
+face points outward** — *"3.5in face oriented outward as exterior surface"* —
+while `vertical` at 0° stood the board on edge and did the opposite. The note
+was right and the box was wrong, and the two had disagreed in the file for
+months. The catalog nailer is flipped with it, so the editor's nailer and the
+panel's own nailer are the same board.
+
+⚠ **The OBJ golden fixture was regenerated, and here is how to tell that apart
+from the regression its comment warns about.** Its members come from
+`buildStandardPanelMembers(..., true)`, so a change to what that builds rewrites
+the file. The regenerated fixture differs in **64 `v` lines — the 8 vertices of
+each of the 4 nailer groups, on both sides of the diff — and nothing else**: not
+one `f` line, group name or other member moved. That is the test a regeneration
+has to pass.
+
+**The rotation he asked for** is `setMemberOnEdge`, refused when the turned
+board would overlap, naming what it hit. Live in the app:
+
+- *"On edge that board reaches 5.5″ into the panel and runs into girt_1_web x …,
+  girt_2_web x …. It stays flat."*
+- A 2x4 turns on edge fine; the row then reads **Lay it flat**.
+- A diagonal is refused differently and on purpose: a brace is let into the
+  straw on one flat inset and its mitres are cut for that seating, so turning
+  one is a different part, not a rotation.
+
+## The hit test, and three things that had to be wrong first
+
+⚠ **Handlers on each `<mesh>` register nothing.** A sweep of the editor's whole
+canvas, every 12px × 14px, produced zero hits while `onPointerMissed` fired on
+every one. The same scene picks up fine from a handler on an enclosing
+`<group>` — which is how `Building3DView` has always selected a panel. The
+member's id travels on `userData` and the group handler reads it off
+`event.object` (the mesh the ray struck) rather than `event.eventObject` (the
+group, which is always the same object).
+
+⚠ **The drag plane must be `DoubleSide`.** three.js raycasts through
+`material.side`, a `planeGeometry` faces +Z, and this camera sits at azimuth
+−62° — behind it. At `FrontSide` every ray passed straight through: the grab
+registered and the delta read **+0.00″ however far the pointer travelled**.
+
+⚠ **`onContextMenu` never dispatches for these objects**, with or without a
+preceding `pointerdown` on them (r3f gates its click-family events on the hits
+it recorded at pointer-down). A right-click still arrives as a `pointerdown`
+with `button === 2`, so there is **one path, not two**, and the menu and the
+drag cannot disagree about which board the pointer was on. The browser's own
+menu is suppressed on the DOM element around the canvas, not in the scene.
+
+## Verified in the browser, not inferred
+
+- The new member's label reads `Straight · vertical · 115.50″ · exterior · 2x4 flat`.
+- **Make it a 2x6 → accepted silently**, where yesterday it was refused.
+- **Stand it on edge → refused**, naming both girt webs.
+- Grab a board: `−13.77″ across, −2.82″ up — release to drop.`
+- Drop it on the girt bars: *"That lands on 2 other boards — girt_1_bar_left …,
+  girt_2_bar_left …. Two solids cannot share a volume, so it snapped back."*
+  `From x` unchanged.
+- Drop it clear: `From x` 12¼ → **8⅞** — a −3.42″ drag landing on the ⅛″ grid.
+- Right-click a board: **Member actions for Straight · vertical · 115.50″ ·
+  exterior · 2x4 flat** — Duplicate · Delete · Make it a 2x6 · Stand it on edge ·
+  Send to interior face · Rotate 90° in the wall.
+
+## Still not done
+
+The **ghost-the-rest toggle** and **per-panel girt editing**, both from stride
+2's original list. The hit test now exists, so the 3D right-click menu for
+PANELS could read `userData` the same way instead of the per-slot `<group>`
+handlers — worth doing only if those ever disagree.
