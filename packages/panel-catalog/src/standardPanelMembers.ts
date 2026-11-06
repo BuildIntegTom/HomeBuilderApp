@@ -7,6 +7,7 @@ import {
   buildCornerStuds,
   buildGirtRows,
   buildNailer,
+  optionalNailerSpanIn,
   buildPlates,
   buildSkins,
   girtRowCentreZsIn,
@@ -72,7 +73,18 @@ export function buildStandardPanelMembers(
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
     ...buildCentreNailerStuds(widthIn, depthIn, heightIn),
-    ...buildGirtRows(computeStandardGirtRowCount(heightIn), widthIn, depthIn, studSpanIn, undefined, girtStyle),
+    /* ⚠ The optional nailer's span is handed to the girts because a RING's
+       rails run along the panel's face, where that nailer stands — see
+       `buildRingGirtRow`. Every other style ignores it. */
+    ...buildGirtRows(
+      computeStandardGirtRowCount(heightIn),
+      widthIn,
+      depthIn,
+      studSpanIn,
+      undefined,
+      girtStyle,
+      includeNailer ? [optionalNailerSpanIn(widthIn)] : [],
+    ),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
   return members;

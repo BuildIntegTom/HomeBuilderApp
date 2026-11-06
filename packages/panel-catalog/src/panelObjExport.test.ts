@@ -297,6 +297,13 @@ describe("OBJ golden fixture", () => {
    * `f` line, group name or other member moved. That is the test a
    * regeneration has to pass before anyone accepts it. A real exporter
    * regression moves faces, ordering or members that nobody touched.
+   *
+   * ⚠ **Regenerated a second time on 2026-11-06 (B31), same test applied.**
+   * The nailer moved up onto the bottom plate — it had been standing on the
+   * skin and running through the plate above it. The diff is **32 `v` lines
+   * replaced by 32**, in the three `nailer` groups and nowhere else; the
+   * centre nailer studs that B31 also turned are filtered out of this fixture
+   * by `goldenMembers`, so they do not appear here at all.
    */
   it("reproduces the pre-n-gon exporter output byte for byte", () => {
     const expected = readFileSync(fileURLToPath(new URL("./objGolden.fixture.obj", import.meta.url)), "utf8");

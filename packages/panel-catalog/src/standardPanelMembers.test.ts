@@ -108,7 +108,13 @@ describe("buildStandardPanelMembers", () => {
        own note claimed from the first version while the geometry stood the board
        on edge. So its wide face is the one across the panel's width, and
        centring it means offsetting by half of 3.5in. */
-    expect(nailer.position).toEqual({ xIn: WIDTH_IN / 2 - 1.75, yIn: 0, zIn: 0.75, rotationDeg: 90 });
+    /* ⚠ zIn 2.25, not 0.75 — B31. It stands ON the bottom plate, not on the
+       skin: at 0.75 it ran straight through the plate 2x4 above it, which the
+       overlap audit reported as `bottom_plate_2x4_ext x nailer`. His reference
+       BOM has always cut this board at 115.5in on a 120in panel, which is
+       exactly plate face to plate face — so the length was right all along and
+       the position was not. */
+    expect(nailer.position).toEqual({ xIn: WIDTH_IN / 2 - 1.75, yIn: 0, zIn: 2.25, rotationDeg: 90 });
     /* The point of the flip, measured where it bites: 1.5in into the straw
        whatever the stick, and the 3.5in face pointing out at the plasterer. */
     expect(memberBoxSizeIn(nailer)).toMatchObject({ xIn: 3.5, yIn: 1.5 });
@@ -253,7 +259,13 @@ describe("⚠ the centre nailer that lets a 4ft panel carry 2ft floors", () => {
       const members = buildStandardPanelMembers(widthIn, DEPTH_IN, HEIGHT_IN, false);
       const xs = [
         0,
-        ...members.filter((m) => m.memberId.startsWith("stud_centre_") && m.memberId.endsWith("exterior")).map((m) => m.position.xIn + 0.75),
+        /* ⚠ The stud's own CENTRE, read off its box rather than assumed. B31
+           laid centre nailers flat, so they are 3.5in across the width where
+           they used to be 1.5in — and a hard-coded half-width quietly measured
+           the bays from the wrong line. */
+        ...members
+          .filter((m) => m.memberId.startsWith("stud_centre_") && m.memberId.endsWith("exterior"))
+          .map((m) => m.position.xIn + memberBoxSizeIn(m).xIn / 2),
         widthIn,
       ].sort((a, b) => a - b);
       for (let i = 1; i < xs.length; i++) {
@@ -280,7 +292,10 @@ describe("⚠ the centre nailer that lets a 4ft panel carry 2ft floors", () => {
     const ext = members.find((m) => m.memberId === "stud_centre_1_exterior")!;
     const int = members.find((m) => m.memberId === "stud_centre_1_interior")!;
     expect(ext.position.yIn).toBe(0);
-    expect(int.position.yIn).toBeCloseTo(DEPTH_IN - 3.5, 9);
+    /* ⚠ 1.5in, not 3.5in — B31 lays a centre nailer FLAT, so it reaches into
+       the panel by its thickness and shows its 3.5in face at the wythe. */
+    expect(int.position.yIn).toBeCloseTo(DEPTH_IN - 1.5, 9);
+    expect(memberBoxSizeIn(ext)).toMatchObject({ xIn: 3.5, yIn: 1.5 });
     expect(ext.position.xIn).toBeCloseTo(int.position.xIn, 9);
   });
 });

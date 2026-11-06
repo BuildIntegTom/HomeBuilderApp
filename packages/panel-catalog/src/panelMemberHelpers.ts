@@ -587,8 +587,8 @@ export function centreNailerStudSpansIn(widthIn: number): [number, number][] {
   const bays = Math.max(1, Math.ceil(widthIn / MAX_STUD_SPACING_IN - 1e-9));
   const spans: [number, number][] = [];
   for (let bay = 1; bay < bays; bay++) {
-    const xIn = (widthIn * bay) / bays - PLATE_2X4_THICKNESS_IN / 2;
-    spans.push([xIn, xIn + PLATE_2X4_THICKNESS_IN]);
+    const xIn = (widthIn * bay) / bays - PLATE_2X4_WIDTH_IN / 2;
+    spans.push([xIn, xIn + PLATE_2X4_WIDTH_IN]);
   }
   return spans;
 }
@@ -604,11 +604,28 @@ export function buildCentreNailerStuds(widthIn: number, depthIn: number, heightI
   const plateFaceIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const studSpanIn = heightIn - 2 * plateFaceIn;
   const members: PanelMember[] = [];
+  /* ⚠ **A CENTRE NAILER LIES FLAT — B31, 2026-11-06.** It is a nailer, which
+     its own note below has always said, and B30's rule is that a full-height
+     vertical is turned 90 degrees in plan and reaches only 1.5in into the
+     panel. Tommy confirmed it against his own SketchUp sketch of a ring-girted
+     wall, where both centre verticals are drawn flat.
+
+     Two things follow, and the second is what made it urgent:
+
+     1. **A floor or roof seam landing here gets a 3.5in face to bear on**
+        rather than a 1.5in one. That is the whole reason this stud exists —
+        *"walls 48in with a centre nailer, so load bears straight down"* — and
+        a wider face is a better landing, not a worse one.
+     2. **It reaches 1.5in into the panel instead of 3.5in**, which is exactly
+        the depth a RING GIRT's outer rail occupies. The ring is cut either
+        side of it and tied back together by a 42in piece at 1.5-3in; that tie
+        only clears if the nailer stops at 1.5in. On edge, it would not, and
+        the tie would have to be notched into a bearing stud. */
   for (let bay = 1; bay < bays; bay++) {
-    const centreXIn = (widthIn * bay) / bays - PLATE_2X4_THICKNESS_IN / 2;
+    const centreXIn = (widthIn * bay) / bays - PLATE_2X4_WIDTH_IN / 2;
     for (const [face, yIn] of [
       ["exterior", 0],
-      ["interior", depthIn - PLATE_2X4_WIDTH_IN],
+      ["interior", depthIn - PLATE_2X4_THICKNESS_IN],
     ] as [string, number][]) {
       members.push({
         memberId: `stud_centre_${bay}_${face}`,
@@ -618,7 +635,7 @@ export function buildCentreNailerStuds(widthIn: number, depthIn: number, heightI
         nominalSize: "2x4",
         actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: studSpanIn },
         orientation: "vertical",
-        position: { xIn: centreXIn, yIn, zIn: plateFaceIn, rotationDeg: 0 },
+        position: { xIn: centreXIn, yIn, zIn: plateFaceIn, rotationDeg: 90 },
         role: "stud",
         qty: 1,
         notes:
@@ -667,6 +684,14 @@ export function buildCornerStuds(widthIn: number, depthIn: number, heightIn: num
  * numeric position control, not a literal drag gesture in the 3D/2D view
  * yet — flagged as a simplification of "slide."
  */
+/** The x span the OPTIONAL nailer occupies, for anything that has to get out
+ * of its way. Same arithmetic `buildNailer` uses, named once — a ring girt's
+ * rail shares its depth band and has to be cut around it. */
+export function optionalNailerSpanIn(widthIn: number, offsetIn = 0): [number, number] {
+  const leftIn = widthIn / 2 - NAILER_WIDTH_IN / 2 + offsetIn;
+  return [leftIn, leftIn + NAILER_WIDTH_IN];
+}
+
 export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): PanelMember {
   const nailerLengthIn = heightIn - NAILER_LENGTH_DEFICIT_IN;
   return {
@@ -684,7 +709,16 @@ export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): Pa
        itself in the straw. Tommy, 2026-11-05: *"A full height vertical should
        be 90 degrees plan view rotated - and should only protrude into the
        panel it's 1.5in depth."* The note was right and the box was wrong. */
-    position: { xIn: widthIn / 2 - NAILER_WIDTH_IN / 2 + offsetIn, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 90 },
+    /* ⚠ **It sits on the PLATE, not on the skin — found 2026-11-06.** It
+       started at the skin's top face and ran straight through the bottom plate
+       2x4 above it, which `overlappingMemberPairs` reports as
+       `bottom_plate_2x4_ext x nailer`. The defect was in the POSITION, not the
+       length: his confirmed 120in reference BOM cuts this board at 115.5in,
+       and plate face to plate face on a 120in panel is exactly 115.5in. So the
+       BOM has always described a nailer standing between the plates; this
+       finally puts it there. Same reasoning `buildCentreNailerStuds` already
+       carries for the same two plates. */
+    position: { xIn: widthIn / 2 - NAILER_WIDTH_IN / 2 + offsetIn, yIn: 0, zIn: SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN, rotationDeg: 90 },
     role: "nailer",
     qty: 1,
     notes:
@@ -1601,28 +1635,19 @@ export function buildGirtRows(
    * drawn rather than one nobody chose — see that constant's own note.
    */
   style: GirtStyle = LEGACY_GIRT_STYLE,
+  /**
+   * ⚠ Extra x spans a RING's rails must be cut around, on top of the centre
+   * nailer studs it finds for itself — the OPTIONAL nailer, when the panel
+   * carries one. Ignored by every other style, because only a ring runs a
+   * member along the panel's face where a nailer stands.
+   */
+  extraFaceSpansIn: readonly [number, number][] = [],
 ): PanelMember[] {
   if (style === "ring") {
-    /* ⚠ **NOT BUILT YET, and deliberately not faked with the square bale
-       panel's own rectangle.** `buildBlockingGirtRows` builds exactly this
-       ring, but it was written for a panel that differs from a standard one
-       in three ways that each change the answer:
-
-       1. Its four members stand ON EDGE (3.5in tall in Z), where these bars
-          are rolled hotdog (1.5in tall). That moves the girt's own top face,
-          and a brace's low point RIDES that face — his 2026-10-13 rule — so
-          a ring would silently shift every diagonal in the panel by 1in.
-       2. A square bale panel has no CENTRE NAILER STUD. A standard 48in panel
-          does, and the ring's two long sides run the full width straight
-          through it, in Y as well as X. They have to be cut per bay the way
-          `centreNailerStudSpansIn` already cuts studs between the girts.
-       3. Its short sides are placed off a stud ASSEMBLY spec (single 2x4 vs
-          doubled 2x6 packs), which a standard panel does not carry.
-
-       So a ring is a different assembly, not a different label, and guessing
-       at it would put a brace 1in off its bearing face everywhere. Falls back
-       to the bar-and-web pair until it is built properly. */
-    style = "web";
+    const rows = centerZsIn ?? girtRowCentreZsIn(rowCount, studSpanIn);
+    return rows.flatMap((centerZIn, i) =>
+      buildRingGirtRow(i + 1, rows.length, centerZIn, widthIn, depthIn, extraFaceSpansIn),
+    );
   }
   const members: PanelMember[] = [];
   const leftStudInnerFaceXIn = PLATE_2X4_THICKNESS_IN;
@@ -1861,4 +1886,204 @@ export function plumbEndedSlopedBoardCornersIn(
     { xIn: highXIn, zIn: highTopZIn - verticalThicknessIn },
     { xIn: lowXIn, zIn: lowTopZIn - verticalThicknessIn },
   ];
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   RING GIRTS — B31, 2026-11-06.
+
+   > *"Might be a misunderstanding as to what a ring Girt is - instead of two
+   > 2x4s with a 2x6 between them (wall blocking girt), there is a rectangle of
+   > 2x4s that make a "ring" that holds the straw in place. The four 2x4s that
+   > make the ring are on edge (when looking at an installed wall). For a 4'
+   > panel, ring girts have 4 2x4s; two 45" pieces and two 12.5" pieces"*
+   > — Tommy, 2026-11-05, correcting a model of mine that had it as a curved
+   > member. It is a rectangle, not an arc.
+
+   His two numbers are the whole geometry, and they check out on a 48 x 15.5
+   panel without being told to:
+
+   - **45in** is the clear span between the two stud doubles' inner faces,
+     48 - 2 x 1.5.
+   - **12.5in** is the panel depth less the two long rails those short pieces
+     fit BETWEEN, 15.5 - 2 x 1.5.
+
+   So the ring's outer rectangle is 45 x 15.5 in plan, every piece 1.5in
+   through its own plane and 3.5in tall — *"on edge (when looking at an
+   installed wall)"*.
+
+   ⚠ **A ring has NO web and NO blocking.** It IS the infill: it is what holds
+   the straw. A bar-and-something row has a bearing ledge because something
+   rests on it; nothing rests on a ring.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Half a girt row's own height, which is what a brace's low point rides.
+ *
+ * ⚠ **A ring's top face is 1in higher than a bar's**, and that is the single
+ * number that would be wrong everywhere if this were duplicated. A bar is
+ * rolled hotdog — 1.5in tall, so its top face is 0.75in above the row centre.
+ * A ring member stands on edge — 3.5in tall, so its top face is 1.75in above
+ * the same centre. His 2026-10-13 rule is that *"the brace low point rides the
+ * girt bar TOP face"*, so every diagonal in a ring-girted panel sits 1in
+ * higher than the same diagonal in a bar-girted one, and the angle follows.
+ */
+export function girtHalfHeightIn(style: GirtStyle): number {
+  return style === "ring" ? PLATE_2X4_WIDTH_IN / 2 : PLATE_2X4_THICKNESS_IN / 2;
+}
+
+/** Every ring-girt member's id starts with this. Read by the fastener model,
+ * which counts his 3.5in #10s per RING rather than per board — see
+ * `RING_GIRT_SCREWS_PER_RING`. */
+export const RING_GIRT_ID_PREFIX = "ring_girt_";
+
+/**
+ * ⚠ **His count, and it is per RING, not per board.**
+ *
+ * > *"4 3.5" #10 screws hold each corner of the 4 pieces of the ring Girt.
+ * > Each of the 4 places where the girt touches flush against the frame each
+ * > get 3 of the same screws."*
+ *
+ * 4 corners x 4 + 4 frame contacts x 3 = 28. The four frame contacts are the
+ * four ENDS of the two long rails, landing on the two stud doubles.
+ */
+export const RING_GIRT_CORNER_SCREWS = 4;
+export const RING_GIRT_FRAME_SCREWS = 3;
+export const RING_GIRT_SCREWS_PER_RING = RING_GIRT_CORNER_SCREWS * 4 + RING_GIRT_FRAME_SCREWS * 4;
+
+/** Split `[fromIn, toIn]` by the spans something else already occupies,
+ * dropping any remainder too short to be a board. */
+function clearRunsIn(fromIn: number, toIn: number, occupied: readonly [number, number][]): [number, number][] {
+  const runs: [number, number][] = [];
+  let cursor = fromIn;
+  for (const [start, end] of [...occupied].sort((a, b) => a[0] - b[0])) {
+    if (start > cursor + 1e-9) runs.push([cursor, Math.min(start, toIn)]);
+    cursor = Math.max(cursor, end);
+    if (cursor >= toIn) break;
+  }
+  if (cursor < toIn - 1e-9) runs.push([cursor, toIn]);
+  return runs.filter(([a, b]) => b - a > 1e-9);
+}
+
+/**
+ * One ring girt: four 2x4s on edge making a rectangle, plus — where a centre
+ * nailer stands in the way — his workaround for it.
+ *
+ * > *"So here's the complicated clever workaround for these type of girts when
+ * > there is overlapping. The Gert is made with the part that would overlap
+ * > the vertical nailer cut out and a different 42" 2x4 is inside now. Two
+ * > pretty loose pieces and seals them together."* — Tommy, 2026-11-06, with a
+ * > SketchUp sketch of the two-2x6-nailer case.
+ *
+ * ⚠ **42in is not a magic number: it is the span between the INSIDE faces of
+ * the ring's own two short pieces** (3 to widthIn - 3 on a 48in panel). The
+ * tie butts against them at both ends, so the ring closes on itself again.
+ *
+ * ⚠ **It only clears because a centre nailer lies FLAT.** The tie sits at
+ * 1.5-3in of depth, directly behind the rail it repairs, so screws pass
+ * straight through and it seals the straw. A nailer on edge would occupy
+ * 0-3.5in and the tie would have to be notched into a bearing stud. That is
+ * why B31 laid the centre nailers flat first — see `buildCentreNailerStuds`.
+ *
+ * ⚠ **What is NOT specified, and is therefore not invented: how the tie is
+ * fastened.** His screw count covers the ring's own 4 corners and its 4
+ * landings on the frame. A tie adds lap joints nobody has given a number for,
+ * so they are carried at zero and called out rather than guessed at — see
+ * `RING_GIRT_SCREWS_PER_RING`.
+ */
+export function buildRingGirtRow(
+  row: number,
+  rowCount: number,
+  centerZIn: number,
+  widthIn: number,
+  depthIn: number,
+  /** Anything else standing in the rails' own depth band — see
+   * `optionalNailerSpanIn`. ⚠ His *"the part that would overlap the vertical
+   * nailer cut out"* means ANY vertical nailer, and a 24in panel has no centre
+   * stud but can still carry the optional one. Caught by sweeping the overlap
+   * audit across every width the panelizer produces, not by reading the spec. */
+  extraFaceSpansIn: readonly [number, number][] = [],
+): PanelMember[] {
+  const members: PanelMember[] = [];
+  const zIn = centerZIn - PLATE_2X4_WIDTH_IN / 2;
+  const innerLeftXIn = PLATE_2X4_THICKNESS_IN;
+  const innerRightXIn = widthIn - PLATE_2X4_THICKNESS_IN;
+  const railLengthIn = innerRightXIn - innerLeftXIn;
+  const shortLengthIn = depthIn - 2 * PLATE_2X4_THICKNESS_IN;
+  if (railLengthIn <= 0 || shortLengthIn <= 0) return members;
+
+  /* Whatever stands in a rail's own depth band and crosses its run. Today that
+     is the centre nailers and nothing else: corner posts are outside
+     innerLeft/innerRight in x, and every other member of a standard panel sits
+     deeper into the straw than 1.5in. */
+  const nailerSpansIn = [...centreNailerStudSpansIn(widthIn), ...extraFaceSpansIn];
+
+  const faces = [
+    { face: "ext", railYIn: 0, tieYIn: PLATE_2X4_THICKNESS_IN },
+    { face: "int", railYIn: depthIn - PLATE_2X4_THICKNESS_IN, tieYIn: depthIn - 2 * PLATE_2X4_THICKNESS_IN },
+  ] as const;
+
+  for (const { face, railYIn, tieYIn } of faces) {
+    const faceLabel = face === "ext" ? "exterior" : "interior";
+    const runs = clearRunsIn(innerLeftXIn, innerRightXIn, nailerSpansIn);
+    const cut = runs.length > 1;
+    runs.forEach(([fromXIn, toXIn], i) => {
+      members.push({
+        memberId: `${RING_GIRT_ID_PREFIX}${row}_${face}_rail${cut ? `_${i + 1}` : ""}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: toXIn - fromXIn },
+        /* "horizontal" at 0deg is the one case `memberBoxSizeIn` documents as
+           "on edge, spanning X", and it has had no user until now. */
+        orientation: "horizontal",
+        position: { xIn: fromXIn, yIn: railYIn, zIn, rotationDeg: 0 },
+        role: "girt",
+        qty: 1,
+        notes: cut
+          ? `ring girt ${row} of ${rowCount}, ${faceLabel} rail piece ${i + 1} of ${runs.length} — cut around the centre nailer; the tie behind it closes the ring`
+          : `ring girt ${row} of ${rowCount}, ${faceLabel} rail — on edge, stud face to stud face`,
+      });
+    });
+    if (!cut) continue;
+    const tieFromXIn = innerLeftXIn + PLATE_2X4_THICKNESS_IN;
+    const tieToXIn = innerRightXIn - PLATE_2X4_THICKNESS_IN;
+    if (tieToXIn - tieFromXIn <= 0) continue;
+    members.push({
+      memberId: `${RING_GIRT_ID_PREFIX}${row}_${face}_tie`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: tieToXIn - tieFromXIn },
+      orientation: "horizontal",
+      position: { xIn: tieFromXIn, yIn: tieYIn, zIn, rotationDeg: 0 },
+      role: "girt",
+      qty: 1,
+      notes: `ring girt ${row} of ${rowCount}, ${faceLabel} tie — a separate piece lapped behind the cut rail, butting the ring's two short pieces, tying the loose rail pieces together and sealing the straw`,
+    });
+  }
+
+  for (const [side, xIn] of [
+    ["left", innerLeftXIn],
+    ["right", innerRightXIn - PLATE_2X4_THICKNESS_IN],
+  ] as const) {
+    members.push({
+      memberId: `${RING_GIRT_ID_PREFIX}${row}_${side}_end`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: shortLengthIn },
+      /* "horizontal" at 90deg: on edge, spanning Y — the same case the square
+         bale panel's own blocking girts already use. */
+      orientation: "horizontal",
+      position: { xIn, yIn: PLATE_2X4_THICKNESS_IN, zIn, rotationDeg: 90 },
+      role: "girt",
+      qty: 1,
+      notes: `ring girt ${row} of ${rowCount}, ${side} end — on edge, fitted between the two rails against the ${side} stud double`,
+    });
+  }
+
+  return members;
 }

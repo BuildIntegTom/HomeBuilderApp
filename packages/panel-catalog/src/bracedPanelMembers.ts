@@ -9,6 +9,7 @@ import {
   LEGACY_GIRT_STYLE,
   buildGirtRows,
   type GirtStyle,
+  girtHalfHeightIn,
   buildNailer,
   buildPlates,
   buildSkins,
@@ -220,6 +221,10 @@ export function buildDiagonalBraces(
   pattern: BracePattern,
   mirrored: boolean,
   legacyPanelEdgeAnchor = false,
+  /** ⚠ The girt style decides how far above the row centre a brace's low
+   * point rides — a ring is 1in higher than a bar. Defaults to the legacy
+   * style so an un-taught caller draws the panel it has always drawn. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
@@ -236,8 +241,15 @@ export function buildDiagonalBraces(
      `middleRowCenterZIn` is already exactly mid-height for every rowCount, so
      the fallback is just to stop adding the half-bar. */
   const hasMiddleBar = Number.isInteger(middleRow);
-  const middleRowBarTopZIn = middleRowCenterZIn + (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
-  const middleRowBarBottomZIn = middleRowCenterZIn - (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
+  /* ⚠ **Half the GIRT's height, not half a 2x4's thickness — B31.** A bar is
+     rolled hotdog and is 1.5in tall; a ring member stands on edge and is
+     3.5in. His rule is that the brace low point rides the girt's TOP face, so
+     a ring-girted panel's diagonals sit 1in higher and their angle follows.
+     One shared helper, because this number appearing twice with two answers is
+     how a brace comes to miss its own bearing face. */
+  const girtHalfIn = girtHalfHeightIn(girtStyle);
+  const middleRowBarTopZIn = middleRowCenterZIn + (hasMiddleBar ? girtHalfIn : 0);
+  const middleRowBarBottomZIn = middleRowCenterZIn - (hasMiddleBar ? girtHalfIn : 0);
   const topPlate2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   // Top face of the bottom plate (mirrors topPlate2x4ZIn's "underside of
   // the top plate") — the bottom plate assembly spans
@@ -353,7 +365,7 @@ export function buildDiagonalBraces(
  * `BRACE_STUD_SIDES.chevron`), so a single stud-side flip covers both
  * reference braces here.
  */
-function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number, mirrored: boolean, legacyPanelEdgeAnchor = false): PanelMember {
+function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number, mirrored: boolean, legacyPanelEdgeAnchor = false, girtStyle: GirtStyle = LEGACY_GIRT_STYLE): PanelMember {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
   /* ⚠ NO BAR AT THE CENTRE? ANCHOR ON MID-HEIGHT. Tommy, 2026-10-13: *"If
@@ -365,8 +377,15 @@ function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount:
      `middleRowCenterZIn` is already exactly mid-height for every rowCount, so
      the fallback is just to stop adding the half-bar. */
   const hasMiddleBar = Number.isInteger(middleRow);
-  const middleRowBarTopZIn = middleRowCenterZIn + (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
-  const middleRowBarBottomZIn = middleRowCenterZIn - (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
+  /* ⚠ **Half the GIRT's height, not half a 2x4's thickness — B31.** A bar is
+     rolled hotdog and is 1.5in tall; a ring member stands on edge and is
+     3.5in. His rule is that the brace low point rides the girt's TOP face, so
+     a ring-girted panel's diagonals sit 1in higher and their angle follows.
+     One shared helper, because this number appearing twice with two answers is
+     how a brace comes to miss its own bearing face. */
+  const girtHalfIn = girtHalfHeightIn(girtStyle);
+  const middleRowBarTopZIn = middleRowCenterZIn + (hasMiddleBar ? girtHalfIn : 0);
+  const middleRowBarBottomZIn = middleRowCenterZIn - (hasMiddleBar ? girtHalfIn : 0);
   const topPlate2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const bottomPlate2x4ZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const studSide = mirrored ? "right" : "left";
@@ -431,10 +450,10 @@ export function buildBracedPanelMembers(
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
     ...buildGirtRows(rowCount, widthIn, depthIn, studSpanIn, undefined, girtStyle),
-    ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, pattern, mirrored, legacyPanelEdgeAnchor),
+    ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, pattern, mirrored, legacyPanelEdgeAnchor, girtStyle),
   ];
   if (pattern === "chevron") {
-    members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn, mirrored, legacyPanelEdgeAnchor));
+    members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn, mirrored, legacyPanelEdgeAnchor, girtStyle));
   }
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
   return members;

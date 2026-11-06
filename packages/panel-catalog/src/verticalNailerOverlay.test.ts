@@ -3,7 +3,7 @@ import type { PanelMember } from "./componentSchema";
 import { overlappingMemberPairs } from "./memberPrism";
 import { BRACE_PAIR_PATTERNS, bracePairAddedMembers, verticalNailerSpecs } from "./bracePairPatterns";
 import { buildPanelFromRecipe, hasAddedNailer, recipeConflicts, recipeFingerprint } from "./panelRecipe";
-import { MAX_STUD_SPACING_IN, PLATE_2X4_THICKNESS_IN, centreNailerStudSpansIn } from "./panelMemberHelpers";
+import { MAX_STUD_SPACING_IN, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, centreNailerStudSpansIn, memberBoxSizeIn } from "./panelMemberHelpers";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 import { nailerOverlaySpacingIn } from "./data";
 import { derivePanelShear } from "@building-integrity/calc-engine";
@@ -58,7 +58,11 @@ const tightRecipe = (widthIn = W, includeNailer = false) => ({
 function verticalSpansIn(members: PanelMember[], wytheYIn: number): [number, number][] {
   return members
     .filter((m) => m.orientation === "vertical" && Math.abs(m.position.yIn - wytheYIn) < 1e-9)
-    .map((m) => [m.position.xIn, m.position.xIn + m.actualDimsIn.thicknessIn] as [number, number])
+    /* ⚠ The member's real X extent, not its nominal thickness. B30/B31 lay
+       verticals FLAT, so a nailer is 3.5in across the wall where a corner post
+       on edge is 1.5in — and measuring both as 1.5 reports face-to-face gaps
+       that are 2in wider than the wall actually has. */
+    .map((m) => [m.position.xIn, m.position.xIn + memberBoxSizeIn(m).xIn] as [number, number])
     .sort((a, b) => a[0] - b[0]);
 }
 
@@ -181,7 +185,9 @@ describe("B21 — the subdivision rule itself, at a spacing that bites", () => {
       ];
       for (const spec of verticalNailerSpecs(widthIn, H, "exterior", TIGHT_IN)) {
         const from = spec.fromXIn;
-        const to = from + PLATE_2X4_THICKNESS_IN;
+        /* 3.5in across, not 1.5in: B30/B31 lay a nailer FLAT, so its wide
+           face is the one that runs along the wall. */
+        const to = from + PLATE_2X4_WIDTH_IN;
         for (const [a, b] of occupied) {
           expect({ widthIn, id: spec.id, clear: to <= a + 1e-9 || from >= b - 1e-9 }).toEqual({
             widthIn,

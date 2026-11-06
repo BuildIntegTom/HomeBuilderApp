@@ -208,8 +208,9 @@ function snapInwardIn(valueIn: number, direction: "up" | "down"): number {
  * ⚠ **Its LENGTH is trimmed as well as its position, and that is the part the
  * first version got wrong.** A horizontal tie asked for at mid-height ran post
  * face to post face across the whole panel — straight through the intermediate
- * stud standing in the same wythe. Real blocking is cut per bay, which is what
- * `centreNailerStudSpansIn` already does for the studs the girts interrupt. So
+ * stud standing in the same wythe. Real blocking is cut per bay, and the same
+ * rule now cuts a RING GIRT's rails around those studs (see
+ * `buildRingGirtRow`), reading the spans from `centreNailerStudSpansIn`. So
  * the tie fills one bay: the widest clear run at the height it landed on.
  *
  * ⚠ **A spec's `from`/`to` are the member's MIN FACE, not its centreline** —

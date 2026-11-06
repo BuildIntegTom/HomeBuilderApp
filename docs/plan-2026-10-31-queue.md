@@ -2853,3 +2853,113 @@ The **ghost-the-rest toggle** and **per-panel girt editing**, both from stride
 2's original list. The hit test now exists, so the 3D right-click menu for
 PANELS could read `userData` the same way instead of the per-slot `<group>`
 handlers — worth doing only if those ever disagree.
+
+---
+
+# B31 — ring girts, and the nailer that had to lie down first (2026-11-06)
+
+> *"instead of two 2x4s with a 2x6 between them (wall blocking girt), there is
+> a rectangle of 2x4s that make a "ring" that holds the straw in place. The
+> four 2x4s that make the ring are on edge (when looking at an installed wall).
+> For a 4' panel, ring girts have 4 2x4s; two 45" pieces and two 12.5" pieces"*
+
+## His two numbers are the whole geometry
+
+They check out on a 48 × 15½ panel without being told to:
+
+- **45″** is the clear span between the stud doubles' inner faces, 48 − 2 × 1½.
+- **12½″** is the depth less the two rails the short pieces fit BETWEEN,
+  15½ − 2 × 1½.
+
+So the ring's outer rectangle is 45 × 15½ in plan, every piece 1½″ through its
+own plane and 3½″ tall. **A ring has no web and no blocking** — it IS the
+infill. A bar row has a bearing ledge because something rests on it; nothing
+rests on a ring.
+
+## The overlap, and his workaround for it
+
+> *"The Gert is made with the part that would overlap the vertical nailer cut
+> out and a different 42" 2x4 is inside now. Two pretty loose pieces and seals
+> them together."*
+
+⚠ **42″ is not a magic number either: it is the span between the INSIDE faces
+of the ring's own two short pieces** — 3 to 45 on a 48″ panel. The tie butts
+against them at both ends, so the ring closes on itself again. That it comes
+out at exactly his number is the check worth having.
+
+⚠ **It only clears because a centre nailer lies FLAT, and that is why B31 had
+to move one first.** The tie sits at 1½–3″ of depth, directly behind the rail
+it repairs, so screws pass through and it seals. A nailer on edge occupies
+0–3½″ and the tie would have to be notched into a bearing stud — which he
+rejected, and which this app does not do anywhere.
+
+His SketchUp sketch settled it: both centre verticals are drawn flat, as 2x6s.
+`buildCentreNailerStuds` was the one place B30 did not reach. It now lies flat
+like every other vertical, which also gives a floor or roof seam a **3½″
+bearing face instead of 1½″** — the whole reason that stud exists.
+
+⚠ **The optional nailer needed the same treatment**, and only a swept audit
+found it: a 24″ panel has no centre stud but can still carry the optional
+nailer, and the rail ran straight through it. *"The vertical nailer"* means any
+vertical nailer, so the span is handed to the girt builder.
+
+## Found by sweeping the audit, not by reading the spec
+
+⚠ **The optional nailer ran through the bottom plate**, at every girt style,
+since long before B31 — `bottom_plate_2x4_ext x nailer`. **The position was
+wrong, not the length**: his confirmed reference BOM cuts that board at 115½″
+on a 120″ panel, which is exactly plate face to plate face. Fixed; the pinned
+overlap baseline for `standard + nailer` goes **2 → 1**.
+
+⚠ **What remains is a BUILDING question and is left standing.** On any panel
+wide enough for a centre nailer stud, the OPTIONAL nailer is centred on the
+same line — the same board asked for twice, not two boards fighting over a
+volume. Nudging either would invent a position nobody chose.
+
+## ⚠ OPEN: ring girts and diagonal braces collide
+
+A braced panel with ring girts reports real overlaps, and the reason matters.
+His 2026-10-13 rule is that a brace's low point RIDES the girt's top face —
+braces run girt to plate, they do not pass through one. That works when there
+IS a girt at the row a brace anchors on. A brace running from the middle row to
+a plate still crosses the rows in between, and where a BAR bites only 3½″ at
+each end of the panel, a RING runs a rail along the whole width of the same
+face.
+
+Three ways out, all his call, none taken here:
+
+1. anchor braces on the NEAREST ring rather than at mid-height;
+2. keep rings off the braced patterns' wythe;
+3. notch — which this app does not do anywhere else.
+
+Until then rings are clean on standard panels at **every width the panelizer
+produces**, and a braced panel asking for them says so through the audit rather
+than drawing a joint nobody can build. The style's own note in Settings says it
+too.
+
+## The screws are counted per RING, not per board
+
+> *"4 3.5" #10 screws hold each corner of the 4 pieces of the ring Girt. Each
+> of the 4 places where the girt touches flush against the frame each get 3 of
+> the same screws."*
+
+4 × 4 + 4 × 3 = **28 a ring**, which is a count of JOINTS — so the per-member
+rules the fastener model uses for everything else cannot express it. A 48″
+panel's ring is 8 boards, a 24″ panel's is 4, and both are one ring. Ring
+members are therefore out of the plywood-nail seam (a ring has no plywood) and
+out of the 3″ girt-bar rule.
+
+⚠ **What his spec does not cover is how the 42″ tie laps the cut rail.** Those
+joints are carried at ZERO rather than estimated, so a panel whose rings are
+cut is under-counted by however many screws that lap turns out to take.
+
+⚠ The 3½″ #10's weight is derived the same way every other fastener in that
+file is: a #10's ANSI major diameter (~0.190″) reduced by the same 0.791 ratio
+the #9 already uses, to ~0.15″ effective. An estimate, flagged as one.
+
+## Where the brace moved to
+
+`girtHalfHeightIn(style)` is the one place that answers *"how far above the row
+centre is the girt's top face"* — 0.75″ for a bar, 1.75″ for a ring. Threaded
+into both brace builders, so a diagonal in a ring-girted panel sits an inch
+higher and its angle follows, exactly as he said it should.

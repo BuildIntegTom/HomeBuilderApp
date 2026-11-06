@@ -11446,29 +11446,39 @@ export default function LayoutEditor() {
         >
           Web Girts
         </button>
-        {/* ⚠ **Offered, and plainly refused, rather than quietly falling back.**
-            A button that selected Ring and then built a web would be a setting
-            that lies — the same reason the panel editor greys out a type it
-            cannot edit and says why in the tooltip. */}
+        {/* ⚠ **Built 2026-11-06 (B31).** This button was disabled with a
+            tooltip listing three reasons a ring was a different assembly
+            rather than a different label. All three were answered: the members
+            DO stand on edge, which is why `girtHalfHeightIn` now moves a
+            brace's low point up an inch; the long sides ARE cut around the
+            centre nailer, with his 42in tie lapped behind them; and the short
+            sides are placed off the panel's own stud faces, not off a
+            square-bale stud-assembly spec. */}
         <button
           type="button"
-          disabled
           title={
-            "Not built yet. A square bale panel's rectangular girt is a different assembly, not a different label: its four " +
-            "members stand on edge (which moves the girt's top face, and a brace's low point rides that face), its two long " +
-            "sides run straight through a standard panel's centre nailer stud, and its short sides are placed off a " +
-            "stud-assembly spec a standard panel does not carry."
+            "A rectangle of four 2x4s on edge that holds the straw itself — no web and no blocking. On a 4ft panel that is " +
+            "two 45in rails and two 12.5in ends, with the rails cut around any vertical nailer and a 42in piece lapped " +
+            "behind to close the ring. Its top face sits 1in above a bar's, so braces in a ring-girted panel ride an inch " +
+            "higher."
           }
-          className={styles.tool}
+          aria-pressed={girtStyle === "ring"}
+          className={girtStyle === "ring" ? styles.toolActive : styles.tool}
+          onClick={() => setGirtStyle("ring")}
         >
-          Ring Girts (not built)
+          Ring Girts
         </button>
       </div>
       <p className={styles.note}>
         {girtStyle === "blocking"
           ? "Every girt row is two 2x4 bars with a 2x6 laid flat across them, centred in the panel depth. No plywood web is " +
             "ordered or cut."
-          : "Every girt row is two 2x4 bars with a plywood web resting on them."}{" "}
+          : girtStyle === "ring"
+            ? "Every girt row is a rectangle of four 2x4s on edge — two rails across the panel and two ends between them — " +
+              "holding the straw itself. No bars, no web, no blocking. 28 3.5in #10 screws a ring. ⚠ A ring runs a rail " +
+              "along the panel's face, where a diagonal brace also lives, so braced panels report overlapping members with " +
+              "this style until that is settled."
+            : "Every girt row is two 2x4 bars with a plywood web resting on them."}{" "}
         ⚠ You described Web Girts as <strong>3/4in</strong> plywood; the confirmed Panel Set 1 BOM says{" "}
         <strong>{formatPlySpecLabel(GIRT_WEB_PLY_SPEC)}</strong>, so the app still builds, counts and prices the BOM&apos;s
         1/2in sheet. Tell me which is right and I&apos;ll change the one number.

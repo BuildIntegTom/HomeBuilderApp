@@ -109,7 +109,15 @@ describe("girt styles", () => {
     const nailed = (style: Parameters<typeof buildStandardPanelMembers>[4]) =>
       overlappingMemberPairs(buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, true, style));
     expect(nailed("blocking")).toEqual(nailed("web"));
-    expect(nailed("web")).toEqual(["bottom_plate_2x4_ext x nailer", "stud_centre_1_exterior x nailer"]);
+    /* ⚠ **Was two, is one — B31, 2026-11-06, and going down still gets
+       recorded.** `bottom_plate_2x4_ext x nailer` is fixed: the optional
+       nailer used to start at the skin's top face and run through the plate
+       above it, where his own reference BOM has always cut it at plate face to
+       plate face (115.5in on a 120in panel). What is left is the real
+       question, and it is a building one: on any panel wide enough to carry a
+       centre nailer stud, the OPTIONAL nailer lands in exactly the same place
+       — the same board asked for twice, not two boards fighting. */
+    expect(nailed("web")).toEqual(["stud_centre_1_exterior x nailer"]);
   });
 
   it("the plywood leaves the totals and the lumber takes its place", () => {
@@ -123,14 +131,19 @@ describe("girt styles", () => {
     expect(computePlywoodAreaSqFt(blocking, 0.75)).toBeCloseTo(computePlywoodAreaSqFt(web, 0.75), 9);
   });
 
-  it("⚠ Ring is not built yet, and falls back rather than guessing", () => {
-    /* A square bale panel's rectangle is NOT this panel's rectangle: its four
-       members stand on edge (which moves the girt's top face, and a brace
-       rides that face), its long sides run straight through a standard panel's
-       centre nailer stud, and its short sides are placed off a stud-assembly
-       spec a standard panel does not carry. Three real differences, so it is a
-       different assembly rather than a different label. Pinned here so the day
-       it IS built, this test fails and says why. */
-    expect(panel("ring")).toEqual(panel("web"));
+  it("⚠ Ring IS built now, and is nothing like the other two", () => {
+    /* This test used to pin the fallback — `panel("ring")` equalling
+       `panel("web")` — with a note saying it would fail the day a ring was
+       built properly. B31 built it, so here is the day. See `ringGirts.test.ts`
+       for the geometry; what belongs HERE is that the three styles are three
+       different panels and that only a ring dispenses with the infill. */
+    expect(panel("ring")).not.toEqual(panel("web"));
+    expect(panel("ring").filter((m) => m.role === "girt_web")).toEqual([]);
+    expect(panel("web").filter((m) => m.role === "girt_web").length).toBeGreaterThan(0);
+    expect(panel("blocking").filter((m) => m.memberId.includes("blocking")).length).toBeGreaterThan(0);
+    /* ⚠ A ring orders no sheet goods for its girts either — the same claim the
+       Blocking test above makes, and the reason the style reaches the member
+       list rather than only the drawing. */
+    expect(computePlywoodAreaSqFt(panel("ring"), 0.5)).toBe(0);
   });
 });

@@ -168,7 +168,18 @@ const CASES: { name: string; members: PanelMember[] }[] = [
  *      the W-truss braces into the chords they land on.
  */
 const BASELINE: Record<string, number> = {
-  "standard + nailer": 2,
+  /* ⚠ **2 → 1 on 2026-11-06 (B31), and a drop is recorded as carefully as a
+     rise.** `bottom_plate_2x4_ext x nailer` is gone: the optional nailer used
+     to start at the skin's top face and run through the plate 2x4 above it,
+     and his own reference BOM has always cut that board at 115.5in on a 120in
+     panel — which is exactly plate face to plate face. The position was wrong,
+     not the length.
+
+     The one that remains is a BUILDING question rather than an arithmetic
+     one: on any panel wide enough for a centre nailer stud, the optional
+     nailer is centred on the same line, so the two are the same board asked
+     for twice. Nudging either would invent a position nobody chose. */
+  "standard + nailer": 1,
   column: 4,
   "column style": 4,
   corner: 4,
