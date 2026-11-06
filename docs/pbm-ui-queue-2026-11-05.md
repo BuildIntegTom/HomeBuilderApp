@@ -23,11 +23,28 @@ can be read side by side.
 | **U5** | Site around the building, as a toggle | yes | **ready** |
 | **U6** | Props for scale | yes | **ready** |
 | **U7** | Share a design by link | yes | **ready, but it is a sharing decision** |
-| **U8** | A named path through the app | *"let's interview about this one"* | **needs the interview** |
+| **U8** | A named path through the app | **Edit → View → Price → Print**, static arrows | **answered, ready** |
 | **U9** | Template thumbnails ARE renders | *"absolutely totally awesome"* | **ready, rides on U1** |
 
 Nothing here is blocked by anything in the B-queue, and nothing in the B-queue
 is blocked by anything here.
+
+**The order I would build them in**, which is not the numbering:
+
+1. **U4** (hide tab, Reset View) — an afternoon, and it makes every demo of the
+   rest better.
+2. **U8** (`Edit → View → Price → Print` + static arrows) — small, and it
+   renames two buttons, so it should happen before U3 writes any tutorial card
+   that names a button.
+3. **U1 + U9** (templates with rendered thumbnails) — the biggest single change
+   to what a stranger sees, and it needs no new engine.
+4. **U6, U5** (props, then the site toggle) — cheap realism, in that order
+   because a 6 ft figure tells a client more than grass does.
+5. **U2** (dimension handles) — the resize SEAM first, the handle second; see
+   its entry.
+6. **U3** (tutorials) — once the names and the tools have stopped moving.
+7. **U7** (share links) — last, because it is a sharing decision and not a UI
+   one.
 
 ---
 
@@ -47,17 +64,48 @@ reads *Sign in to open a saved design* when signed out — see
 | **Tiny House** | 16 × 24 ft, **shed roof, tall wall to the NORTH** | shed roof + tall-wall derivation, both built |
 | **The Tank** | 24 × 48 ft, gable roof | gable + ridge column, built |
 | **Octagon** | 16 ft **or** 32 ft across — one tile, two sub-options | octagon footprint, built |
-| **The Cindy** | his Panel-Ready Plan — 1650 sqft, 3 bed / 2 bath ranch, sloped roof | ⚠ see below |
+| **The Cindy** | his Panel-Ready Plan — 1650 sqft, 3 bed / 2 bath ranch, sloped roof | **plan received 2026-11-05**, see below |
 | **Square courtyard** | courtyard building, square | courtyard, built |
 | **Octagon courtyard** | courtyard building, octagonal | concentric rings, built |
 
-⚠ **The one input still needed: the Cindy's dimensioned footprint.** I read
-`buildinteg.com/the-cindy` (the `/cindy` URL itself 404s — worth a redirect on
-that site, people will type it). The page gives the character — ranch, sloped
-roof, bay windows, covered front porch, 1650 sqft — but **no wall lengths**, and
-*wall lengths are exact* is a standing rule here. A template drawn to
-approximate dimensions would be the first thing in this app to guess. So: a
-dimensioned plan, or the Cindy tile ships last.
+### The Cindy's dimensions, read off the plan he sent 2026-11-05
+
+He sent the **MAIN FLOOR TOE UP PLAN** at 1/8" = 1'-0", with the panel
+schedule above it (**TOTAL PANELS: 74** — N, S, E and W runs, most at 39").
+What I can read off it with confidence, and what I cannot:
+
+**Read, and it closes on itself:**
+
+| run | dimension | the chain that proves it |
+| --- | --- | --- |
+| overall width | **55'-3"** | 32'-6" + 3'-3" + 19'-6" = 55'-3" along the top |
+| | | 33'-8" + 21'-7" = 55'-3" along the bottom |
+| overall depth | **34'-10"** (= **418"**, which the plan also states) | 14'-2" + 3'-3" + 14'-2" + 3'-3" = 34'-10" down the right |
+| bottom right leg | 21'-7" | 2'-1" + 3'-3" + 16'-3" = 21'-7" |
+| right inner face | 31'-7" | inside the 34'-10" overall |
+
+Both perimeter chains sum exactly, which is the check worth having: the plan is
+internally consistent, so these are measurements rather than my reading of a
+drawing.
+
+⚠ **It is NOT a rectangle, and the shape is the part I will not guess at.**
+There is a notch in the right-hand wall — the 3'-3" gaps between the two
+14'-2" runs — and a step near the bottom where the 2'-1" and 3'-3"
+dimensions sit, with a `3 1/2" / 7" / 3 1/2"` wall-thickness callout at the top
+of the notch. From one screenshot at this scale I can see THAT the outline
+steps; I cannot tell which of those segments are straw-panel walls, which are
+the toe-up only, and which way the 7" callout runs. Drawing it wrong would put
+a wall length in the app that nobody measured, which is the one thing this app
+refuses to do.
+
+**So, to finish the Cindy tile I need one of:** the plan as a PDF or DWG/DXF
+rather than a screenshot, OR the wall RUN list the way the app thinks of it
+(each wall, its length, and which way it turns) — and the panel schedule you
+already have at the top of that sheet would then check my work, panel for
+panel, against its 74.
+
+⚠ Also worth a fix on the website while you think of it: `buildinteg.com/cindy`
+404s. The page lives at `/the-cindy`. People will type the short one.
 
 ⚠ **Each tile is a real drawn design, not a parameter preset.** It arrives with
 its footprint, roof and panels already on it, so the first thing a new user sees
@@ -123,6 +171,10 @@ quietly drop a panel.
 
 ## U3 — A per-tool first-use tutorial
 
+⚠ **The step names change under U8**, so write the cards after U8 lands or the
+first thing a new user is taught is a button name that no longer exists.
+
+
 > *"I think this is a great idea, especially if it's remembered in their cache
 > or something and that's easy. How would the remembering part work?"*
 
@@ -186,7 +238,7 @@ it is forwarded to.
 
 ---
 
-## U8 — A named path through the app — **needs the interview**
+## U8 — A named path through the app — **answered 2026-11-05**
 
 > *"I've been trying to kind of get at that with how the buttons are ordered and
 > all always visible. Maybe... We can meld these ideas into basically how it is
@@ -200,9 +252,24 @@ open, `ui_overhaul_architecture`), and arrows between the buttons say which way
 the work usually runs. A starter template (U1) would land you further along that
 path than a blank canvas does, which is why he raises the two together.
 
-The questions worth his time are in the interview, below the fold of this
-document — put briefly: **what the steps are called**, **whether the arrows ever
-light up or just sit there**, and **where a template drops you**.
+**His three answers:**
+
+1. **The steps are `Edit → View → Price → Print`.** Note what he changed: not
+   today's names (Design) and not my verbs (Draw it). **Edit** is the honest
+   word for a door you come back to — you do not draw a building once and leave
+   drawing behind, you edit it all the way to the shop. And **Price** replaces
+   **Summary**, which named the page rather than the reason you open it.
+   ⚠ This renames two live buttons: Design → Edit, Summary → Price.
+2. **The arrows just sit there.** Static chevrons. No step is ever marked
+   "done", nothing glows, nothing is clickable — so there is no state for the
+   app to be wrong about, and no newcomer is told they have finished something
+   they have not. The bar stays flat and always-available
+   (`ui_overhaul_architecture`): every door open, with the usual direction
+   drawn between them.
+3. **A starter template lands you in View — the 3D framed model.** The template
+   animates in and you are looking at a finished building. This is what ties
+   U1 and U8 together: the template puts you two steps along the path rather
+   than at a blank canvas, and the path is there to tell you where you are.
 
 ---
 
