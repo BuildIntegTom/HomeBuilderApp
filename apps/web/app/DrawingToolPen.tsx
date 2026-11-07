@@ -39,7 +39,30 @@ const TOOLS: { id: ShapeTool; label: string; short: string; disabledKey?: "bumpO
      picked over a delete-wall tool on the grounds that the result is a valid
      closed ring by construction rather than by checking afterwards. */
   { id: "draw-wall", label: "Draw Wall", short: "╱", disabledKey: "drawWallDisabled" },
-  { id: "edit", label: "Edit", short: "✎" },
+  /**
+   * ⚠ **`Select`, not `Edit` — renamed 2026-11-07, and the reason is U2.**
+   *
+   * The top bar's first step became **Edit** (`Edit → View → Price → Print`),
+   * which left two controls on one screen reading the same word and meaning
+   * different things. Told so, Tommy: *"We could rename the sidebar tool
+   * something appropriate."*
+   *
+   * **`Select` is the appropriate word because it is what the tool does.**
+   * Alone among this row it has NO DRAG GESTURE — `FootprintCanvas`'s own
+   * pointer-down handler returns early for it — and every interaction it
+   * supports is a click that picks something out: a panel (which opens its
+   * note and its right-click menu), a corner marker, a wall's length label.
+   * The changing happens in what you opened; this tool chooses the subject.
+   * It is also where the app parks you after any shape is drawn, which is a
+   * pointer tool's job and not an editor's.
+   *
+   * ⚠ **The ID STAYS `"edit"`, and here that is not merely convenient.**
+   * `shapeTool` is a persisted `ProjectState` field (`projectFile.ts`'s
+   * `REQUIRED_STATE_KEYS`), so renaming the value would make every saved
+   * project on disk fail to parse. Same word-vs-key split U2 used for
+   * `design` / `Edit`, with a file format behind it instead of a harness.
+   */
+  { id: "edit", label: "Select", short: "↖" },
 ];
 
 /** The 5 shape-drawing tools, as a plain floating button row (Tommy: "lets

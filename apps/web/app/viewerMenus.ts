@@ -125,11 +125,12 @@ export const VIEWER_MENU_LABEL: Record<ViewerMenuId, string> = {
    * `viewerMenuGroups`, `viewerMenuEmptyReason`, every `data-view-menu`
    * attribute and the width harness that reads them, for no gain to anybody.
    *
-   * ⚠ **It now collides with the left bar's own `✎ Edit` tool**, which is the
-   * wall-drawing edit mode. Two controls on one screen reading `Edit` and
-   * meaning different things. Flagged to him rather than silently resolved —
-   * he picked this word knowing today's bar, and the fix (if he wants one) is
-   * to rename the SIDEBAR tool, not to overrule him here.
+   * ⚠ **It collided with the left bar's own `✎ Edit` tool**, and his answer,
+   * 2026-11-07, was *"We could rename the sidebar tool something
+   * appropriate"* — so that tool is **`↖ Select`** now. Which is the honest
+   * word for it: it is the one tool in that row with no drag gesture at all,
+   * and every interaction it has is a click that picks a subject out. See
+   * `DrawingToolPen`'s own note.
    */
   design: "Edit",
   view: "View",

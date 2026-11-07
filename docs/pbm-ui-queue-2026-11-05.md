@@ -34,7 +34,7 @@ thumbnails are one piece of work.
 | --- | --- | --- | --- |
 | **U1** | HIDE tab + Reset View | yes | **BUILT 2026-11-06** — see the record at the end |
 | **U2** | Named path, static arrows | **Edit → View → Price → Print** | **BUILT 2026-11-06 — and it made the bar 49px narrower** |
-| **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **specced and unblocked — Cindy ships as its overall rectangle, 2026-11-06** |
+| **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **STRIDE 1 BUILT 2026-11-07** — eight tiles, real buildings, real plan previews. The 3D render thumbnails are stride 2. |
 | **U4** | Props for scale | yes | **ready** |
 | **U5** | Site toggle | yes | **ready** |
 | **U6** | Dimension handles | *"genius move"* — 5 handles named | **specced, one risk to settle first** |
@@ -50,8 +50,9 @@ is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06
   everything below it better.
 - ~~**U2**~~ **DONE 2026-11-06.** It was small and renamed two live buttons, so it had to precede U7, or
   the first thing a new user is taught is a button name that no longer exists.
-- **U3** is the biggest single change to what a stranger sees, and it needs no
-  new engine.
+- ~~**U3**~~ **STRIDE 1 DONE 2026-11-07.** The biggest single change to what a
+  stranger sees, and it needed no new engine — his own dimensions produced
+  his own roofs.
 - **U4 before U5**, because a 6 ft figure tells a client more than grass does.
 - **U6** is front-loaded into a seam, not a UI — see its entry.
 - **U7** once the names and the tools have stopped moving.
@@ -523,3 +524,139 @@ Gates: 3763 tests / 204 files, typecheck clean in all four projects, lint
 **169 / 119 / 50 — every rule byte-identical**.
 
 ⚠ **U7 is now unblocked**: it was waiting on these two names stopping moving.
+
+---
+
+## U3 — BUILT 2026-11-07: eight tiles, and the roofs built themselves
+
+> *"6 prefabs include - Tiny House (16x24' shed roof with tall north wall), the
+> Tank (24x48 gable roof), octagon (16' or 32' diameters sub options), Cindy,
+> square courtyard octagon courtyard, or draw your own, log in OR (if logged
+> in) open from cloud."*
+
+### The one thing worth knowing before the rest
+
+**Nothing in `starterTemplates.ts` sets a roof.** `decideRoofForm` already
+picks shed or peak from how far one run of panels reaches at 4:12 — his own
+rule — so the Tiny House's 16 ft short walls get a **shed** and the Tank's
+24 ft short walls get a **peak**, from the dimensions he gave and nothing
+else. `simpleRoofPlanes` already defaults a shed's tall side north *"so the
+roof faces south"*, so the tall north wall falls out too.
+
+**Both of the roofs he named are consequences of both of the sizes he named.**
+A tile that forced a roof form could disagree with the rule the rest of the
+app builds roofs by, and then two of his own decisions would be fighting
+inside one building. So none of them does, and a test says why.
+
+⚠ **That is also why the Tiny House is stored `24 × 16` and not `16 × 24`.**
+The short walls have to be the 16 ft pair for the span to reach as a shed,
+*and* the building has to be wider than deep for `simpleRoofPlanes` to run its
+ridge axis east-west — which is the condition under which "tall side north"
+applies at all. Entered the other way round it is a shed falling WEST. Two
+tests pin both halves.
+
+### A template is a recipe, not a saved file
+
+Every tile carries a footprint and nothing else: no girt style, no brace
+pattern, no roof pitch, no panel width. The only non-geometry key anywhere is
+the Cindy's `thicknessIn: 15.5`, because only the Cindy has a thickness of
+his. **A frozen `ProjectState` would pin today's defaults into a building a
+stranger opens next year** and quietly show them an app that no longer exists.
+A test asserts the key list of every plan, so the first person to add a
+convenience field has to argue for it.
+
+Picking a tile goes through the same `commitNewFootprint` a drag does, so a
+template cannot produce a building the drawing tools could not.
+
+### `commitNewFootprint`, split out of `handleDraw`
+
+`handleDraw` built its own footprint from a width and a depth. A courtyard
+RING cannot be built that way — `addCourtyard` insets a finished footprint —
+and going through `commitFootprintShapeChange` instead would have read
+`footprint` out of state one tick before React had put the new one there,
+which on the very first draw is `null`. Everything in that function was
+already generic over the footprint; only the two lines that CHOSE one were
+specific to a drag. The `retileCallSites` inventory follows the rename.
+
+`handleDraw` also gained an explicit `shape`: the Octagon tile must build an
+octagon whether or not the Octagon tool happens to be armed, and reading
+`shapeTool` there would make one tile draw different buildings depending on
+what the user last touched.
+
+### Where it lives
+
+It fills the canvas when the wall tab is on the plan with no footprint, no
+elevation open, and it has not been dismissed. Those five terms are exactly
+the screen that used to read *"Click and drag to draw the footprint"* — the
+one screen in this app that asked a newcomer to already know what it wanted.
+
+⚠ **Not gated on being a fresh session.** Delete a building and the picker
+comes back, which is right: with no footprint there is nothing else for that
+surface to show, and an empty stage with eight buildings on it beats an empty
+stage.
+
+⚠ **The cloud tile is shown signed out, never hidden** — it reads *Sign in to
+open a saved design* and opens the sign-in, which is the honest label for what
+the click does. Hiding it would leave a stranger believing this app has no
+cloud. It reads the Project menu's own discriminated union rather than a bare
+`signedIn`, so the tile and that menu cannot disagree the moment MFA is
+pending.
+
+### The pictures
+
+Each tile draws the **real plan of the building that tile makes** —
+`planOutlineLoopsFt` runs the same `footprintForPlan` the click runs, so a
+picture cannot show a building the click does not produce. A courtyard is a
+hole, not a second shape: one path, two subpaths, `fill-rule: evenodd`. The
+fill is `PANEL_TYPE_COLORS.standard`, the same warm tan a Standard panel is
+drawn in one click later.
+
+⚠ **These are NOT the 3D renders he asked for.** *"so cool to see thumbnail
+models of that enter that building"* — a model is stride 2, and the honest
+description of what shipped is a true drawing at a lower fidelity rather than
+a pretty picture of a different building. The *"enter that building"* half IS
+here: picking a tile lands you in **View**, the 3D framed model, which is his
+own third answer.
+
+### ⚠ The layout bug, found by measuring
+
+`.editorCanvasLayer` centres its child and clips the overflow — right for a
+fixed 720x480 canvas, wrong for a grid as tall as it has tiles. Measured
+before the fix: the picker laid out **1188px tall inside a shorter layer, its
+box started at y = -128, and the whole first row was cut off above the top
+edge** with no way to reach it. Centring something taller than its container
+hides both ends of it. The picker now takes the layer's full height and
+scrolls inside itself.
+
+(Also: the component had to be renamed `StarterTemplatePicker` — on Windows,
+`StarterTemplates.tsx` and `starterTemplates.ts` differ only in case and
+TypeScript refuses the pair.)
+
+### Verified in the running app, tile by tile
+
+| tile | what the app actually produced |
+| --- | --- |
+| **Tiny House** | 85 panels, **12 tilted gable** — the cross-tilt row, which only a shed has. Its sheet reads **"T1: 0in along the N wall"**: the tall wall is north. |
+| **The Tank** | 143 panels, **18 gable** — it took the peak. |
+| **The Cindy** | 175 panels, and the plan's own dimension labels read **55'-3" and 34'-10"**. |
+| **Square Courtyard** | 65 wall panels, **8 windows and 6 doors** — two loops of wall, so twice the openings. No gable row, which is right for a ring roof. |
+| **Octagon Courtyard** | 79 wall panels, 8 windows, 3 doors, no refusal notice. |
+| **Octagon** | 8 walls at both 16 ft and 32 ft; the sub-switch re-draws the tile's own picture. |
+| **Draw your own** | dismisses the picker and the empty canvas is behind it. |
+
+Every preview's drawn aspect was measured rather than eyeballed: Tiny House
+126x84 (3:2), Tank 148x74 (2:1), Cindy 133x84 (1.583 against a true 1.586),
+all three octagons square. No console errors anywhere in the run.
+
+Gates: 3778 tests / 205 files, typecheck clean in all four projects, lint
+**169 / 119 / 50 — every rule byte-identical**.
+
+### What stride 2 is
+
+1. **The 3D render thumbnails** — `captureMode` already takes a PNG of the
+   Project Summary's model, so six captured once and stored is the shape of
+   it, not new rendering code.
+2. **The tile animating into the model**, rather than cutting to it.
+3. **The Cindy's notch, step and real opening schedule**, which need a
+   wall-run list or a DXF. ⚠ `buildinteg.com/cindy` still 404s; the page is at
+   `/the-cindy`.

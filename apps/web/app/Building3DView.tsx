@@ -1064,7 +1064,7 @@ interface Building3DViewProps {
   /** Selects one panel slot — only wired up when `tool3D === "edit"`.
    *
    * ⚠ **It cycled the slot's TYPE until B19 retired the cycle** (2026-11-03),
-   * matching the 2D Edit tool click for click. Both surfaces now select, and
+   * matching the 2D Select tool click for click. Both surfaces now select, and
    * the type comes from the right-click menu — which the 3D view does not have
    * yet, because it needs a panel hit test the panel editor needs too and will
    * launch from.
@@ -1081,7 +1081,7 @@ interface Building3DViewProps {
    * portal on `document.body`, so it cannot be clipped by the canvas.
    *
    * ⚠ It is NOT gated behind `tool3D === "edit"`, unlike the left click. The
-   * 2D plan does not gate its right click behind the Edit tool either, and a
+   * 2D plan does not gate its right click behind the Select tool either, and a
    * menu that only opens once you have armed a tool is a menu nobody finds.
    * What it IS gated on is a right-button DRAG: OrbitControls pans on the right
    * button, and panning the camera should not leave a menu behind. See

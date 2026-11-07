@@ -35,11 +35,16 @@ type Fate =
   | "DIRECT";
 
 const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: string }> = {
-  handleDraw: {
+  /* ⚠ **Renamed from `handleDraw` by U3, 2026-11-07** — the body moved out so
+     a starter template could commit a footprint it did not build from a width
+     and a depth (a courtyard RING cannot be). `handleDraw` still exists and
+     still handles the drag; it just calls this now and re-tiles nothing of its
+     own. Same single pass, one name further in. */
+  commitNewFootprint: {
     calls: 1,
     fate: "REDERIVES",
     stage: "—",
-    why: "The first draw IS the one tiling pass tile-once keeps. There is no prior array to preserve.",
+    why: "The first draw IS the one tiling pass tile-once keeps. There is no prior array to preserve. A starter template arrives here too, and for the same reason: its building did not exist a moment ago.",
   },
   handleAddBumpOut: {
     calls: 1,
@@ -208,9 +213,9 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
     expect(rederives.length).toBe(6);
     expect(rederives.map(([h]) => h).sort()).toEqual([
       "commitFootprintShapeChange",
+      "commitNewFootprint",
       "handleAddBumpOut",
       "handleDragWall",
-      "handleDraw",
       "handleKeepSplitRegion",
       "handleRepanelizeRequest",
     ]);

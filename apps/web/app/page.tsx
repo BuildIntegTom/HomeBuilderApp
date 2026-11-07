@@ -350,7 +350,7 @@ import {
   type StudConfig,
   type WallAssemblyLayer,
 } from "@building-integrity/panel-catalog";
-import { formatFeetInches } from "./canvasGeometry";
+import { SCALE_PX_PER_FT, formatFeetInches } from "./canvasGeometry";
 import LengthInput from "./LengthInput";
 import SlotIndexInput from "./SlotIndexInput";
 import ConcreteBlockStemWallDiagram from "./ConcreteBlockStemWallDiagram";
@@ -434,6 +434,8 @@ import {
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 import { applyDrawTimeBracing } from "./drawTimeBracing";
 import { standardPanelMembersFor } from "./standardPanelMembers";
+import StarterTemplatePicker from "./StarterTemplatePicker";
+import { footprintForPlan, type StarterPlan } from "./starterTemplates";
 import { bigHeaderFaceAreaSqFt } from "./bigHeaderTakeoff";
 import { toExportableAssemblies } from "./projectExportAssemblies";
 import { buildProjectPanelDxf } from "./projectPanelDxf";
@@ -564,6 +566,15 @@ const WALL_PANEL_SLOT_TYPES = new Set(["corner", "safety-oct-corner", "standard"
  * that was never chosen as one — it was picked so the ridge always sat
  * above the eave, and only became a 24:12 roof once gables auto-spawned. */
 const DEFAULT_ROOF_PITCH_IN12 = 4;
+
+/* ⚠ U3 — `FootprintCanvas`'s own stage size, and a SIXTH copy of the number
+   `elevationViewport.ts` already calls "five copies of the same problem".
+   Declared rather than imported because `FootprintCanvas` keeps them private
+   and widening that module's API for a centring calculation would be the
+   worse of the two debts. A starter template needs them to put its building
+   in the middle of the stage instead of at `offsetPx`'s default corner. */
+const PLAN_CANVAS_WIDTH_PX = 720;
+const PLAN_CANVAS_HEIGHT_PX = 480;
 
 const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
@@ -937,6 +948,21 @@ export default function LayoutEditor() {
    * drawing is*. Nothing about the building changes when this flips.
    */
   const [leftBarHidden, setLeftBarHidden] = useState(false);
+
+  /**
+   * U3 — whether the starter-template picker has been put away.
+   *
+   * ⚠ **Local state, not `ProjectState`**, for the third time on this list and
+   * the same two reasons `editorSurface` and `leftBarHidden` give: a saved
+   * project must not reopen on a picker, and undo must never undo *which
+   * screen you are looking at*.
+   *
+   * ⚠ **It is only consulted while there is NO footprint.** The picker is what
+   * stands in for the empty canvas, so picking a tile or pressing Draw your own
+   * both end it — the first by giving the app a building, the second by setting
+   * this. Nothing else needs to know it exists.
+   */
+  const [starterTemplatesDismissed, setStarterTemplatesDismissed] = useState(false);
   /** The Summary page's host element, held as state rather than a ref so
    * that the sections portalling into it re-render the moment it exists.
    * A `useRef` would be filled during the same commit and read on a render
@@ -2836,6 +2862,14 @@ export default function LayoutEditor() {
 
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
 
+  /** U3 — see the picker's own render site for why all five terms are here. */
+  const showStarterTemplates =
+    editorTab === "wall" &&
+    viewMode === "plan" &&
+    footprint === null &&
+    elevationWall === null &&
+    !starterTemplatesDismissed;
+
   // Every view stop, in Tommy's order (his words, from when this was a dial:
   // "cycle the wall view options... starting at the top and going clockwise,
   // and the wheel moves onto 3D views") — 2D Floor Plan, then one elevation
@@ -3903,9 +3937,25 @@ export default function LayoutEditor() {
     return nextSlots;
   };
 
-  const handleDraw = (widthFt: number, depthFt: number, origin: { x: number; y: number }) => {
-    const fp =
-      shapeTool === "octagon" ? buildOctagonFootprint(widthFt, depthFt) : buildRectangleFootprint(widthFt, depthFt);
+  /**
+   * @param shape U3 — which footprint to build, defaulting to whatever the
+   * drawing tool is armed with. A starter template passes it explicitly: the
+   * Octagon tile must build an octagon whether or not the Octagon tool
+   * happens to be selected, and reading `shapeTool` there would make the tile
+   * draw a different building depending on what the user last touched.
+   */
+  /**
+   * ⚠ **U3 split this out of `handleDraw`, which built its own footprint.**
+   * A starter template's footprint may be a COURTYARD RING, and a ring cannot
+   * be produced by width and depth alone — `addCourtyard` takes the finished
+   * outer footprint and insets it. Going through `commitFootprintShapeChange`
+   * instead would have read `footprint` out of state one tick before React
+   * had put the new one there, which on the very first draw is `null`.
+   *
+   * Everything below was already generic over the footprint; only the two
+   * lines that CHOSE one were specific to a drag.
+   */
+  const commitNewFootprint = (fp: Footprint, origin: { x: number; y: number }) => {
     // Corner ids aren't shared across shapes (rectangle uses "A".."D",
     // octagon "0".."7") — a fresh draw always resets which corner is
     // least-accessible, same as it already resets openings via retile.
@@ -3990,6 +4040,73 @@ export default function LayoutEditor() {
     // at all), so the blanket Infinity-as-old-max form is correct for all
     // of them at once.
     reconcileWallZonesForHeightChange("ground", Number.POSITIVE_INFINITY, maxPanelHeightIn, wallHeightFt, wallHeightFt);
+  };
+
+  /**
+   * @param shape U3 — which footprint to build, defaulting to whatever the
+   * drawing tool is armed with. A starter template passes it explicitly: the
+   * Octagon tile must build an octagon whether or not the Octagon tool
+   * happens to be selected, and reading `shapeTool` there would make one tile
+   * draw different buildings depending on what the user last touched.
+   */
+  const handleDraw = (
+    widthFt: number,
+    depthFt: number,
+    origin: { x: number; y: number },
+    shape: "rectangle" | "octagon" = shapeTool === "octagon" ? "octagon" : "rectangle",
+  ) => {
+    commitNewFootprint(
+      shape === "octagon" ? buildOctagonFootprint(widthFt, depthFt) : buildRectangleFootprint(widthFt, depthFt),
+      origin,
+    );
+  };
+
+  /**
+   * **U3 — a starter template becomes a real drawn building.**
+   *
+   * > *"Each tile is a real drawn design, not a parameter preset."*
+   *
+   * ⚠ **It goes through the same `commitNewFootprint` a drag does**, so a
+   * template cannot produce a building the drawing tools could not. The
+   * panels, the openings, the gable row, the ridge column and the roof form
+   * are all derived by the same code on the same tick — which is why no tile
+   * carries any of them as data (see `starterTemplates.ts`).
+   *
+   * ⚠ **The building is CENTRED rather than dropped at the default corner.**
+   * `offsetPx` is where the footprint's own (0,0) lands on the canvas, and
+   * the state default of 60,60 would put the Cindy's 663px of plan hard
+   * against the right edge. A drag sets this from where the user dragged; a
+   * template has to choose, and the middle is the only answer that does not
+   * depend on which tile was picked.
+   *
+   * ⚠ **It lands you in View, not on the plan** — his own third answer:
+   * *"A starter template lands you in View — the 3D framed model... the
+   * template animates in and you are looking at a finished building."* The
+   * plan is one click away on the bar and the first thing a stranger should
+   * see is a house.
+   */
+  const handlePickStarterTemplate = (plan: StarterPlan, name: string) => {
+    const { footprint: fp, courtyardRefused } = footprintForPlan(plan);
+    /* Before the commit: `commitNewFootprint` tiles with the CURRENT
+       thickness, and the Cindy's 15.5in is his. Set after, the plan would be
+       laid out at one depth and drawn at another for a render. */
+    if (plan.thicknessIn !== undefined) setThicknessIn(plan.thicknessIn);
+    const widthFt = Math.max(...fp.corners.map((c) => c.point.x)) - Math.min(...fp.corners.map((c) => c.point.x));
+    const depthFt = Math.max(...fp.corners.map((c) => c.point.y)) - Math.min(...fp.corners.map((c) => c.point.y));
+    commitNewFootprint(fp, {
+      x: Math.max(20, Math.round((PLAN_CANVAS_WIDTH_PX - widthFt * SCALE_PX_PER_FT) / 2)),
+      y: Math.max(20, Math.round((PLAN_CANVAS_HEIGHT_PX - depthFt * SCALE_PX_PER_FT) / 2)),
+    });
+    setStarterTemplatesDismissed(true);
+    setViewMode("3d");
+    /* ⚠ A refusal is REPORTED, never swallowed. `addCourtyard` refuses an
+       inset that would self-intersect, and the tile would otherwise draw a
+       solid building while its own name promised a ring. */
+    if (courtyardRefused) {
+      setPanelPlacementNotice(
+        `${name}: the courtyard was refused at that depth, so this is the outer building only. Set a smaller building width in the Courtyard panel.`,
+      );
+    }
   };
 
   /* ⚠ **`isOpeningType` WAS HERE and it was the wrong predicate** — B19,
@@ -9986,8 +10103,13 @@ export default function LayoutEditor() {
   // all) — see PageFeaturesButton's own doc comment.
   const pageFeatures: Record<EditorTab, string[]> = {
     wall: [
-      "Draw: Rectangle or Octagon, then click-drag on the canvas. Add Second Story / Add Bump-out for more complex shapes. Drawing a shape (or adding a bump-out) switches to Edit mode automatically.",
-      "Edit mode (plan view): click a panel to cycle its type (standard → window → door → column → standard). See the legend to the left for what each panel color means — a panel hashed orange over purple is a safety/gap panel combined with a corner brace (both roles, one panel). Panel labels are named by compass direction (N/NE/E/SE/S/SW/W/NW — up is treated as North).",
+      "Draw: Rectangle or Octagon, then click-drag on the canvas. Add Second Story / Add Bump-out for more complex shapes. Drawing a shape (or adding a bump-out) switches to the Select tool automatically.",
+      /* ⚠ Two corrections in one line, 2026-11-07. The tool is `Select` now
+         (U2 took `Edit` for the top bar), and the left-click CYCLE it
+         described was deleted with `nextPanelCycleState` in B19 — this
+         sentence had been telling every new user to do something the app
+         stopped doing. */
+      "Select tool (plan view): click a panel to open it, or right-click it to change its type. See the legend to the left for what each panel color means — a panel hashed orange over purple is a safety/gap panel combined with a corner brace (both roles, one panel). Panel labels are named by compass direction (N/NE/E/SE/S/SW/W/NW — up is treated as North).",
       "On an all-right-angle footprint, click a corner marker to mark it least-accessible — safety/gap panels re-place to the far end of each wall (this also clears any openings you've placed, since re-tiling re-derives all slots). On a mitered footprint, every wall owns its own mitered corner panels — the left-most corner of each run is automatically the safety-oct-corner, no marker to set.",
       "Click a wall's own length label to type an exact value (editing one wall resizes the whole rectangle, since opposite walls stay equal — on a mitered shape only the straight walls are editable this way), or switch to Drag Wall and drag a wall directly instead of typing a length.",
       "Bump-out tool: drag along a wall to pick the span it attaches to, then drag outward (an addition) or inward (a notch) to set the depth. Drag Wall tool: drag a wall to move it — its 2 neighbor walls stretch or shrink to absorb the change, everything else stays fixed.",
@@ -14331,7 +14453,7 @@ export default function LayoutEditor() {
                 </button>
                 <button
                   type="button"
-                  title="Click a panel to cycle it: standard → window → door → column → standard (same as the 2D Edit tool)"
+                  title="Click a panel to select it, or right-click it to change its type (same as the 2D Select tool)"
                   aria-pressed={tool3D === "edit"}
                   disabled={!footprint}
                   className={tool3D === "edit" ? styles.toolActive : styles.tool}
@@ -14714,7 +14836,38 @@ export default function LayoutEditor() {
                 <PanelLegend variant="overlay" />
               </div>
             )}
-            {editorTab === "wall" &&
+            {/* ⚠ **U3 — THE PICKER STANDS WHERE THE EMPTY CANVAS DID.**
+
+                `showStarterTemplates` is deliberately narrow: the WALL tab,
+                the PLAN view, no footprint, no elevation open, and not yet
+                dismissed. Those five together mean exactly one screen — the
+                one that used to read *"Click and drag to draw the
+                footprint"*, which is the only screen in this app that asked a
+                newcomer to already know what it wanted.
+
+                ⚠ It is NOT gated on being a fresh session. Delete a building
+                and the picker comes back, which is right: with no footprint
+                there is nothing else for this surface to show, and an empty
+                stage with eight buildings on it beats an empty stage. */}
+            {showStarterTemplates && (
+              <StarterTemplatePicker
+                onPick={handlePickStarterTemplate}
+                onDrawYourOwn={() => setStarterTemplatesDismissed(true)}
+                onOpenFromCloud={cloud.menuModel.onOpenFromCloud}
+                onSignIn={cloud.menuModel.onSignIn}
+                canOpenFromCloud={
+                  /* ⚠ The Project menu's own answer, through its own
+                     discriminated union: `absent` (no backend, or the
+                     session still loading) and `sign-in-prompt` both
+                     mean no, and only a `signed-in` menu that offers
+                     the item means yes. Reading `signedIn` instead
+                     would make this tile and that menu disagree the
+                     moment MFA is pending. */
+                  cloud.menuModel.menu.kind === "signed-in" && cloud.menuModel.menu.openFromCloud
+                }
+              />
+            )}
+            {editorTab === "wall" && !showStarterTemplates &&
               (elevationWall ? (
                 <WallElevationDiagram
                   wall={elevationWall}

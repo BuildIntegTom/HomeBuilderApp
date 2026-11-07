@@ -1,0 +1,168 @@
+/* U3 — the starter-template picker, which stands where the empty drawing
+   canvas used to. It is sized off the canvas it replaces (720 x 480 plus its
+   chrome) rather than off the viewport, so folding the left bar away (U1)
+   widens it the same way it widens the 3D view. */
+/* ⚠ `align-self: stretch` + its own scroll, and both are a FIX rather than a
+   default worth copying. `.editorCanvasLayer` centres its child and clips the
+   overflow — which is right for a fixed 720x480 canvas and wrong for a grid
+   that is as tall as it has tiles. Measured before this: the picker laid out
+   1188px tall inside a shorter layer, its box started at **y = -128**, and
+   the whole first row of tiles was cut off above the top edge with no way to
+   reach it. Centring a thing taller than its container hides both ends of it.
+
+   So the picker takes the layer's full height and scrolls inside itself. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px 24px;
+  align-self: stretch;
+  width: 100%;
+  max-width: 980px;
+  overflow-y: auto;
+}
+
+.heading {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--bi-on-surface, #222);
+}
+
+.sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--bi-on-surface-muted, #666);
+  max-width: 62ch;
+}
+
+/* `auto-fill` rather than a fixed column count: the picker is inside the
+   editor's own canvas column, which U1 made two different widths. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tileButton {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tileButton:hover {
+  border-color: #4a90d9;
+  background: #f6fafe;
+}
+
+/* A visible ring, not just the UA default — this grid is the first thing a
+   keyboard user meets in the app and losing the cursor in it is losing the
+   app. */
+.tileButton:focus-visible {
+  outline: 2px solid #4a90d9;
+  outline-offset: 2px;
+}
+
+.preview,
+.previewEmpty {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 168 / 104;
+  border-radius: 5px;
+  background: #fcfcfa;
+  border: 1px solid #e4e4e0;
+}
+
+/* ⚠ The same warm tan a Standard panel is drawn in on the plan canvas
+   (`PANEL_TYPE_COLORS.standard`), so the thumbnail and the drawing a click
+   later are the same building in the same colours rather than two pictures
+   that happen to be nearby. */
+.previewShape {
+  fill: #d9c9a3;
+  stroke: #8a7f63;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.previewEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #bdbdb8;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.previewEmptyMark {
+  pointer-events: none;
+}
+
+.tileName {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.tileDims {
+  font-size: 12px;
+  line-height: 16px;
+  color: #4a90d9;
+}
+
+.tileBlurb {
+  font-size: 12px;
+  line-height: 16px;
+  color: #666;
+}
+
+.optionRow {
+  display: flex;
+  gap: 6px;
+}
+
+.option,
+.optionActive {
+  flex: 1 1 auto;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.optionActive {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #fff;
+}
+
+/* The picker is a door into the app, not part of the drawing — it has no
+   business on a shop sheet. */
+@media print {
+  .root {
+    display: none;
+  }
+}
