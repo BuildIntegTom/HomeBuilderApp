@@ -360,8 +360,23 @@ describe("the design subjects and the editor tabs", () => {
 });
 
 describe("the menu words", () => {
-  it("are Tommy's two words, in his order", () => {
-    expect(VIEWER_MENU_ORDER.map((menu) => VIEWER_MENU_LABEL[menu])).toEqual(["Design", "View"]);
+  it("are Tommy's two words, in his order — Edit, then View (U2, 2026-11-05)", () => {
+    /* ⚠ `Design` became `Edit` on his own word, as the first two steps of
+       `Edit → View → Price → Print`. He picked neither today's label nor a
+       verb phrase: *"Edit"* is the honest name for a door you come back to.
+       Pinned here because a rename that drifts back is indistinguishable from
+       a rename that never happened. */
+    expect(VIEWER_MENU_ORDER.map((menu) => VIEWER_MENU_LABEL[menu])).toEqual(["Edit", "View"]);
+  });
+
+  it("⚠ the KEY stayed `design` while the word changed", () => {
+    /* The same split `"Membranes"` / `"3d-wraps"` already carries: a
+       user-facing word was renamed and an internal id was not. Renaming the id
+       would reach `viewerMenuOwner`, `viewerMenuGroups`,
+       `viewerMenuEmptyReason`, every `data-view-menu` attribute and the width
+       harness that reads them, for no gain to anyone. */
+    expect(VIEWER_MENU_ORDER).toContain("design");
+    expect(VIEWER_MENU_LABEL.design).toBe("Edit");
   });
 
   it("has a label for every menu id, so neither can render blank", () => {

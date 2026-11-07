@@ -33,7 +33,7 @@ thumbnails are one piece of work.
 | | item | his word | state |
 | --- | --- | --- | --- |
 | **U1** | HIDE tab + Reset View | yes | **BUILT 2026-11-06** — see the record at the end |
-| **U2** | Named path, static arrows | **Edit → View → Price → Print** | **answered, ready** |
+| **U2** | Named path, static arrows | **Edit → View → Price → Print** | **BUILT 2026-11-06 — and it made the bar 49px narrower** |
 | **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **specced and unblocked — Cindy ships as its overall rectangle, 2026-11-06** |
 | **U4** | Props for scale | yes | **ready** |
 | **U5** | Site toggle | yes | **ready** |
@@ -46,8 +46,9 @@ is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06
 
 **Why this order:**
 
-- **U1** is an afternoon, and it makes every demo of everything below it better.
-- **U2** is small and **renames two live buttons**, so it must precede U7, or
+- ~~**U1**~~ **DONE 2026-11-06.** An afternoon, and it makes every demo of
+  everything below it better.
+- ~~**U2**~~ **DONE 2026-11-06.** It was small and renamed two live buttons, so it had to precede U7, or
   the first thing a new user is taught is a button name that no longer exists.
 - **U3** is the biggest single change to what a stranger sees, and it needs no
   new engine.
@@ -418,3 +419,107 @@ which is also why `Building3DView`'s identical handler never was.
 
 Gates: 3749 tests / 203 files, typecheck clean in all four projects, lint
 **169 / 119 / 50 — every rule byte-identical** after the `refs` fix above.
+
+---
+
+## U2 — BUILT 2026-11-06: the path is named, and the bar got NARROWER
+
+> *"We can meld these ideas into basically how it is right now except with
+> arrows between each button."* — Tommy, 2026-11-05
+
+Three things: two renames, three chevrons, and one bug the chevrons found.
+
+### The two renames
+
+`Design → Edit` and `Summary → Price`, his own words.
+
+**Edit** is the honest name for a door you come back to — you do not draw a
+building once and leave drawing behind, you edit it all the way to the shop.
+**Price** replaces a word that named the page rather than the reason anybody
+opens it.
+
+⚠ **The menu's KEY is still `design`.** The same split `"Membranes"` /
+`"3d-wraps"` already carries: a user-facing word was renamed and an internal
+id was not. Renaming the id would reach `viewerMenuOwner`, `viewerMenuGroups`,
+`viewerMenuEmptyReason`, every `data-view-menu` attribute and the width
+harness that reads them, for no gain to anybody. Two tests pin both halves —
+the word IS `Edit`, the key IS still `design` — because a rename that drifts
+back is indistinguishable from a rename that never happened.
+
+⚠ **Every sentence that named the old word moved with it.** `You are
+designing — Wall` → `You are editing — Wall`; `Where to design:` → `Where to
+edit:`; `You are reading the summary` → `You are on Price`; and Summary's
+resting title now opens `What it costs:`. A tooltip naming a different word
+than the button it hangs off is the exact drift B25 was written to stop, one
+level up.
+
+⚠ **FOR HIM: `Edit` now collides with the left bar's own `✎ Edit` tool**, the
+wall-drawing edit mode. Two controls on one screen reading `Edit` and meaning
+different things. Not resolved here — he picked the word knowing today's bar,
+and if he wants a fix it is to rename the SIDEBAR tool, not to overrule the
+word he chose for the path.
+
+### The chevrons
+
+`›` (U+203A), three of them, between `Edit ▾ › View ▾ › Price › Print`.
+
+⚠ **Inert, and that is his second answer, not minimalism.** *"The arrows just
+sit there."* No `onClick`, no `role`, no tab stop, no state — so **there is no
+state here for the app to be wrong about**. Nothing is ever marked done, which
+means a newcomer is never told he has finished a step he has not. They are
+`aria-hidden` too: a screen reader already receives the four controls in
+order, and hearing "greater-than sign" three times between them adds no fact
+and three interruptions.
+
+### Measured: adding arrows made the bar 49px narrower
+
+This was expected to COST width. It paid.
+
+| | before | after |
+| --- | --- | --- |
+| Edit / Design | 86.3px | **68.2px** |
+| View | 73.8px | 73.8px |
+| Price / Summary | 85.0px | **59.0px** |
+| Print | 56.1px | 56.1px |
+| four buttons | 301.1px | **257.0px** |
+| + gaps and arrows | 331.1px (3 × 10px zone gap) | **282.0px** (3 arrows, 4px gaps) |
+
+**−49.1px.** `Design → Edit` gave back 18.1px and `Summary → Price` 26.0px —
+between them more than the 24.9px the three chevrons and their gaps cost. The
+bar this change was expected to crowd has more room than before it.
+
+The four are wrapped in `.pathGroup` purely so the group can run a 4px gap
+where `zoneLeft` runs 10px; at the zone's own gap the chevrons would have cost
+3 × (10 + glyph + 10) against a measured 34px of spare at 768px.
+
+### ⚠ The bug the wrapper introduced, and how it showed up
+
+The four path controls each carry `flex-shrink: 0`, so as direct children of
+`zoneLeft` they could never be squeezed. Wrapped in a group that shrinks, they
+could. Measured at 768px with `min-width: 0` on the wrapper: **the group
+reported 225px while its contents needed 282px, and Print was drawn outside
+its own container's box**, free to collide with `zoneRight`.
+
+`flex-shrink: 0` on `.pathGroup` fixes it. The lesson is narrow and worth
+keeping: **a wrapper added to change one property must inherit the layout
+behaviour of what it wrapped.** It was found by measuring rather than by
+looking — at 768px the clipped Print still *rendered* in the right place,
+because a flex container does not clip by default. Nothing looked wrong.
+
+### Verified in the running app
+
+- The bar reads `Project | Edit › View › Price › Print | Role:` with Edit
+  carrying the owner underline.
+- **Edit**: word `Edit`, title `You are editing — Wall`, menu opens.
+- **Price**: opens the summary (`PROJECT TOTALS` renders), title flips to
+  `You are on Price — click to go back to the drawing`, `data-surface-owner`
+  goes `true`, and clicking again returns to the drawing.
+- **The arrows are inert**: 3 of them, all `aria-hidden="true"`, none
+  tabbable, computed `pointer-events: none`.
+- **No row overflow at 984px, 768px or 640px**, and the group no longer
+  clips at any of them.
+
+Gates: 3763 tests / 204 files, typecheck clean in all four projects, lint
+**169 / 119 / 50 — every rule byte-identical**.
+
+⚠ **U7 is now unblocked**: it was waiting on these two names stopping moving.

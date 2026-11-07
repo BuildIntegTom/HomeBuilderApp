@@ -139,6 +139,49 @@
   margin-left: auto;
 }
 
+/* ⚠ U2 — THE NAMED PATH'S OWN GAP, and it is smaller than the zone's.
+   `zoneLeft` runs a 10px gap; three chevrons dropped straight into it would
+   cost 3 x (10 + glyph + 10). This bar has a MEASURED 34px of spare at 768px
+   (apps/web/harness/ui-reorg-u1/evidence.json), so that was not affordable.
+
+   Tightening the four path controls to a 4px gap pays back 3 x 6px, and the
+   arrow's own negative margin pays back the rest — the group is wider than it
+   was, but by a figure that fits, and the real before/after measurements are
+   in the U2 record rather than estimated here.
+
+   The group is NOT a landmark, a toolbar role or a group label: it is four
+   controls that were already siblings, wrapped so one gap can differ from
+   another. The harness finds every control by `data-bar-control` and its zone
+   by `closest('[data-top-bar-zone]')`, so the wrapper is invisible to it. */
+/* ⚠ `flex-shrink: 0`, and it is a FIX rather than a default worth copying.
+   The four path controls each carry `flex-shrink: 0` of their own, so as
+   direct children of `zoneLeft` they could never be squeezed. Wrapped in a
+   group that shrinks, they could: measured at 768px with `min-width: 0` here,
+   the group reported 225px while its contents needed 282px and **Print was
+   drawn outside its own container's box**, free to collide with `zoneRight`.
+   The wrapper exists only to hold a different `gap`; it must inherit the
+   shrink behaviour of what it wrapped, not introduce one. */
+.pathGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ⚠ Inert by his own decision — see `pathArrow` in TopBar.tsx. No hover
+   state, no cursor change, no focus ring: nothing here may read as clickable.
+   `user-select: none` so dragging across the bar does not select a row of
+   chevrons the user cannot do anything with. */
+.pathArrow {
+  flex-shrink: 0;
+  margin: 0 -2px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--bi-on-surface-muted);
+  user-select: none;
+  pointer-events: none;
+}
+
 /* body-md (13px / 400 / 18px). Explicit line-height so every text control —
    including AccountControl's own button — lands on the same outer height.
    .toolOwner / .toolOwnerActive share every metric declaration here, on

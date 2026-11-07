@@ -108,7 +108,30 @@ export const VIEWER_MENU_ORDER: readonly ViewerMenuId[] = ["design", "view"];
  * a documented safety reason.
  */
 export const VIEWER_MENU_LABEL: Record<ViewerMenuId, string> = {
-  design: "Design",
+  /**
+   * ⚠ **`"Edit"`, not `"Design"` — U2, his word, 2026-11-05.**
+   *
+   * > *"The steps are Edit → View → Price → Print."*
+   *
+   * He changed it himself, and not to either of the two words on offer: not
+   * today's `Design`, and not a verb phrase. **Edit is the honest word for a
+   * door you come back to.** You do not draw a building once and leave drawing
+   * behind — you edit it all the way to the shop, so a word that names the
+   * first step misdescribes a button you will press a hundred times.
+   *
+   * ⚠ The KEY stays `design`, deliberately, the same split `"Membranes"` /
+   * `"3d-wraps"` already carries two types up: a user-facing word was renamed
+   * and an internal id was not. Renaming the id would touch `viewerMenuOwner`,
+   * `viewerMenuGroups`, `viewerMenuEmptyReason`, every `data-view-menu`
+   * attribute and the width harness that reads them, for no gain to anybody.
+   *
+   * ⚠ **It now collides with the left bar's own `✎ Edit` tool**, which is the
+   * wall-drawing edit mode. Two controls on one screen reading `Edit` and
+   * meaning different things. Flagged to him rather than silently resolved —
+   * he picked this word knowing today's bar, and the fix (if he wants one) is
+   * to rename the SIDEBAR tool, not to overrule him here.
+   */
+  design: "Edit",
   view: "View",
 };
 

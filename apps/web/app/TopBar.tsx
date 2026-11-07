@@ -140,6 +140,35 @@ const EMPTY_MENU_REASON: Record<"no-footprint" | "walls-out-of-scope" | "nothing
 };
 
 
+/**
+ * **U2 — one static chevron between two steps of his named path.**
+ *
+ * > *"We can meld these ideas into basically how it is right now except with
+ * > arrows between each button."* — Tommy, 2026-11-05
+ *
+ * ⚠ **A `<span>`, never a button.** It has no `onClick`, no `role`, no tab
+ * stop and no state at all, which is his own second answer: *"The arrows just
+ * sit there."* Nothing is marked done and nothing glows, so **there is no
+ * state here for the app to be wrong about** — the failure mode this avoids is
+ * a newcomer being told he has finished a step he has not.
+ *
+ * ⚠ **`aria-hidden`.** A screen reader already gets the four controls in order;
+ * hearing "greater-than sign" three times between them adds no fact and three
+ * interruptions. The path is a sighted wayfinding cue, like the owner
+ * underline beside it, and the accessible half is the reading order itself.
+ *
+ * `›` (U+203A) rather than `→`: it is a punctuation mark rather than a glyph
+ * that reads as a verb, it sits on the text baseline at this size, and it does
+ * not invite the click his answer says must not exist.
+ */
+function pathArrow(key: string) {
+  return (
+    <span key={key} className={styles.pathArrow} aria-hidden="true" data-bar-path-arrow="">
+      ›
+    </span>
+  );
+}
+
 /** Icon-only, so the button carries a real aria-label and title. Inline SVG
  * rather than a Material Symbols webfont: no network dependency, no FOUT, no
  * licensing question for a one-icon need. */
@@ -532,6 +561,29 @@ export default function TopBar({
               grouping rule rather than as a rewrite of this component, and it
               is what will let the roof-panel and 3D-foundation viewers arrive
               the same way. */}
+          {/* ⚠ **U2 — THE NAMED PATH, 2026-11-06.** His own four steps, with
+              static chevrons between them:
+
+              > *"We can meld these ideas into basically how it is right now
+              > except with arrows between each button."*
+
+              Not a wizard. The bar stays flat and every door stays open
+              (`ui_overhaul_architecture`); the arrows only say which way the
+              work usually runs. ⚠ **The chevrons are inert and MUST stay
+              inert** — his second answer: no step is ever marked done, nothing
+              glows, nothing is clickable. That is not minimalism, it is the
+              absence of a state the app could be wrong about: a newcomer told
+              he has finished a step he has not is worse off than one told
+              nothing. They are `aria-hidden` for the same reason — a screen
+              reader reading "greater-than" three times between four buttons
+              learns nothing the reading order does not already give.
+
+              The four are wrapped so the GROUP can carry its own gap. At
+              `zoneLeft`'s 10px a chevron would cost 20px of gap plus its own
+              width three times over, and this bar has a measured 34px of spare
+              at 768px. Tightening the group's internal gap pays for them; the
+              real figures are in the U2 record. */}
+          <div className={styles.pathGroup} data-bar-path="">
           {VIEWER_MENU_ORDER.map((menu) => {
             /* LEVEL ONE OF THE HIGHLIGHT — the bar. `owningMenu` is
                `viewerMenuOwner` called once above; "Design highlighted" means
@@ -556,9 +608,8 @@ export default function TopBar({
                moving between Design and View can never reflow the bar. Weight
                would have. */
             const isOwner = owningMenu === menu;
-            return (
+            const button = (
               <button
-                key={menu}
                 type="button"
                 data-bar-control={menu}
                 data-view-menu={menu}
@@ -592,10 +643,10 @@ export default function TopBar({
                       ]
                     : isOwner
                       ? menu === "design"
-                        ? `You are designing — ${viewStopLive ? viewerStopLabel(currentViewerStop) : EDITOR_TAB_LABEL[editorTab]}`
+                        ? `You are editing — ${viewStopLive ? viewerStopLabel(currentViewerStop) : EDITOR_TAB_LABEL[editorTab]}`
                         : `You are viewing — ${viewerStopLabel(currentViewerStop)}`
                       : menu === "design"
-                        ? "Where to design: the plan, each wall's elevation, and the floor, roof and foundation editors in scope"
+                        ? "Where to edit: the plan, each wall's elevation, and the floor, roof and foundation editors in scope"
                         : "The 3D views: framed, boxes and membranes"
                 }
                 className={
@@ -617,6 +668,15 @@ export default function TopBar({
                 <span data-view-menu-word="">{VIEWER_MENU_LABEL[menu]}</span>
                 {caret(menu)}
               </button>
+            );
+            /* A chevron after BOTH of them: `view` is followed by Price, not
+               by the end of the group, so the usual "all but the last" rule
+               would drop the one arrow that joins the two halves of his path. */
+            return (
+              <Fragment key={menu}>
+                {button}
+                {pathArrow(`${menu}-next`)}
+              </Fragment>
             );
           })}
 
@@ -669,14 +729,16 @@ export default function TopBar({
             aria-current={editorSurface === "summary" ? "true" : undefined}
             title={
               editorSurface === "summary"
-                ? "You are reading the summary — click to go back to the drawing"
-                : "The project summary, project totals and materials totals, as a full page"
+                ? "You are on Price — click to go back to the drawing"
+                : "What it costs: the project summary, project totals and materials totals, as a full page"
             }
             className={editorSurface === "summary" ? styles.toolOwner : styles.tool}
             onClick={() => onEditorSurfaceChange(editorSurface === "summary" ? "drawing" : "summary")}
           >
-            Summary
+            Price
           </button>
+
+          {pathArrow("price-next")}
 
           {/* U5 — PRINT, A REAL CONTROL. The last placeholder on this bar is
               gone, and with it the recorded exception that allowed it: Tommy,
@@ -711,6 +773,7 @@ export default function TopBar({
           >
             Print
           </button>
+          </div>
         </div>
 
         {/* ⚠ THE FOUR SCOPE TABS USED TO BE HERE — a middle zone of

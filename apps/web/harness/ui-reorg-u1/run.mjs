@@ -1051,7 +1051,10 @@ record(
     d.design.owner === true &&
     d.design.current === "true" &&
     d.design.disabled === false &&
-    d.design.word === "Design" &&
+    // U2, 2026-11-06: the WORD is now "Edit" (his own `Edit -> View -> Price
+    // -> Print`); the menu's KEY is still `design`, which is what every
+    // locator in this file reads.
+    d.design.word === "Edit" &&
     d.view.owner === false &&
     d.view.current === null &&
     d.view.disabled === true &&
@@ -1306,9 +1309,9 @@ record(
       (c) =>
         c.design.present === true &&
         c.view.present === true &&
-        c.design.word === "Design" &&
+        c.design.word === "Edit" &&
         c.view.word === "View" &&
-        c.design.text.replace(/[▼▲]/g, "").trim() === "Design" &&
+        c.design.text.replace(/[▼▲]/g, "").trim() === "Edit" &&
         c.view.text.replace(/[▼▲]/g, "").trim() === "View",
     ),
 );
