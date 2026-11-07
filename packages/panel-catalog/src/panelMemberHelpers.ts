@@ -684,14 +684,6 @@ export function buildCornerStuds(widthIn: number, depthIn: number, heightIn: num
  * numeric position control, not a literal drag gesture in the 3D/2D view
  * yet — flagged as a simplification of "slide."
  */
-/** The x span the OPTIONAL nailer occupies, for anything that has to get out
- * of its way. Same arithmetic `buildNailer` uses, named once — a ring girt's
- * rail shares its depth band and has to be cut around it. */
-export function optionalNailerSpanIn(widthIn: number, offsetIn = 0): [number, number] {
-  const leftIn = widthIn / 2 - NAILER_WIDTH_IN / 2 + offsetIn;
-  return [leftIn, leftIn + NAILER_WIDTH_IN];
-}
-
 export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): PanelMember {
   const nailerLengthIn = heightIn - NAILER_LENGTH_DEFICIT_IN;
   return {
@@ -1635,19 +1627,14 @@ export function buildGirtRows(
    * drawn rather than one nobody chose — see that constant's own note.
    */
   style: GirtStyle = LEGACY_GIRT_STYLE,
-  /**
-   * ⚠ Extra x spans a RING's rails must be cut around, on top of the centre
-   * nailer studs it finds for itself — the OPTIONAL nailer, when the panel
-   * carries one. Ignored by every other style, because only a ring runs a
-   * member along the panel's face where a nailer stands.
-   */
-  extraFaceSpansIn: readonly [number, number][] = [],
 ): PanelMember[] {
   if (style === "ring") {
     const rows = centerZsIn ?? girtRowCentreZsIn(rowCount, studSpanIn);
-    return rows.flatMap((centerZIn, i) =>
-      buildRingGirtRow(i + 1, rows.length, centerZIn, widthIn, depthIn, extraFaceSpansIn),
-    );
+    /* ⚠ Rails come out WHOLE here, even on a panel with a centre nailer
+       standing in one. Cutting them is a separate pass over the finished
+       panel — see `cutRingGirtsAroundVerticals`, and the note on
+       `buildRingGirtRow` for why it cannot be done here. */
+    return rows.flatMap((centerZIn, i) => buildRingGirtRow(i + 1, rows.length, centerZIn, widthIn, depthIn));
   }
   const members: PanelMember[] = [];
   const leftStudInnerFaceXIn = PLATE_2X4_THICKNESS_IN;
@@ -1964,31 +1951,58 @@ function clearRunsIn(fromIn: number, toIn: number, occupied: readonly [number, n
   return runs.filter(([a, b]) => b - a > 1e-9);
 }
 
+/** One board of a ring lying on edge and spanning the panel's width. */
+function ringBoardAlongX(
+  memberId: string,
+  fromXIn: number,
+  toXIn: number,
+  yIn: number,
+  zIn: number,
+  notes: string,
+): PanelMember {
+  return {
+    memberId,
+    material: "dimensional_lumber",
+    speciesGrade: LUMBER_SPECIES_GRADE,
+    plySpec: null,
+    nominalSize: "2x4",
+    actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: toXIn - fromXIn },
+    /* "horizontal" at 0deg is the one case `memberBoxSizeIn` documents as
+       "on edge, spanning X", and it had no user until ring girts. */
+    orientation: "horizontal",
+    position: { xIn: fromXIn, yIn, zIn, rotationDeg: 0 },
+    role: "girt",
+    qty: 1,
+    notes,
+  };
+}
+
+/** The two faces a ring's rails lie on, and where the tie behind each one
+ * sits. Named once because the cut pass has to find a rail it did not place. */
+function ringFaces(depthIn: number): readonly { face: "ext" | "int"; railYIn: number; tieYIn: number }[] {
+  return [
+    { face: "ext", railYIn: 0, tieYIn: PLATE_2X4_THICKNESS_IN },
+    { face: "int", railYIn: depthIn - PLATE_2X4_THICKNESS_IN, tieYIn: depthIn - 2 * PLATE_2X4_THICKNESS_IN },
+  ];
+}
+
+function faceLabelFor(face: "ext" | "int"): string {
+  return face === "ext" ? "exterior" : "interior";
+}
+
 /**
- * One ring girt: four 2x4s on edge making a rectangle, plus — where a centre
- * nailer stands in the way — his workaround for it.
+ * One ring girt: four 2x4s on edge making a rectangle.
  *
- * > *"So here's the complicated clever workaround for these type of girts when
- * > there is overlapping. The Gert is made with the part that would overlap
- * > the vertical nailer cut out and a different 42" 2x4 is inside now. Two
- * > pretty loose pieces and seals them together."* — Tommy, 2026-11-06, with a
- * > SketchUp sketch of the two-2x6-nailer case.
- *
- * ⚠ **42in is not a magic number: it is the span between the INSIDE faces of
- * the ring's own two short pieces** (3 to widthIn - 3 on a 48in panel). The
- * tie butts against them at both ends, so the ring closes on itself again.
- *
- * ⚠ **It only clears because a centre nailer lies FLAT.** The tie sits at
- * 1.5-3in of depth, directly behind the rail it repairs, so screws pass
- * straight through and it seals the straw. A nailer on edge would occupy
- * 0-3.5in and the tie would have to be notched into a bearing stud. That is
- * why B31 laid the centre nailers flat first — see `buildCentreNailerStuds`.
- *
- * ⚠ **What is NOT specified, and is therefore not invented: how the tie is
- * fastened.** His screw count covers the ring's own 4 corners and its 4
- * landings on the frame. A tie adds lap joints nobody has given a number for,
- * so they are carried at zero and called out rather than guessed at — see
- * `RING_GIRT_SCREWS_PER_RING`.
+ * ⚠ **The rails come out WHOLE, even when something stands in one.** Cutting
+ * them is `cutRingGirtsAroundVerticals`, run over the finished panel, and it
+ * cannot be done here: his rule is about *"anything perfectly vertical that
+ * overlaps each girt"*, and half of those verticals do not exist yet when the
+ * girts are built. A panel's own centre nailers do, but the Vertical Nailer
+ * overlay, a brace pattern's additions and anything a user stands up in the
+ * panel editor are all added AFTER the base panel. A list of spans handed in
+ * here could only ever cover the ones this file knows about — which is how the
+ * optional nailer came to be threaded through two builders by hand in B31, and
+ * how the next one would have been missed again.
  */
 export function buildRingGirtRow(
   row: number,
@@ -1996,12 +2010,6 @@ export function buildRingGirtRow(
   centerZIn: number,
   widthIn: number,
   depthIn: number,
-  /** Anything else standing in the rails' own depth band — see
-   * `optionalNailerSpanIn`. ⚠ His *"the part that would overlap the vertical
-   * nailer cut out"* means ANY vertical nailer, and a 24in panel has no centre
-   * stud but can still carry the optional one. Caught by sweeping the overlap
-   * audit across every width the panelizer produces, not by reading the spec. */
-  extraFaceSpansIn: readonly [number, number][] = [],
 ): PanelMember[] {
   const members: PanelMember[] = [];
   const zIn = centerZIn - PLATE_2X4_WIDTH_IN / 2;
@@ -2011,57 +2019,17 @@ export function buildRingGirtRow(
   const shortLengthIn = depthIn - 2 * PLATE_2X4_THICKNESS_IN;
   if (railLengthIn <= 0 || shortLengthIn <= 0) return members;
 
-  /* Whatever stands in a rail's own depth band and crosses its run. Today that
-     is the centre nailers and nothing else: corner posts are outside
-     innerLeft/innerRight in x, and every other member of a standard panel sits
-     deeper into the straw than 1.5in. */
-  const nailerSpansIn = [...centreNailerStudSpansIn(widthIn), ...extraFaceSpansIn];
-
-  const faces = [
-    { face: "ext", railYIn: 0, tieYIn: PLATE_2X4_THICKNESS_IN },
-    { face: "int", railYIn: depthIn - PLATE_2X4_THICKNESS_IN, tieYIn: depthIn - 2 * PLATE_2X4_THICKNESS_IN },
-  ] as const;
-
-  for (const { face, railYIn, tieYIn } of faces) {
-    const faceLabel = face === "ext" ? "exterior" : "interior";
-    const runs = clearRunsIn(innerLeftXIn, innerRightXIn, nailerSpansIn);
-    const cut = runs.length > 1;
-    runs.forEach(([fromXIn, toXIn], i) => {
-      members.push({
-        memberId: `${RING_GIRT_ID_PREFIX}${row}_${face}_rail${cut ? `_${i + 1}` : ""}`,
-        material: "dimensional_lumber",
-        speciesGrade: LUMBER_SPECIES_GRADE,
-        plySpec: null,
-        nominalSize: "2x4",
-        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: toXIn - fromXIn },
-        /* "horizontal" at 0deg is the one case `memberBoxSizeIn` documents as
-           "on edge, spanning X", and it has had no user until now. */
-        orientation: "horizontal",
-        position: { xIn: fromXIn, yIn: railYIn, zIn, rotationDeg: 0 },
-        role: "girt",
-        qty: 1,
-        notes: cut
-          ? `ring girt ${row} of ${rowCount}, ${faceLabel} rail piece ${i + 1} of ${runs.length} — cut around the centre nailer; the tie behind it closes the ring`
-          : `ring girt ${row} of ${rowCount}, ${faceLabel} rail — on edge, stud face to stud face`,
-      });
-    });
-    if (!cut) continue;
-    const tieFromXIn = innerLeftXIn + PLATE_2X4_THICKNESS_IN;
-    const tieToXIn = innerRightXIn - PLATE_2X4_THICKNESS_IN;
-    if (tieToXIn - tieFromXIn <= 0) continue;
-    members.push({
-      memberId: `${RING_GIRT_ID_PREFIX}${row}_${face}_tie`,
-      material: "dimensional_lumber",
-      speciesGrade: LUMBER_SPECIES_GRADE,
-      plySpec: null,
-      nominalSize: "2x4",
-      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: tieToXIn - tieFromXIn },
-      orientation: "horizontal",
-      position: { xIn: tieFromXIn, yIn: tieYIn, zIn, rotationDeg: 0 },
-      role: "girt",
-      qty: 1,
-      notes: `ring girt ${row} of ${rowCount}, ${faceLabel} tie — a separate piece lapped behind the cut rail, butting the ring's two short pieces, tying the loose rail pieces together and sealing the straw`,
-    });
+  for (const { face, railYIn } of ringFaces(depthIn)) {
+    members.push(
+      ringBoardAlongX(
+        `${RING_GIRT_ID_PREFIX}${row}_${face}_rail`,
+        innerLeftXIn,
+        innerRightXIn,
+        railYIn,
+        zIn,
+        `ring girt ${row} of ${rowCount}, ${faceLabelFor(face)} rail — on edge, stud face to stud face`,
+      ),
+    );
   }
 
   for (const [side, xIn] of [
@@ -2086,4 +2054,169 @@ export function buildRingGirtRow(
   }
 
   return members;
+}
+
+/** An axis-aligned box in panel space, for the one question the cut pass asks. */
+interface MemberBoxIn {
+  xFromIn: number;
+  xToIn: number;
+  yFromIn: number;
+  yToIn: number;
+  zFromIn: number;
+  zToIn: number;
+}
+
+function memberBoxIn(member: PanelMember): MemberBoxIn {
+  const box = memberBoxSizeIn(member);
+  const { xIn, yIn, zIn } = member.position;
+  return {
+    xFromIn: xIn,
+    xToIn: xIn + box.xIn,
+    yFromIn: yIn,
+    yToIn: yIn + box.yIn,
+    zFromIn: zIn,
+    zToIn: zIn + box.zIn,
+  };
+}
+
+/** Whether `runs` fall short of covering `[fromIn, toIn]` whole — i.e.
+ * whether something was actually in the way. ⚠ NOT `blocking.length > 0`: a
+ * corner stud shares a rail's depth band at every girt row and never touches
+ * the rail's run, so counting candidates instead of cuts named every tie
+ * `_tie_1` on a panel where nothing had been cut at all. */
+function runsAreCut(runs: readonly [number, number][], fromIn: number, toIn: number): boolean {
+  return runs.length !== 1 || runs[0]![0] > fromIn + 1e-9 || runs[0]![1] < toIn - 1e-9;
+}
+
+/** Does this box share real volume with the slab `[yFrom, yTo] x [zFrom, zTo]`
+ * at any x? Touching faces are not an overlap. */
+function boxCrossesSlab(box: MemberBoxIn, yFromIn: number, yToIn: number, zFromIn: number, zToIn: number): boolean {
+  const overlaps = (aFrom: number, aTo: number, bFrom: number, bTo: number) =>
+    Math.min(aTo, bTo) - Math.max(aFrom, bFrom) > 1e-9;
+  return overlaps(box.yFromIn, box.yToIn, yFromIn, yToIn) && overlaps(box.zFromIn, box.zToIn, zFromIn, zToIn);
+}
+
+/**
+ * His cut-and-tie, applied to a finished panel: every ring rail is cut around
+ * anything perfectly vertical standing in it, and a separate piece behind it
+ * closes the ring again.
+ *
+ * > *"When there is an overlap that ringer needs that overlap to be cut out
+ * > and another piece added behind it. This applies to only anything perfectly
+ * > vertical that overlaps each girt."* — Tommy, 2026-11-06, generalising the
+ * > two-nailer case he had sketched the day before: *"The Gert is made with
+ * > the part that would overlap the vertical nailer cut out and a different
+ * > 42" 2x4 is inside now. Two pretty loose pieces and seals them together."*
+ *
+ * ⚠ **"Perfectly vertical" is the whole test, and it is `orientation ===
+ * "vertical"`.** A diagonal is not perfectly vertical, so a brace crossing a
+ * ring is NOT cut around — it is left to be reported as an overlap, which is
+ * what he asked for while that collision is undecided: *"As long as the review
+ * log says when things are overlapping, I think it's fine for now."* Plates,
+ * bars, webs and a ring's own boards are not vertical either.
+ *
+ * ⚠ **42in is not a magic number: it is the span between the INSIDE faces of
+ * the ring's own two short pieces** (3 to widthIn − 3 on a 48in panel). The
+ * tie butts against them at both ends, so the ring closes on itself again.
+ * ONE tie closes a face however many pieces the rail was cut into — which is
+ * what his sketch of two nailers shows.
+ *
+ * ⚠ **It only clears because a vertical LIES FLAT** (B30). The tie sits at
+ * 1.5–3in of depth, directly behind the rail it repairs, so screws pass
+ * straight through it and it seals the straw. A board stood on edge reaches
+ * 3.5in and would run through the tie as well; that case is cut rather than
+ * overlapped, and says so on the part, because nobody has specified how a ring
+ * closes around one.
+ *
+ * ⚠ **Idempotent on purpose.** It rebuilds each face's rail from the ring's own
+ * two END pieces rather than trusting whatever rail it finds, so running it
+ * twice — which `buildPanelFromRecipe` does, over a base panel that has already
+ * been through it — cuts the same panel the same way.
+ *
+ * ⚠ **What is NOT specified, and is therefore not invented: how the tie is
+ * fastened.** His screw count covers the ring's own 4 corners and its 4
+ * landings on the frame. A tie adds lap joints nobody has given a number for,
+ * so they are carried at zero and called out rather than guessed at — see
+ * `RING_GIRT_SCREWS_PER_RING`.
+ */
+export function cutRingGirtsAroundVerticals(members: readonly PanelMember[], depthIn: number): PanelMember[] {
+  const isRingEnd = (memberId: string) => memberId.startsWith(RING_GIRT_ID_PREFIX) && /_(left|right)_end$/.test(memberId);
+  const ends = members.filter((m) => isRingEnd(m.memberId));
+  if (ends.length === 0) return [...members];
+
+  const verticalBoxes = members.filter((m) => m.orientation === "vertical").map(memberBoxIn);
+
+  /* Every ring row, found by its two END pieces: their x positions give the
+     rail's run and their z gives the row's height. Nothing is read off the
+     rails themselves, which is what makes a second pass harmless. */
+  const rows = new Map<number, { leftXIn?: number; rightXIn?: number; zIn: number }>();
+  for (const end of ends) {
+    const match = /(\d+)_(left|right)_end$/.exec(end.memberId);
+    if (!match) continue;
+    const row = Number(match[1]);
+    const entry = rows.get(row) ?? { zIn: end.position.zIn };
+    if (match[2] === "left") entry.leftXIn = end.position.xIn;
+    else entry.rightXIn = end.position.xIn + PLATE_2X4_THICKNESS_IN;
+    rows.set(row, entry);
+  }
+
+  const out = members.filter((m) => !m.memberId.startsWith(RING_GIRT_ID_PREFIX) || isRingEnd(m.memberId));
+  const rowCount = rows.size;
+
+  for (const [row, { leftXIn, rightXIn, zIn }] of [...rows.entries()].sort((a, b) => a[0] - b[0])) {
+    if (leftXIn === undefined || rightXIn === undefined || rightXIn - leftXIn <= 1e-9) continue;
+    const railTopZIn = zIn + PLATE_2X4_WIDTH_IN;
+    for (const { face, railYIn, tieYIn } of ringFaces(depthIn)) {
+      const label = faceLabelFor(face);
+      const blockingRail = verticalBoxes
+        .filter((b) => boxCrossesSlab(b, railYIn, railYIn + PLATE_2X4_THICKNESS_IN, zIn, railTopZIn))
+        .map((b) => [b.xFromIn, b.xToIn] as [number, number]);
+      const runs = clearRunsIn(leftXIn, rightXIn, blockingRail);
+      const cut = runsAreCut(runs, leftXIn, rightXIn);
+      runs.forEach(([fromXIn, toXIn], i) => {
+        out.push(
+          ringBoardAlongX(
+            `${RING_GIRT_ID_PREFIX}${row}_${face}_rail${cut ? `_${i + 1}` : ""}`,
+            fromXIn,
+            toXIn,
+            railYIn,
+            zIn,
+            cut
+              ? `ring girt ${row} of ${rowCount}, ${label} rail piece ${i + 1} of ${runs.length} — cut around the vertical standing in it; the tie behind it closes the ring`
+              : `ring girt ${row} of ${rowCount}, ${label} rail — on edge, stud face to stud face`,
+          ),
+        );
+      });
+      if (!cut) continue;
+      const tieFromIn = leftXIn + PLATE_2X4_THICKNESS_IN;
+      const tieToIn = rightXIn - PLATE_2X4_THICKNESS_IN;
+      if (tieToIn - tieFromIn <= 1e-9) continue;
+      /* A flat vertical stops at 1.5in and leaves the tie's band clear, which
+         is the only case his spec covers. One stood ON EDGE reaches 3.5in and
+         runs through the tie too: that gets cut rather than overlapped, and
+         the note says the ring is not closed there, because how it would close
+         is not mine to decide. */
+      const blockingTie = verticalBoxes
+        .filter((b) => boxCrossesSlab(b, tieYIn, tieYIn + PLATE_2X4_THICKNESS_IN, zIn, railTopZIn))
+        .map((b) => [b.xFromIn, b.xToIn] as [number, number]);
+      const tieRuns = clearRunsIn(tieFromIn, tieToIn, blockingTie);
+      const tieCut = runsAreCut(tieRuns, tieFromIn, tieToIn);
+      tieRuns.forEach(([fromXIn, toXIn], i) => {
+        out.push(
+          ringBoardAlongX(
+            `${RING_GIRT_ID_PREFIX}${row}_${face}_tie${tieCut ? `_${i + 1}` : ""}`,
+            fromXIn,
+            toXIn,
+            tieYIn,
+            zIn,
+            tieCut
+              ? `ring girt ${row} of ${rowCount}, ${label} tie piece ${i + 1} of ${tieRuns.length} — a board standing on edge reaches past the rail into the tie's own band, so the tie is broken there and the ring is NOT closed at that board; no spec covers closing it`
+              : `ring girt ${row} of ${rowCount}, ${label} tie — a separate piece lapped behind the cut rail, butting the ring's two short pieces, tying the loose rail pieces together and sealing the straw`,
+          ),
+        );
+      });
+    }
+  }
+
+  return out;
 }

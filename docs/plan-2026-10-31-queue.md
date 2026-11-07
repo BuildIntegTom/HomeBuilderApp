@@ -2963,3 +2963,143 @@ the #9 already uses, to ~0.15″ effective. An estimate, flagged as one.
 centre is the girt's top face"* — 0.75″ for a bar, 1.75″ for a ring. Threaded
 into both brace builders, so a diagonal in a ring-girted panel sits an inch
 higher and its angle follows, exactly as he said it should.
+
+---
+
+# B32 — the cut-and-tie is a rule now, and the log says when things overlap (2026-11-06)
+
+> *"That's exactly the problem with the ring gerts. When there is an overlap
+> that ringer needs that overlap to be cut out and another piece added behind
+> it. This applies to only anything perfectly vertical that overlaps each
+> girt."*
+>
+> *"As long as the review log says when things are overlapping, I think it's
+> fine for now."*
+
+Two things, and the second is the price of the first.
+
+## What was wrong with B31
+
+B31 built the cut-and-tie, but it cut around **a list of spans handed to the
+girt builder** — the centre nailer studs, which the builder could work out for
+itself, plus the optional nailer, which had to be threaded in by hand through
+`buildStandardPanelMembers` after the overlap sweep caught it on a 24″ panel.
+
+That is the wrong shape for his rule, and the reason is a sequencing fact
+rather than a style preference: **most verticals in this app do not exist when
+the girts are built.** The girts come out of `buildGirtRows` with the base
+panel. The Vertical Nailer overlay, a brace pattern's additions and anything a
+user stands up in the panel editor are all added afterwards, in
+`buildPanelFromRecipe`. A span list could only ever cover the verticals that
+one file already knew about — so B31 would have needed a third hand-threaded
+span the next time a vertical was added anywhere, and nobody would have
+noticed until a panel came out unbuildable.
+
+## What it is now
+
+`cutRingGirtsAroundVerticals(members, depthIn)` — a pass over the **finished
+panel**:
+
+- Rails come out of `buildRingGirtRow` **whole**. Cutting is no longer that
+  function's job.
+- The pass finds every member with `orientation === "vertical"` and asks
+  whether its box shares real volume with each rail's own depth-and-height
+  slab. That is his *"anything perfectly vertical"*, exactly: a diagonal has
+  `orientation === "diagonal"`, and a plate, a bar, a web and the ring's own
+  boards are not vertical either.
+- Each blocked rail is split into pieces and one tie goes in behind it,
+  butting the ring's two short pieces — **one tie per face, however many
+  verticals cut it**, which is what his two-nailer sketch shows.
+- It runs in all five builders (standard, braced, column, gable, recipe) and is
+  **idempotent**: it rebuilds each rail from the ring's own END pieces rather
+  than trusting whatever rail it finds, so the recipe running it a second time
+  over an already-cut base panel produces the same panel.
+
+`optionalNailerSpanIn` and `buildGirtRows`' `extraFaceSpansIn` parameter are
+**deleted**. Nothing threads a span by hand any more.
+
+⚠ **One thing B31 got wrong and this fixes**: the optional nailer stands on the
+exterior wythe only, and B31's span list cut BOTH rails for it. The pass asks
+which face a board is actually on, so the interior rail of a 24″ nailer panel
+is now whole.
+
+⚠ **A vertical stood ON EDGE reaches 3.5″ and runs through the tie as well.**
+No builder produces one (B30 made flat the default), but the editor can. That
+case is cut rather than overlapped, and the part's own note says the ring is
+not closed at that board — because nothing in his spec says how it would be.
+
+## Why the diagonals are NOT cut around
+
+Deliberate, and his: *"only anything perfectly vertical."* A brace crossing a
+ring is left as a reported overlap rather than being allowed to chop a girt
+into pieces, and the three ways out of that collision (anchor on the nearest
+ring / keep rings off the braced wythe / notch) are still his call. The pinned
+test says so in the same words.
+
+## The Review Log entry, which is the condition he set
+
+`memberOverlapReviewEntries` in `page.tsx` runs the prism audit over
+`panelFabricationGroups` — so it reports **once per unique fabricated panel**,
+named by the same distinct name its shop sheet carries, and costs no new member
+building because those member lists are already built for the sheets.
+
+⚠ **The brace centre connector is counted apart from the rest.** It is the one
+member in the catalog whose own definition calls it illustrative rather than to
+scale, and a chevron panel has always reported its two legs clipping it.
+Rolling those in with real parts would open every braced building with a red
+line nobody can act on, and bury the real finding underneath. Nothing is
+filtered out — they are counted and named as what they are.
+
+The note names the two known causes (a brace crossing a ring; the optional
+nailer duplicating a centre nailer stud) and ends the way the zero-bracing
+entry does: *no panel was changed to produce this entry, and none should be
+changed to silence it.*
+
+## His question: are there vertical nailers in the default Super Brace?
+
+**No — and there is less than that.** Two separate answers:
+
+1. **The Carrot Pattern adds no verticals at all.** `bracePairAddedMembers`
+   under `superbrace` emits four diagonals for a Super Carrot and two for a
+   Little Carrot, exterior face only. Vertical nailers come from a different
+   pattern — `nailer`, the B21 overlay — and from the base panel.
+2. ⚠ **A braced 4ft panel LOSES the centre nailer stud it would otherwise
+   have.** `buildPanelFromRecipe` filters out every `stud_centre_` member when
+   the recipe has diagonals, which it has had since long before the Carrot
+   Pattern. So the default 48″ Super Carrot has corner posts and nothing
+   between them.
+
+That second one is a real conflict between two of his own rules, and it is his
+to settle, not mine:
+
+- *"walls 48in with a centre nailer, so load bears straight down"*
+  (`panel_module_2ft_4ft`) — a floor or roof seam lands every 24″, and the stud
+  under it is what makes the load path vertical.
+- The Super Carrot being the strongest panel and the default — which it
+  already is; `wallBracePattern` defaults to `"superbrace"` and the figure
+  defaults to `super-carrot`, so no change was needed there.
+
+As drawn today, the default wall panel puts that 24″ seam back onto 4 ft of top
+plate in bending. `buildPanelFromRecipe`'s own comment has flagged this since
+the suppression was written; what is new is that it is now the DEFAULT panel
+rather than an opt-in braced one.
+
+⚠ **Measured before writing this, because the obvious guess was wrong.** The
+suppression is not gratuitous: forcing the centre nailer back into a Super
+Carrot puts **all four** legs through the exterior stud —
+`big_carrot_exterior_left_upper x stud_centre_1_exterior` and the same for the
+lower leg and both Little Carrot diagonals. The legs are not clear of
+mid-width; they cross it.
+
+But a centre nailer is a PAIR, and the Carrot Pattern is exterior-only. Putting
+back **only the interior stud** measures clean — zero overlaps. So the options
+are:
+
+1. **Interior stud only.** Buildable today, no new geometry, and it is half a
+   load path rather than none — a floor seam would bear on a stud through the
+   interior wythe and on 4 ft of plate through the exterior.
+2. **Move the carrot legs off mid-width**, which changes the figure he drew.
+3. **Accept the plate in bending** on the default panel and have the Review Log
+   say so, the way it now says everything else.
+
+Nothing is chosen here. What is new is the measurement.

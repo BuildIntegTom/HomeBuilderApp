@@ -6,6 +6,7 @@ import {
   SKIN_THICKNESS_IN,
   braceLongestEdgeIn,
   buildCornerStuds,
+  cutRingGirtsAroundVerticals,
   LEGACY_GIRT_STYLE,
   buildGirtRows,
   type GirtStyle,
@@ -456,7 +457,12 @@ export function buildBracedPanelMembers(
     members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn, mirrored, legacyPanelEdgeAnchor, girtStyle));
   }
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
-  return members;
+  /* See `buildStandardPanelMembers` — a ring's rails are cut around the
+     panel's verticals once the panel is whole. ⚠ Its DIAGONALS are not cut
+     around and are not meant to be: *"only anything perfectly vertical"*. A
+     braced panel on ring girts therefore still reports brace-on-ring overlaps
+     in the Review Log, which is where that undecided collision belongs. */
+  return cutRingGirtsAroundVerticals(members, depthIn);
 }
 
 /**

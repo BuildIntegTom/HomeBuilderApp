@@ -14,6 +14,7 @@ import {
   buildPlates,
   buildSkins,
   shiftTrapezoidCorners,
+  cutRingGirtsAroundVerticals,
 } from "./panelMemberHelpers";
 
 /**
@@ -254,11 +255,17 @@ export function buildColumnStyleMembers(
   ];
   if (includeNailer) core.push(buildNailer(coreWidthIn, heightIn));
 
-  return [
-    ...shiftMembersX(core, COLUMN_SIDE_PLY_THICKNESS_IN),
-    ...shiftMembersX(buildColumnBlocking(depthIn, studSpanIn, coreWidthIn), COLUMN_SIDE_PLY_THICKNESS_IN),
-    ...buildColumnSidePly(depthIn, heightIn, coreWidthIn),
-  ];
+  /* ⚠ Cut AFTER the shift, not before: the ring and the verticals it is cut
+     around both move by the side ply's thickness, and the pass reads real
+     positions. See `cutRingGirtsAroundVerticals`. */
+  return cutRingGirtsAroundVerticals(
+    [
+      ...shiftMembersX(core, COLUMN_SIDE_PLY_THICKNESS_IN),
+      ...shiftMembersX(buildColumnBlocking(depthIn, studSpanIn, coreWidthIn), COLUMN_SIDE_PLY_THICKNESS_IN),
+      ...buildColumnSidePly(depthIn, heightIn, coreWidthIn),
+    ],
+    depthIn,
+  );
 }
 
 /**

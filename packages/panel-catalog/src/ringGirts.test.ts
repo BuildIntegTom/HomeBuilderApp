@@ -7,6 +7,7 @@ import {
   RING_GIRT_ID_PREFIX,
   RING_GIRT_SCREWS_PER_RING,
   buildRingGirtRow,
+  cutRingGirtsAroundVerticals,
   girtHalfHeightIn,
   memberBoxSizeIn,
 } from "./panelMemberHelpers";
@@ -25,15 +26,30 @@ import type { PanelMember } from "./componentSchema";
  * > Each of the 4 places where the girt touches flush against the frame each
  * > get 3 of the same screws."*
  *
- * > *"The Gert is made with the part that would overlap the vertical nailer
- * > cut out and a different 42" 2x4 is inside now."*
+ * > *"When there is an overlap that ringer needs that overlap to be cut out and
+ * > another piece added behind it. This applies to only anything perfectly
+ * > vertical that overlaps each girt."* — 2026-11-06, generalising his
+ * > two-nailer sketch of the day before.
  */
 
 const W = 48;
 const D = 15.5;
 const H = 120;
 
-const ring = (widthIn = W, depthIn = D) => buildRingGirtRow(1, 1, 40, widthIn, depthIn);
+/** A ring as the BUILDER lays it down: whole rails, nothing cut. Used only
+ * where the question is the rectangle's own geometry. */
+const rawRing = (widthIn = W, depthIn = D) => buildRingGirtRow(1, 1, 40, widthIn, depthIn);
+
+/** A ring as it reaches anything that reads a panel: built, then cut around
+ * the panel's verticals. This is the real state of a ring girt. */
+const panelRing = (widthIn = W, includeNailer = false, depthIn = D) =>
+  buildStandardPanelMembers(widthIn, depthIn, H, includeNailer, "ring").filter((m) =>
+    m.memberId.startsWith(RING_GIRT_ID_PREFIX),
+  );
+
+/** Just the first row's pieces, which is where every cut question is asked. */
+const row1 = (ms: PanelMember[]) => ms.filter((m) => m.memberId.startsWith(`${RING_GIRT_ID_PREFIX}1_`));
+
 const idsOf = (ms: PanelMember[]) => ms.map((m) => m.memberId);
 const lengthsOf = (ms: PanelMember[]) => ms.map((m) => m.actualDimsIn.lengthIn).sort((a, b) => a - b);
 
@@ -44,14 +60,12 @@ describe("⚠ the ring is a rectangle of four 2x4s ON EDGE", () => {
        the stud doubles' inner faces (48 - 2 x 1.5); 12.5 is the depth less the
        two rails the short pieces fit BETWEEN (15.5 - 2 x 1.5). Neither number
        is written down anywhere in the builder — they fall out of the panel. */
-    const withoutNailer = buildRingGirtRow(1, 1, 40, W, D).filter((m) => !m.memberId.includes("tie"));
-    const narrow = buildRingGirtRow(1, 1, 40, 24, D);
-    expect(lengthsOf(narrow)).toEqual([12.5, 12.5, 21, 21]);
-    expect(withoutNailer.length).toBeGreaterThan(0);
+    expect(lengthsOf(rawRing())).toEqual([12.5, 12.5, 45, 45]);
+    expect(lengthsOf(rawRing(24, D))).toEqual([12.5, 12.5, 21, 21]);
   });
 
   it("⚠ every piece stands on edge: 1.5in through, 3.5in tall", () => {
-    for (const m of ring()) {
+    for (const m of [...rawRing(), ...panelRing()]) {
       const box = memberBoxSizeIn(m);
       expect({ id: m.memberId, tall: box.zIn }).toEqual({ id: m.memberId, tall: 3.5 });
       /* 1.5in through its OWN plane — a rail is 1.5 in depth, an end piece is
@@ -66,7 +80,7 @@ describe("⚠ the ring is a rectangle of four 2x4s ON EDGE", () => {
     expect(girtHalfHeightIn("ring") - girtHalfHeightIn("blocking")).toBeCloseTo(1, 9);
     expect(girtHalfHeightIn("web")).toBe(girtHalfHeightIn("blocking"));
     const top = (m: PanelMember) => m.position.zIn + memberBoxSizeIn(m).zIn;
-    expect(top(ring()[0]!)).toBeCloseTo(40 + 1.75, 9);
+    expect(top(rawRing()[0]!)).toBeCloseTo(40 + 1.75, 9);
   });
 
   it("⚠ has NO web and NO blocking — it IS the infill", () => {
@@ -79,7 +93,7 @@ describe("⚠ the ring is a rectangle of four 2x4s ON EDGE", () => {
     /* The reason his two numbers are 45 and 12.5 rather than 45 and 15.5: the
        short pieces are let in between the long ones, so the ring's own corner
        is a butt joint and the outer rectangle still measures the full depth. */
-    const ends = ring().filter((m) => m.memberId.endsWith("_end"));
+    const ends = row1(panelRing()).filter((m) => m.memberId.endsWith("_end"));
     expect(ends).toHaveLength(2);
     for (const end of ends) {
       expect(end.position.yIn).toBeCloseTo(1.5, 9);
@@ -88,9 +102,9 @@ describe("⚠ the ring is a rectangle of four 2x4s ON EDGE", () => {
   });
 });
 
-describe("⚠ his workaround where a centre nailer is in the way", () => {
-  it("cuts the rail either side of the nailer and ties it with a 42in piece", () => {
-    const ms = ring();
+describe("⚠ his cut-and-tie: a rail is cut around anything perfectly vertical", () => {
+  it("cuts the rail either side of the centre nailer and ties it with a 42in piece", () => {
+    const ms = row1(panelRing());
     const extRails = ms.filter((m) => m.memberId.startsWith(`${RING_GIRT_ID_PREFIX}1_ext_rail`));
     const tie = ms.find((m) => m.memberId === `${RING_GIRT_ID_PREFIX}1_ext_tie`)!;
     expect(extRails).toHaveLength(2);
@@ -106,7 +120,7 @@ describe("⚠ his workaround where a centre nailer is in the way", () => {
        1.5in, so the tie can be in contact with the pieces it repairs. On edge
        it would reach 3.5in and the tie would have to be notched into a
        bearing stud. */
-    const tie = ring().find((m) => m.memberId.endsWith("_ext_tie"))!;
+    const tie = panelRing().find((m) => m.memberId.endsWith("_ext_tie"))!;
     expect(tie.position.yIn).toBeCloseTo(1.5, 9);
     expect(tie.position.yIn + memberBoxSizeIn(tie).yIn).toBeCloseTo(3, 9);
     const nailer = buildStandardPanelMembers(W, D, H, false, "ring").find(
@@ -116,15 +130,94 @@ describe("⚠ his workaround where a centre nailer is in the way", () => {
   });
 
   it("both faces get the same treatment", () => {
-    const ms = ring();
+    const ms = row1(panelRing());
     expect(ms.filter((m) => m.memberId.endsWith("_tie"))).toHaveLength(2);
     expect(ms.filter((m) => m.memberId.includes("_int_rail"))).toHaveLength(2);
   });
 
   it("a panel with no centre nailer gets four pieces and no tie", () => {
-    const narrow = buildRingGirtRow(1, 1, 40, 24, D);
+    const narrow = row1(panelRing(24));
     expect(idsOf(narrow).filter((id) => id.includes("tie"))).toEqual([]);
     expect(narrow).toHaveLength(4);
+  });
+
+  it("⚠ the OPTIONAL nailer cuts it too, on a panel with no centre stud at all", () => {
+    /* The case that proves the rule is not about centre nailers. A 24in panel
+       has no centre stud, so its ring came out whole above — turn the optional
+       nailer on and the same rail has to be cut around that instead. This used
+       to need its span threaded by hand out of `buildStandardPanelMembers`; the
+       pass now reads the nailer's real box off the finished panel. */
+    const withNailer = row1(panelRing(24, true));
+    expect(withNailer.filter((m) => m.memberId.endsWith("_ext_tie"))).toHaveLength(1);
+    expect(withNailer.filter((m) => m.memberId.startsWith(`${RING_GIRT_ID_PREFIX}1_ext_rail_`))).toHaveLength(2);
+    /* ⚠ The INTERIOR rail is untouched: that nailer is on the exterior wythe
+       only, and the pass asks which face a board actually stands on rather
+       than cutting both for symmetry (which B31's span list did). */
+    expect(withNailer.filter((m) => m.memberId === `${RING_GIRT_ID_PREFIX}1_int_rail`)).toHaveLength(1);
+    expect(withNailer.filter((m) => m.memberId.endsWith("_int_tie"))).toEqual([]);
+  });
+
+  it("⚠ a vertical ADDED after the girts cuts it, which is the whole point of the pass", () => {
+    /* His rule is *"anything perfectly vertical that overlaps each girt"*, and
+       most verticals in this app are added to a recipe long after the girts
+       were built: the Vertical Nailer overlay, a brace pattern's additions, and
+       anything a user stands up in the panel editor. A span list handed to the
+       girt builder could never see them. */
+    const members = buildPanelFromRecipe({
+      name: "ring + an added vertical",
+      widthIn: 24,
+      depthIn: D,
+      heightIn: H,
+      girtStyle: "ring",
+      added: [
+        { kind: "straight", id: "added_vertical", wythe: "exterior", fromXIn: 10, fromZIn: 3, toXIn: 10, toZIn: 117 },
+      ],
+    });
+    expect(idsOf(members).filter((id) => id.startsWith(`${RING_GIRT_ID_PREFIX}1_ext_`)).sort()).toEqual([
+      `${RING_GIRT_ID_PREFIX}1_ext_rail_1`,
+      `${RING_GIRT_ID_PREFIX}1_ext_rail_2`,
+      `${RING_GIRT_ID_PREFIX}1_ext_tie`,
+    ]);
+    /* And the panel is buildable: the added board no longer shares a volume
+       with the rail it stands in. */
+    expect(overlappingMemberPairs(members)).toEqual([]);
+  });
+
+  it('⚠ a DIAGONAL is not cut around — "only anything perfectly vertical"', () => {
+    /* Deliberate, and his call while the brace-on-ring collision is undecided:
+       *"As long as the review log says when things are overlapping, I think
+       it's fine for now."* The rail stays whole and the overlap is reported,
+       rather than a brace quietly chopping a girt into pieces. */
+    const members = buildPanelFromRecipe({
+      name: "ring + a crossing diagonal",
+      widthIn: 24,
+      depthIn: D,
+      heightIn: H,
+      girtStyle: "ring",
+      added: [{ kind: "diagonal", id: "d1", wythe: "exterior", fromXIn: 1.5, fromZIn: 3, toXIn: 22.5, toZIn: 90 }],
+    });
+    expect(idsOf(members).filter((id) => id.startsWith(`${RING_GIRT_ID_PREFIX}1_ext_`))).toEqual([
+      `${RING_GIRT_ID_PREFIX}1_ext_rail`,
+    ]);
+    expect(overlappingMemberPairs(members).every((p) => p.includes("d1"))).toBe(true);
+  });
+
+  it("⚠ running the pass twice changes nothing", () => {
+    /* It has to be idempotent: `buildStandardPanelMembers` runs it, and
+       `buildPanelFromRecipe` runs it again over that same base plus its own
+       added members. It rebuilds each rail from the ring's END pieces rather
+       than from whatever rail it finds, which is what makes that safe. */
+    const print = (ms: PanelMember[]) =>
+      ms.map((m) => `${m.memberId}@${m.position.xIn}:${m.actualDimsIn.lengthIn}`).sort();
+    const once = buildStandardPanelMembers(W, D, H, true, "ring");
+    expect(print(cutRingGirtsAroundVerticals(once, D))).toEqual(print(once));
+  });
+
+  it("leaves every other girt style alone", () => {
+    for (const style of ["web", "blocking"] as const) {
+      const members = buildStandardPanelMembers(W, D, H, true, style);
+      expect(cutRingGirtsAroundVerticals(members, D)).toEqual(members);
+    }
   });
 });
 
@@ -162,7 +255,9 @@ describe("⚠ a ring-girted panel is buildable", () => {
        a rail along the whole width of the same face. So the fallback now puts
        a brace through a board.
 
-       Three ways out, all of them his call, none of them taken here:
+       ⚠ **And his cut-and-tie is deliberately NOT the answer here**, because
+       he scoped it to *"only anything perfectly vertical"*. Three ways out,
+       all of them his call, none of them taken here:
          1. anchor braces on the NEAREST ring rather than at mid-height;
          2. keep rings off the braced patterns' wythe;
          3. notch — which this app does not do anywhere else.
@@ -253,8 +348,9 @@ describe("⚠ the screws are counted per RING, not per board", () => {
     /* Which is why the fastener model cannot express this with the per-member
        rules it uses for everything else: his number counts JOINTS. A 48in
        panel's ring is 8 boards; a 24in panel's is 4; both are one ring. */
-    const cut = ring();
-    const whole = buildRingGirtRow(1, 1, 40, 24, D);
-    expect({ cutBoards: cut.length, wholeBoards: whole.length }).toEqual({ cutBoards: 8, wholeBoards: 4 });
+    expect({ cutBoards: row1(panelRing()).length, wholeBoards: row1(panelRing(24)).length }).toEqual({
+      cutBoards: 8,
+      wholeBoards: 4,
+    });
   });
 });

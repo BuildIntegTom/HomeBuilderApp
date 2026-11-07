@@ -8,6 +8,7 @@ import {
   braceLongestEdgeIn,
   computeBraceBoardCornersIn,
   type GirtStyle,
+  cutRingGirtsAroundVerticals,
 } from "./panelMemberHelpers";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 
@@ -347,12 +348,21 @@ export function buildPanelFromRecipe(recipe: PanelRecipe): PanelMember[] {
     recipe.includeNailer === true && !hasDiagonals && !hasAddedNailer(recipe),
     recipe.girtStyle,
   ).filter((m) => !(hasDiagonals && m.memberId.startsWith("stud_centre_")));
-  return [
-    ...base,
-    ...recipe.added.map((spec) =>
-      spec.kind === "diagonal" ? buildDiagonalFromSpec(spec, recipe.depthIn) : buildStraightFromSpec(spec, recipe.depthIn),
-    ),
-  ];
+  /* ⚠ The ring cut runs LAST, over the base panel AND the added members.
+     This is the call site the pass exists for: a Vertical Nailer overlay, a
+     brace pattern's verticals and anything a user stands up in the panel
+     editor are all added here, long after the girts were built, and every one
+     of them is *"anything perfectly vertical that overlaps each girt"*. The
+     base has already been through the pass once; it is idempotent. */
+  return cutRingGirtsAroundVerticals(
+    [
+      ...base,
+      ...recipe.added.map((spec) =>
+        spec.kind === "diagonal" ? buildDiagonalFromSpec(spec, recipe.depthIn) : buildStraightFromSpec(spec, recipe.depthIn),
+      ),
+    ],
+    recipe.depthIn,
+  );
 }
 
 /**

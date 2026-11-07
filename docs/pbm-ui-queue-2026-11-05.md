@@ -34,7 +34,7 @@ thumbnails are one piece of work.
 | --- | --- | --- | --- |
 | **U1** | HIDE tab + Reset View | yes | **ready — next up after the B-queue** |
 | **U2** | Named path, static arrows | **Edit → View → Price → Print** | **answered, ready** |
-| **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **specced; Cindy needs its outline + openings** |
+| **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **specced and unblocked — Cindy ships as its overall rectangle, 2026-11-06** |
 | **U4** | Props for scale | yes | **ready** |
 | **U5** | Site toggle | yes | **ready** |
 | **U6** | Dimension handles | *"genius move"* — 5 handles named | **specced, one risk to settle first** |
@@ -117,7 +117,7 @@ reads *Sign in to open a saved design* when signed out — see
 | **Tiny House** | 16 × 24 ft, **shed roof, tall wall to the NORTH** | shed roof + tall-wall derivation, both built |
 | **The Tank** | 24 × 48 ft, gable roof | gable + ridge column, built |
 | **Octagon** | 16 ft **or** 32 ft across — one tile, two sub-options | octagon footprint, built |
-| **The Cindy** | his Panel-Ready Plan — 1650 sqft, 3 bed / 2 bath ranch | plan received; see below |
+| **The Cindy** | his Panel-Ready Plan — 1650 sqft, 3 bed / 2 bath ranch | 55'-3" x 34'-10" at 15.5"; notch and step deferred, see below |
 | **Square courtyard** | courtyard building, square | courtyard, built |
 | **Octagon courtyard** | courtyard building, octagonal | concentric rings, built |
 
@@ -162,19 +162,42 @@ the Cindy needs no special section.
 That both chains sum exactly is the check worth having: the plan is internally
 consistent, so these are measurements rather than my reading of a drawing.
 
-**Two things still needed before this tile can be drawn:**
+### The Cindy, as it will actually ship — his call, 2026-11-06
 
-1. ⚠ **The outline.** It is not a rectangle — there is a notch in the
-   right-hand wall (the 3'-3" gaps between the two 14'-2" runs) and a step near
-   the bottom where the 2'-1" and 3'-3" dimensions sit. From one screenshot at
-   1/8" = 1'-0" I can see THAT it steps; I cannot say which segments are walls
-   and which way they turn. A wall length nobody measured is the one thing this
-   app refuses to produce.
-2. ⚠ **Where the doors and windows are**, which is exactly the part he says is
-   fixed: position along each wall, and width.
+> *"Use your best judgment from the knowledge that you have for Cindy. We can
+> finesse it later. Let's just get something up there for now."*
 
-Either a PDF/DXF of that sheet, or a wall-run list (each wall, its length, which
-way it turns, and the openings on it), closes both at once.
+So the tile is **not blocked** on anything. Stride 1 is this, and every number
+in it is one he gave:
+
+| | stride 1 | why |
+| --- | --- | --- |
+| **outline** | the overall rectangle, **55'-3" x 34'-10"** | both perimeter chains close on those two numbers, and they are measurements rather than my reading of a drawing |
+| **wall thickness** | **15.5"** | his call, the standard panel depth |
+| **roof** | the app's 4:12 default | no roof is dimensioned on a toe-up plan |
+| **openings** | whatever the panelizer auto-spawns — 4 ft on the dead-south wall, 2 ft elsewhere | an existing confirmed rule (`auto_spawned_windows`), not an invented schedule |
+| **panels** | re-tiled from scratch | his call: *"we can repanelize Cindy, just use same window and door slots"* |
+
+⚠ **What stride 1 deliberately does NOT have, and why it is deferred rather
+than guessed.** The real plan is not a rectangle: there is a notch in the
+right-hand wall (the 3'-3" gaps between the two 14'-2" runs) and a step near
+the bottom where the 2'-1" and 3'-3" dimensions sit. From one screenshot at
+1/8" = 1'-0" it is clear THAT it steps; which segments are walls and which way
+they turn is not. His standing rule is that a wall length has to be exact
+(`dimensional_tightness_principle`), so the notch and the step wait for a
+PDF/DXF or a wall-run list — they are not approximated into the template. A
+rectangle at his two overall dimensions is a true simplification; a notch at
+invented lengths would be a false building.
+
+Same for the openings: the positions ARE the fixed part of this plan by his own
+words, and nothing here pretends to know them. The auto-spawn rule puts windows
+and doors on the template so a stranger sees a finished house, and replacing
+them with the real schedule later changes no panel geometry — openings re-tile
+their own wall.
+
+**To finesse it:** a wall-run list (each wall, its length, which way it turns,
+and the openings on it) or a PDF/DXF of that sheet closes the notch, the step
+and the opening schedule in one pass.
 
 ⚠ Also worth a fix on the website while you think of it: `buildinteg.com/cindy`
 404s. The page lives at `/the-cindy`. People will type the short one.

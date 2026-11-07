@@ -13,6 +13,7 @@ import {
   type GirtStyle,
   buildNailer,
   plumbEndedSlopedBoardCornersIn,
+  cutRingGirtsAroundVerticals,
 } from "./panelMemberHelpers";
 
 /**
@@ -523,7 +524,9 @@ export function buildGablePanelMembers(
     })(),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
-  return members;
+  /* See `buildStandardPanelMembers` — a ring's rails are cut around the
+     panel's verticals once the panel is whole. */
+  return cutRingGirtsAroundVerticals(members, depthIn);
 }
 
 /**

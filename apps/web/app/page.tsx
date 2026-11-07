@@ -342,6 +342,7 @@ import {
   ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   decideRoofForm,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
+  overlappingMemberPairs,
   type RoofCatcherBeamShape,
   type RoofSystemType,
   type RoofTrussSpacingIn,
@@ -10417,6 +10418,75 @@ export default function LayoutEditor() {
   }, [isSquareBalePanelization, baseWallSlots, secondStory, cornerWidthInForTiling, unitSystem]);
 
   /**
+   * **Every pair of members in this building that share one volume.**
+   *
+   * > *"As long as the review log says when things are overlapping, I think
+   * > it's fine for now."* — Tommy, 2026-11-06, setting the condition under
+   * > which an undecided collision is allowed to stay in the model. This entry
+   * > is that condition. His standing rule behind it is older: *"It doesn't
+   * > make sense to allow any overlapping because these need to possible to
+   * > build."*
+   *
+   * ⚠ **It reads `panelFabricationGroups`, so it reports once per unique
+   * fabricated panel rather than once per instance** — a wall of 14 identical
+   * Super Carrots is one line, named by the same distinct name its shop sheet
+   * carries. That is also why it costs no new member building: those member
+   * lists are already built for the sheets.
+   *
+   * ⚠ **The brace centre connector is counted apart from the rest.** It is
+   * the one member in the catalog whose own comment calls it illustrative
+   * rather than to scale, and a chevron panel has always reported its two legs
+   * clipping it. Rolling those in with real parts would mean every braced
+   * building opens with a red line it cannot act on, and the real finding
+   * underneath would be invisible. Nothing is filtered out — they are counted
+   * and named as what they are.
+   */
+  const memberOverlapReviewEntries = useMemo(() => {
+    const isIllustrative = (pair: string) => pair.includes("brace_center_connector");
+    const reports = panelFabricationGroups
+      .map((group) => ({ name: group.distinctName, pairs: overlappingMemberPairs(group.members) }))
+      .filter((report) => report.pairs.length > 0);
+    if (reports.length === 0) return [];
+    const real = reports
+      .map((report) => ({ name: report.name, pairs: report.pairs.filter((pair) => !isIllustrative(pair)) }))
+      .filter((report) => report.pairs.length > 0);
+    const illustrative = reports.reduce((n, report) => n + report.pairs.filter(isIllustrative).length, 0);
+    /* Bounded on purpose: a Review Log note is read, not scrolled. The count
+       in the label is the whole number either way. */
+    const LIST_LIMIT = 8;
+    const listed = real.slice(0, LIST_LIMIT).map((report) => `${report.name} (${report.pairs.join("; ")})`);
+    const moreCount = real.length - listed.length;
+    const illustrativeSentence =
+      illustrative === 0
+        ? ""
+        : `A further ${illustrative} pair${illustrative === 1 ? "" : "s"} involve \u0060brace_center_connector\u0060, the short post a chevron's two legs meet at mid-panel, whose own definition calls it illustrative rather than to scale — counted here, but not a real part to go and fix. `;
+    if (real.length === 0) {
+      return [
+        {
+          label: `${illustrative} illustrative member overlap${illustrative === 1 ? "" : "s"} — no real part affected`,
+          status: "pending-BI-confirmation" as const,
+          note:
+            illustrativeSentence +
+            "No panel in this building has two real parts in the same volume.",
+        },
+      ];
+    }
+    return [
+      {
+        label: `⚠ ${real.length} panel type${real.length === 1 ? "" : "s"} with two members in the same volume — not buildable as drawn`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `His standing rule is that nothing may overlap: "It doesn't make sense to allow any overlapping because these need to possible to build." ` +
+          `Each pair below is two members whose boxes share real volume, measured as prisms rather than as bounding boxes. Real carpentry would notch one into the other; this app models notching nowhere, so the shop would have to be told which board loses material and the drawing does not say. ` +
+          `By unique fabricated panel: ${listed.join(" · ")}${moreCount > 0 ? ` · and ${moreCount} more` : ""}. ` +
+          illustrativeSentence +
+          `⚠ Two known causes, both his own open questions rather than defects to patch here: a diagonal brace crossing a RING girt (a ring runs a rail the whole width of the face a brace runs down, where a bar bit only 3.5in at each end), and the optional nailer on a panel wide enough to already carry a centre nailer stud — the same board asked for twice. ` +
+          `No panel was changed to produce this entry, and none should be changed to silence it.`,
+      },
+    ];
+  }, [panelFabricationGroups]);
+
+  /**
    * One Review Log entry per wall carrying an unbuilt span.
    *
    * **A wall that stops short is by definition an incomplete design**, and
@@ -10767,6 +10837,10 @@ export default function LayoutEditor() {
       // material assumption below it, and unlike the band case nothing else in
       // the log would say a word about it.
       ...squareBaleMergedCornerReviewEntries,
+      // Beside it, and for the same reason: a part that cannot be built
+      // outranks every material assumption below. His 2026-11-06 condition for
+      // leaving the brace/ring collision alone was that this log says so.
+      ...memberOverlapReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
       // One line, above the material assumptions because it is about THIS file
@@ -10960,6 +11034,7 @@ export default function LayoutEditor() {
     spanningHeaderReviewEntries,
     zeroBracingReviewEntries,
     squareBaleMergedCornerReviewEntries,
+    memberOverlapReviewEntries,
     // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
     // values, and the notice is derived inline rather than in its own memo
     // precisely so that no MEMO joins this array.
