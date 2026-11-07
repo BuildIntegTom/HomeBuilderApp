@@ -40,6 +40,10 @@ export interface PanelTypeDef {
     | "braced"
     | "header"
     | "sill"
+    /* B33 — the Big Header gets a roster entry, because it gets a
+       fabrication sheet, and `SHOP_DRAWING_PANEL_TYPES` looks its label and
+       description up here like every other type's. */
+    | "big-header"
     | "inclined-gable"
     | "gable"
     | "jack-stud"

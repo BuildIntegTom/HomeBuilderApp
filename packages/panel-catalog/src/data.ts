@@ -1005,6 +1005,24 @@ export const priceRates = {
   bracedPerSqFt: 32,
   headerSillPerSqFt: 34,
   columnPerSqFt: 36,
+  /**
+   * A **Big Header** panel, by its own elevation face.
+   *
+   * > *"Big Header price rate: $25/sq ft."* - Tommy, 2026-11-05, asked
+   * > directly, because this was the one panel type the app could place and
+   * > then charge nothing at all for.
+   *
+   * His number, not a placeholder - which is why it sits in this block under
+   * the shared `confirmed` status rather than in its own `CatalogValue` the
+   * way `beamPriceRatePerSqFt` had to.
+   *
+   * It is the one rate here BELOW the standard panel's $28. Worth saying out
+   * loud, because it reads like a mistake and is not: a Big Header is mostly
+   * air - two chords, a W-web and two jack studs, with no straw, no girts and
+   * no full-height skins - so a square foot of it is less panel than a square
+   * foot of anything else on this list.
+   */
+  bigHeaderPerSqFt: 25,
   roofPerSqFt: 42,
   /**
    * Floor and roof PANELS, by covered area.
@@ -1023,7 +1041,7 @@ export const priceRates = {
   roofPanelPerSqFt: 24,
   totalModifier: 1.3,
   status: "confirmed" as const,
-  note: "Based on biggest face; total = sum(area x rate-by-type) x totalModifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy). Floor and roof panels are priced per square foot of COVERAGE at $24 (Tommy), a roof's measured up its real slope. totalModifier (default 1.3) is a fabricator/admin-only markup, editable in the UI — public viewers see the base material cost with no markup applied (Tommy).",
+  note: "Based on biggest face; total = sum(area x rate-by-type) x totalModifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy). Big Header has its own $25/sqft rate (Tommy, 2026-11-05) - charged on its own height x width face, plus the opt-in sill below it when there is one, since that sill is part of the same fabricated part. Before that it was charged nothing at all. Floor and roof panels are priced per square foot of COVERAGE at $24 (Tommy), a roof's measured up its real slope. totalModifier (default 1.3) is a fabricator/admin-only markup, editable in the UI — public viewers see the base material cost with no markup applied (Tommy).",
 };
 
 /**
@@ -1128,6 +1146,24 @@ export const panelTypes: PanelTypeDef[] = [
       "Below-opening panel. Shares the same pair of Plywood Jack Studs as the header above it (same rough " +
       "opening) — see the Plywood Jack Stud detail page.",
     loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
+  {
+    id: "big-header",
+    label: "Big Header",
+    description:
+      "A header with NO opening under it (Tommy, 2026-11-03: \"Big headers and window headers are really the " +
+      "same thing\") - for double doors, large openings and conditioned garages. Two 2x4 chords per wythe rolled " +
+      "so their 3.5in face shows in elevation, each chord plywood-capped across both wythes, a repeating W-truss " +
+      "web on both wythes at however many peaks keep every segment at or above 30deg, an edge stud inboard of " +
+      "each end, and its own two jack studs at x = 0 and x = width - t. No straw, no girts, no full-height " +
+      "skins. A sill panel is available UNDER it as an opt-in and is off by default (Tommy: \"2 with the option " +
+      "to have a sill under it as an option in the left bar but default not\") - when present it is part of the " +
+      "same fabricated part, not a separate Sill instance.",
+    loadBearingCapacity: {
+      status: "pending-BI-confirmation",
+      note: `The chords and the W-web carry the opening load; the assembly's own capacity has never been computed. ${STRUCTURAL_PENDING_NOTE}`,
+    },
     shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },
   {

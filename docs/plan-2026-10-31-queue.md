@@ -3103,3 +3103,129 @@ are:
    say so, the way it now says everything else.
 
 Nothing is chosen here. What is new is the measurement.
+
+---
+
+# B33 — the Big Header gets a sheet, a weight and a price (2026-11-06)
+
+> *"Big Header price rate: $25/sq ft."* — Tommy, 2026-11-05
+
+It was the last item on the B queue and it was described as *"the last panel
+type without either"* — without a fabrication sheet and without a price rate.
+That description turned out to be an understatement.
+
+## What a Big Header actually was
+
+`big-header` has been a real `PanelSlotType` and a real `NamedPanelType` since
+the type existed. The plan drew it pink, the elevation drew it, the 3D view
+built it from `buildBigHeaderMembers`, and its own Selected Panel note let you
+set the width, the height and the opt-in sill.
+
+And it was absent from `SHOP_DRAWING_PANEL_TYPES` **and** from
+`membersForPanelTypeId` **and** from `allRealPanelBuild`. Everything downstream
+reads one of those three, so a placed Big Header had:
+
+- no fabrication sheet,
+- no wood weight, no fastener weight, no plywood area, no board feet,
+- no row in the CSV, the DXF or the PDF packet,
+- no entry in the member-overlap audit,
+- no line in the panel count,
+- and **no price at all** — not a wrong rate, no bucket.
+
+⚠ **So his $25 moves a total UP, not down.** The queue note read as though a
+Big Header was being charged somewhere and the rate was being corrected; it
+was not being charged anywhere. Verified in the running app, below.
+
+## The two fields a Big Header needed
+
+A Big Header is a **short assembly in a full-height slot**, which is the one
+shape `PanelInstance` had nowhere to put. Two new fields:
+
+- `bigHeaderHeightIn` — its own total height.
+- `includeSillOnBigHeader` — whether the opt-in sill is built below it.
+
+⚠ **Not `heightOverrideIn`.** That field means *"this instance is one slice of
+a wall a Mid-Wall Bond Beam cut in two"*, and a Big Header inside a banded wall
+would also be one. Two different facts, two fields, and a pinned test says so.
+
+⚠ **No new positional argument.** `PanelMemberSource` — the trailing object
+`membersForPanelTypeId`, `woodWeightKgFor` and `fastenerWeightKgFor` already
+take — gained the two fields, so **every call site that already passed the
+instance got them right without being touched**. Its parameter was renamed
+`bracePair` → `source`: it stopped being "the brace pair" when `editedMembers`
+joined it, and this would have made the name wronger.
+
+## Pricing
+
+`priceRates.bigHeaderPerSqFt: 25`, in the `confirmed` block with the other
+rates he has given, and its own `big-header` bucket in `price.ts`.
+
+⚠ **It is the one rate below the standard panel's $28, and that is right.** A
+Big Header is two chords, a W-web and two jack studs: no straw, no girts, no
+full-height skins. A square foot of it is less panel than a square foot of
+anything else on the list. A test pins `bigHeaderPerSqFt < standardPerSqFt` so
+it cannot be "corrected" into a transposition later.
+
+⚠ **Its own bucket rather than the `opening` one.** A spanning header is built
+from `buildBigHeaderMembers` too and is charged at `opening` by his 2026-09-25
+decision. Two decisions of his about the same geometry, which is the same shape
+as the Big Header BEAM sitting in `beam` while a spanning header sits in
+`opening`. A second test says the two buckets differ **on purpose**.
+
+⚠ **`areaSqFtFor` could not measure it.** That helper multiplies a slot's width
+by the STORY's wall height, which for a 24in header in a 96in slot bills four
+times the panel there is. `bigHeaderFaceAreaSqFt` (new, pure, seven tests) is
+its own height × its width, plus the opt-in sill where there is one — that sill
+comes out of the same builder and goes on the same sheet, so it is the same
+part at the same rate. **No separate sill rate was invented.**
+
+⚠ **It is a plain `const` outside the `price` memo, and that is measured, not
+stylistic.** Computed inside the memo — as a call or inline — the React
+Compiler stops being able to preserve `price`'s own memoization and
+`preserve-manual-memoization` goes 61 → 62, a rule this repo's gate rations.
+Two lines of growth in that memo costs nothing; thirty costs the memo.
+
+## Straw: zero, and a disagreement named rather than resolved
+
+A Big Header gets **zero straw**, matching what `spanningHeaderFabricationGroups`
+already decided IN WORDS for the identical member set: *"a solid framed +
+braced assembly, not a straw-filled cavity."*
+
+⚠ **But a window/door `header` gets a member-aware straw VOLUME** through
+`strawWeightKgFor`, for the same kind of cavity — and he said on 2026-11-03
+that *"big headers and window headers are really the same thing."* The two
+disagree today. **Which way they agree is a building question**: is the space
+between a header's chords and webs stuffed, or is it void? Nobody has been
+asked, so B33 took the reading that already applies to this exact geometry and
+put the disagreement in the Review Log and the spec rather than picking.
+
+## What closed and what opened
+
+The Review Log flag **"Big Header Shop Drawing / Material Totals pricing not
+yet wired"** is deleted, not reworded — that list is an honest inventory of
+what is NOT done, and a closed item sitting in it is the same defect as an open
+one missing from it. **"Big Header structural estimating" is unchanged**: a
+sheet and a price say nothing about what the assembly carries.
+
+## Verified in the running app
+
+Drew a rectangle, right-clicked a north-wall panel → **Big Header**:
+
+- Project Summary panel note reads **`… + 3 door headers + 1 big header`**.
+- The Plan View's PANEL TYPES legend reads **`Big Header 1`**.
+- A sheet titled **`Panel Fabrication: 4'8" Big Header 96" (1)`** — B25's own
+  derived name, height first — with a real cut list (four 2x4 chord plates at
+  94½" and 93", studs, **two 3/4" Plywood Jack Studs 15½" × 24"**, eight braces
+  with their angles and jig notes, the sill's skins), **ALSO USED AT: N10**,
+  the pending-BI structural note, and **Straw 0.0 lb / Wood 220.5 lb** on the
+  weight checker.
+- **The member-overlap audit reports nothing for it.** The entry still names
+  the five short Gable End tiles it found on day one (already its own task) and
+  the Big Header is not among them — a new type entering the audit clean.
+- **The price arithmetic is exact.** Toggling the opt-in sill on moved the
+  total **$132,974.95 → $133,668.28**, a delta of **$693.33**. Back out the
+  rate: 693.33 ÷ (25 × 1.3) ÷ (32/12) = **96.00in**, which is
+  `bigHeaderDefaultWidthIn` to the hundredth.
+
+Gates: **3762 tests / 204 files**, typecheck clean in all four projects, lint
+**169 / 119 / 50 — every rule byte-identical** to the baseline.

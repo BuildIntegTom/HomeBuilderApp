@@ -543,3 +543,50 @@ describe("combinedPanelLabel", () => {
     }
   });
 });
+
+describe("B33 — a Big Header instance carries its own height and its own sill flag", () => {
+  const fp = buildRectangleFootprint(30, 20);
+
+  it("reads both off the slot, so the fabrication sheet is not built at wall height", () => {
+    /* ⚠ A Big Header is a SHORT assembly in a full-height slot. Every other
+       panel type's height is the wall's (or a Mid-Wall band's), so before B33
+       there was nowhere on a `PanelInstance` for its own height to live and
+       the type had no fabrication sheet at all. */
+    const instances = allPanelInstances(
+      fp,
+      { AB: [{ type: "big-header" as const, widthIn: 96, heightIn: 24, includeSillOnBigHeader: true }] },
+      40,
+    );
+    expect(instances).toHaveLength(1);
+    expect(instances[0]).toMatchObject({
+      panelType: "big-header",
+      widthIn: 96,
+      bigHeaderHeightIn: 24,
+      includeSillOnBigHeader: true,
+    });
+  });
+
+  it("⚠ does NOT use heightOverrideIn for it — that field means a Mid-Wall band", () => {
+    /* The two facts must stay apart: `heightOverrideIn` has to remain free to
+       say "this instance is one slice of a wall a beam cut in two", which a
+       Big Header inside a banded wall would also be. */
+    const instances = allPanelInstances(fp, { AB: [{ type: "big-header" as const, widthIn: 96, heightIn: 24 }] }, 40);
+    expect(instances[0]!.heightOverrideIn).toBeUndefined();
+    expect(instances[0]!.bigHeaderHeightIn).toBe(24);
+  });
+
+  it("defaults the sill flag to false and leaves the height undefined when the slot says nothing", () => {
+    /* An undefined height falls back to `bigHeaderDefaultHeightIn` at the
+       point of use (which is itself pending-BI-confirmation), rather than
+       being frozen into the instance here. */
+    const instances = allPanelInstances(fp, { AB: [{ type: "big-header" as const, widthIn: 96 }] }, 40);
+    expect(instances[0]!.bigHeaderHeightIn).toBeUndefined();
+    expect(instances[0]!.includeSillOnBigHeader).toBe(false);
+  });
+
+  it("leaves every other panel type's two new fields alone", () => {
+    const instances = allPanelInstances(fp, { AB: [{ type: "standard" as const, widthIn: 40 }] }, 40);
+    expect(instances[0]!.bigHeaderHeightIn).toBeUndefined();
+    expect(instances[0]!.includeSillOnBigHeader).toBeUndefined();
+  });
+});

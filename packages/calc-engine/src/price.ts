@@ -6,6 +6,7 @@ export type PriceablePanelType =
   | "braced"
   | "opening"
   | "column"
+  | "big-header"
   | "roof"
   | "floor-panel"
   | "roof-panel"
@@ -22,6 +23,13 @@ const RATE_BY_TYPE: Record<PriceablePanelType, number> = {
   braced: priceRates.bracedPerSqFt,
   opening: priceRates.headerSillPerSqFt,
   column: priceRates.columnPerSqFt,
+  /* ⚠ Its own bucket at his own $25, and it is the only rate here LOWER than
+     a standard panel's. See `bigHeaderPerSqFt` for why that is right rather
+     than a typo. ⚠ Not the `opening` bucket: a spanning header IS charged
+     there by his 2026-09-25 decision, and the two are the same geometry, so
+     this is a second decision of his sitting beside the first rather than an
+     inconsistency nobody noticed. */
+  "big-header": priceRates.bigHeaderPerSqFt,
   /** The GABLE row, which is a wall standing under a roof, not a roof. */
   roof: priceRates.roofPerSqFt,
   /* ⚠ These two are per square foot of COVERAGE — what the panel lies

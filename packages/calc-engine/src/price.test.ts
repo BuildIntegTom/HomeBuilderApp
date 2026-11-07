@@ -53,6 +53,31 @@ describe("computePrice", () => {
     expect(computePrice([{ type: "beam", areaSqFt: 10 }])).toBeCloseTo(10 * beamPriceRatePerSqFt.value, 2);
   });
 
+  it("⚠ a Big Header is $25/sq ft, HIS number, and it is the one rate below a standard panel", () => {
+    /* *"Big Header price rate: $25/sq ft."* - Tommy, 2026-11-05, asked
+       directly because this was the one panel type the app would let you place
+       and then charge nothing at all for. The second assertion is the point of
+       the test: $25 < $28 reads like a transposition, so it is pinned
+       deliberately. A Big Header is two chords, a W-web and two jack studs -
+       no straw, no girts, no full-height skins. */
+    expect(priceRates.bigHeaderPerSqFt).toBe(25);
+    expect(priceRates.bigHeaderPerSqFt).toBeLessThan(priceRates.standardPerSqFt);
+    expect(computePrice([{ type: "big-header", areaSqFt: 16 }])).toBeCloseTo(400, 2);
+  });
+
+  it("⚠ a Big Header is NOT charged at the opening rate a spanning header is", () => {
+    /* The two are the SAME geometry - `buildBigHeaderMembers` builds both -
+       and they are charged differently on purpose: a spanning header sits in
+       the `opening` bucket by his 2026-09-25 decision, and a placed Big Header
+       in its own by his 2026-11-05 one. Two decisions of his, not a drift. If
+       anyone ever "fixes" this into one bucket, this test says it was chosen. */
+    expect(priceRates.bigHeaderPerSqFt).not.toBe(priceRates.headerSillPerSqFt);
+    expect(computePrice([{ type: "big-header", areaSqFt: 10 }])).not.toBeCloseTo(
+      computePrice([{ type: "opening", areaSqFt: 10 }]),
+      2,
+    );
+  });
+
   it("prices corner/braced/opening panels at their own confirmed rates", () => {
     // 10 sqft corner @ $36 + 10 sqft braced @ $32 + 10 sqft opening @ $34
     // = 360 + 320 + 340 = 1020, x 1.3 = 1326

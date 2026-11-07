@@ -380,10 +380,25 @@ import PanelEditorBody from "./PanelEditorBody";
  *
  * `editedMembers` and `panelName` join it for B19's panel editor, so a
  * hand-edited panel is drawn, cut, weighed and named as the panel it is.
+ *
+ * ⚠ **The parameter that carries this used to be called `bracePair`, and B33
+ * renamed it `source`.** The Big Header's own height and sill flag join the
+ * list here, which is what makes the old name wrong: this has not been "the
+ * brace pair" since `editedMembers` joined it, and the next field to arrive
+ * would have made it wronger. Extending this Pick is also why B33 added no
+ * positional — every call site already passing the instance got the two new
+ * fields right without being touched, which is exactly the drift
+ * `standardPanelMembersFor`'s own history above is about.
  */
 type PanelMemberSource = Pick<
   PanelInstance,
-  "bracePairPattern" | "bracePairHalf" | "braceFigure" | "editedMembers" | "panelName"
+  | "bracePairPattern"
+  | "bracePairHalf"
+  | "braceFigure"
+  | "editedMembers"
+  | "panelName"
+  | "bigHeaderHeightIn"
+  | "includeSillOnBigHeader"
 >;
 import { shearMembersFor } from "./shearMembers";
 import {
@@ -419,6 +434,7 @@ import {
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 import { applyDrawTimeBracing } from "./drawTimeBracing";
 import { standardPanelMembersFor } from "./standardPanelMembers";
+import { bigHeaderFaceAreaSqFt } from "./bigHeaderTakeoff";
 import { toExportableAssemblies } from "./projectExportAssemblies";
 import { buildProjectPanelDxf } from "./projectPanelDxf";
 import { remapEndAnchoredPositions, roofShapeChangeVerdict } from "./roofShapeChange";
@@ -714,10 +730,26 @@ const phase2Assumptions = () => [
     status: "pending-BI-confirmation" as const,
     note: "Geometry only (rotated-stud chords + multi-peak W-truss brace + 2 jack studs, per Tommy's own spec) — no fastener schedule or real load/shear estimate exists yet for this assembly, unlike the bearing/shear placeholders already computed for Standard/Braced panels above.",
   },
+  /* ⚠ **"Big Header Shop Drawing / Material Totals pricing not yet wired"
+     WAS HERE, and B33 closed it — 2026-11-06.** A Big Header now has its own
+     fabrication sheet, its real wood/fastener/plywood weight, a row in every
+     file export, an entry in the overlap audit, and his own $25/sqft rate.
+     Deleted rather than kept and reworded, because this list is an honest
+     inventory of what is NOT done and a closed item sitting in it is the same
+     defect as an open one missing from it. What is still pending about this
+     panel is the entry immediately above (structural estimating) and that one
+     is unchanged — a sheet and a price say nothing about what the assembly
+     carries. */
   {
-    label: "Big Header Shop Drawing / Material Totals pricing not yet wired",
+    label: "Big Header straw: zero here, member-aware for a window header",
     status: "pending-BI-confirmation" as const,
-    note: "A Big Header panel renders correctly in the 2D elevation and live 3D view and is fully editable (width/height/sill) from its own Selected Panel note, but doesn't yet have its own Panel Fabrication/Shop Drawing detail page or a Material Totals price rate the way Column/Standard/Braced panels do — flagged for a follow-up pass.",
+    note:
+      "B33 gives a Big Header zero straw, matching the written decision the spanning-header sheet already made " +
+      "for the IDENTICAL member set (\"a solid framed + braced assembly, not a straw-filled cavity\"). But a " +
+      "window/door Header gets a member-aware straw VOLUME (envelope minus every member's own box) for the same " +
+      "kind of cavity, and Tommy said on 2026-11-03 that \"big headers and window headers are really the same " +
+      "thing\" — so the two should agree and today they do not. Which way they agree is a building question: is " +
+      "the space between a header's chords and webs stuffed, or is it void? Nobody has been asked.",
   },
 ];
 
@@ -784,7 +816,7 @@ type PanelizationType = "loose-packed-braced" | "square-bale-panels" | "timber-f
 // pipeline like every other type below.
 const SHOP_DRAWING_PANEL_TYPES: {
   namedTypes: NamedPanelType[];
-  panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill" | "column" | "gable" | "jack-stud";
+  panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill" | "column" | "big-header" | "gable" | "jack-stud";
 }[] = [
   { namedTypes: ["standard"], panelTypeId: "standard" },
   { namedTypes: ["corner", "safety-oct-corner"], panelTypeId: "corner" },
@@ -793,6 +825,14 @@ const SHOP_DRAWING_PANEL_TYPES: {
   { namedTypes: ["header"], panelTypeId: "header" },
   { namedTypes: ["sill"], panelTypeId: "sill" },
   { namedTypes: ["column"], panelTypeId: "column" },
+  /* ⚠ **B33 — the last placed panel type with no sheet.** A `big-header`
+     slot has produced a real named PanelInstance since the type existed, and
+     the 3D view has drawn it from `buildBigHeaderMembers` all along — but it
+     was absent from this array AND from `membersForPanelTypeId`, so it had no
+     fabrication sheet, no wood or fastener weight, no plywood area, no row in
+     any file export, no entry in the overlap audit and no price. A panel the
+     app would let you place and then charge nothing for. */
+  { namedTypes: ["big-header"], panelTypeId: "big-header" },
   { namedTypes: ["gable"], panelTypeId: "gable" },
   // Plywood Jack Stud is always derived from a header/sill opening, never
   // its own placed slot — namedTypes: [] since it has no PanelInstance
@@ -7747,32 +7787,45 @@ export default function LayoutEditor() {
                     buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(inst.widthIn))
                   : inst.panelType === "sill"
                     ? buildSillPanelMembers(inst.widthIn, thicknessIn, inst.sillHeightIn ?? sillDefaultHeightIn.value, includeNailer, girtStyle)
-                    : inst.panelType === "header"
-                      ? inst.sourceSlotType === "door"
-                        ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, doorHeaderHeightIn)
-                        : buildWindowHeaderMembers(
-                            inst.widthIn,
-                            thicknessIn,
-                            computeHeaderHeightIn(
-                              heightIn,
-                              (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value),
-                            ),
-                          )
-                      : inst.panelType === "gable"
-                        ? inst.isSafetyGap
-                          ? buildSafetyGapMembers(
-                              thicknessIn,
-                              Math.max(inst.leftEdgeHeightIn!, inst.rightEdgeHeightIn!) - gableEaveHeightIn,
-                            )
-                          : buildGablePanelMembers(
+                    : inst.panelType === "big-header"
+                      ? /* B33 — this instance's OWN height and its own sill
+                           flag, so its chords, webs and jack studs reach the
+                           project's wood weight, plywood area and board feet.
+                           Before this a Big Header weighed nothing and bought
+                           nothing. */
+                        buildBigHeaderMembers(
+                          inst.widthIn,
+                          thicknessIn,
+                          inst.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value,
+                          inst.includeSillOnBigHeader ?? false,
+                          jackStudConfig,
+                        )
+                      : inst.panelType === "header"
+                        ? inst.sourceSlotType === "door"
+                          ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, doorHeaderHeightIn)
+                          : buildWindowHeaderMembers(
                               inst.widthIn,
                               thicknessIn,
-                              inst.leftEdgeHeightIn! - gableEaveHeightIn,
-                              inst.rightEdgeHeightIn! - gableEaveHeightIn,
-                              includeNailer,
-                              girtStyle,
+                              computeHeaderHeightIn(
+                                heightIn,
+                                (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value),
+                              ),
                             )
-                        : null;
+                        : inst.panelType === "gable"
+                          ? inst.isSafetyGap
+                            ? buildSafetyGapMembers(
+                                thicknessIn,
+                                Math.max(inst.leftEdgeHeightIn!, inst.rightEdgeHeightIn!) - gableEaveHeightIn,
+                              )
+                            : buildGablePanelMembers(
+                                inst.widthIn,
+                                thicknessIn,
+                                inst.leftEdgeHeightIn! - gableEaveHeightIn,
+                                inst.rightEdgeHeightIn! - gableEaveHeightIn,
+                                includeNailer,
+                                girtStyle,
+                              )
+                          : null;
       if (instMembers) {
         members.push(...instMembers);
         if (inst.panelType !== "standard" && inst.panelType !== "braced") {
@@ -7836,6 +7889,10 @@ export default function LayoutEditor() {
     nailerOffsetIn,
     doorHeaderHeightIn,
     sillHeightIn,
+    /* B33 — a Big Header's two jack studs are built to this setting, so a
+       change to it has to re-derive the wood weight and plywood area this
+       memo feeds. It is the first dependency the Big Header branch adds. */
+    jackStudConfig,
   ]);
 
   /* ⚠ The two material tallies MOVED DOWN, past the fabrication groups.
@@ -8220,14 +8277,14 @@ export default function LayoutEditor() {
        straight off the instance. One object rather than two more
        positionals: this signature is already twelve deep, and the two
        fields are never meaningful apart. */
-    bracePair?: PanelMemberSource,
+    source?: PanelMemberSource,
   ) => {
     const heightIn = heightInOverride ?? wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
     const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
     const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
     const base = panelTypeId === "standard"
-      ? standardPanelMembersFor(bracePair ?? {}, widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
+      ? standardPanelMembersFor(source ?? {}, widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
       : panelTypeId === "braced"
         ? buildBracedPanelMembers(
             widthIn,
@@ -8273,13 +8330,28 @@ export default function LayoutEditor() {
                       thicknessIn,
                       computeHeaderHeightIn(heightIn, resolvedSillHeightIn + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value)),
                     )
-                : panelTypeId === "sill"
-                  ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
-                  : panelTypeId === "safety-gap"
-                    ? // Two-tier sheet, off this slot's own reserved width —
-                      // see `safetyGapSheetThicknessIn`.
-                      buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(widthIn))
-                    : null;
+                : panelTypeId === "big-header"
+                  ? /* B33. `heightIn` here is the Big Header's OWN total height,
+                       not the wall's — see `PanelInstance.bigHeaderHeightIn`.
+                       ⚠ The opt-in sill is appended BELOW z = 0 by the builder
+                       (see its own doc comment), so this member set can reach
+                       below the assembly's own height. Every consumer that
+                       measures a face has to add the sill back; the price memo
+                       and `panelHeightInFor` both do. */
+                    buildBigHeaderMembers(
+                      widthIn,
+                      thicknessIn,
+                      source?.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value,
+                      source?.includeSillOnBigHeader ?? false,
+                      jackStudConfig,
+                    )
+                  : panelTypeId === "sill"
+                    ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
+                    : panelTypeId === "safety-gap"
+                      ? // Two-tier sheet, off this slot's own reserved width —
+                        // see `safetyGapSheetThicknessIn`.
+                        buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(widthIn))
+                      : null;
     if (!base) return base;
     // A vertical safety-gap filler (Tommy: "an ability to put a safety gap
     // inbetween the truss bottom and the gable end top") stacks ON TOP of
@@ -8315,7 +8387,7 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
-    bracePair?: PanelMemberSource,
+    source?: PanelMemberSource,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -8330,7 +8402,7 @@ export default function LayoutEditor() {
       isSafetyGapOverride,
       verticalGapOverride,
       heightInOverride,
-      bracePair,
+      source,
     );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
@@ -8355,7 +8427,7 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
-    bracePair?: PanelMemberSource,
+    source?: PanelMemberSource,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -8370,7 +8442,7 @@ export default function LayoutEditor() {
       isSafetyGapOverride,
       verticalGapOverride,
       heightInOverride,
-      bracePair,
+      source,
     );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
@@ -8439,7 +8511,19 @@ export default function LayoutEditor() {
               // aware volume — a header's own cavity is bounded by its truss
               // chords/web/end caps, not a plain box), so this 0 is just a
               // moot fallback for that panel type, not the real answer.
-              widthIn: panelTypeId === "safety-gap" || panelTypeId === "header" ? 0 : inst.widthIn,
+              /* ⚠ B33 adds `big-header` to this list, matching what
+                 `spanningHeaderFabricationGroups` already decided IN WORDS for
+                 the very same member set: *"a solid framed + braced assembly,
+                 not a straw-filled cavity."* The flat box formula would have
+                 invented straw between the chords of every Big Header in the
+                 building. ⚠ Note this leaves the window/door `header` type
+                 disagreeing with its own twin — that one gets a member-aware
+                 volume through `strawWeightKgFor` rather than a zero, and his
+                 *"big headers and window headers are really the same thing"*
+                 says the two should match. Not resolved here: which way they
+                 match is a building question, and B33 took the reading that
+                 already applies to this exact geometry. */
+              widthIn: panelTypeId === "safety-gap" || panelTypeId === "header" || panelTypeId === "big-header" ? 0 : inst.widthIn,
               strawWeightKgOverride: strawWeightKgFor(
                 panelTypeId,
                 inst.widthIn,
@@ -8461,9 +8545,16 @@ export default function LayoutEditor() {
               heightIn:
                 panelTypeId === "sill"
                   ? (inst.sillHeightIn ?? sillDefaultHeightIn.value)
-                  : panelTypeId === "gable"
-                    ? Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn
-                    : (inst.heightOverrideIn ?? wallHeightFt * 12),
+                  : panelTypeId === "big-header"
+                    ? /* Its own height, not the wall's — the flat-box fallback
+                         is moot here (widthIn is 0 above) but a wall height in
+                         this field would be a wrong number sitting in a
+                         breakdown somebody reads. */
+                      (inst.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value) +
+                      (inst.includeSillOnBigHeader === true ? sillDefaultHeightIn.value : 0)
+                    : panelTypeId === "gable"
+                      ? Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn
+                      : (inst.heightOverrideIn ?? wallHeightFt * 12),
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: woodWeightKgFor(
                 panelTypeId,
@@ -8513,6 +8604,9 @@ export default function LayoutEditor() {
       hasLimePlaster,
       doorHeaderHeightIn,
       sillHeightIn,
+      /* B33 — `woodWeightKgFor`/`fastenerWeightKgFor` now reach a Big Header's
+         two jack studs, which are built to this setting. */
+      jackStudConfig,
     ],
   );
 
@@ -8581,7 +8675,9 @@ export default function LayoutEditor() {
     const items = [...byLabel.entries()].map(([label, v]) => ({ label, count: v.count, totalWeightLb: v.totalWeightLb }));
     const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
     return { items, totalWeightLb, unmodeledLabels: [...unmodeledLabels] };
-  }, [shopDrawings, shippingJackStudRefs, crossTiltFabricationGroups]);
+    /* B33 — `membersForPanelTypeId` reads it for a Big Header's jack studs,
+       and this memo counts those studs' real screws. */
+  }, [shopDrawings, shippingJackStudRefs, crossTiltFabricationGroups, jackStudConfig]);
 
   // Estimated bearing/shear numbers (Tommy: "let's take a stab at making
   // some estimated engineering numbers") — bearing applies to any panel
@@ -8809,6 +8905,17 @@ export default function LayoutEditor() {
       if (panelTypeId === "gable") {
         return Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
       }
+      /* B33 — a Big Header is a SHORT assembly in a full-height slot, so its
+         sheet height is its own, never the wall's. The opt-in sill is added
+         back because the builder appends it below z = 0 and it is part of the
+         same part: the sheet has to name the height of the thing the shop
+         actually lifts. */
+      if (panelTypeId === "big-header") {
+        return (
+          (inst.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value) +
+          (inst.includeSillOnBigHeader === true ? sillDefaultHeightIn.value : 0)
+        );
+      }
       return inst.heightOverrideIn ?? wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
@@ -8819,6 +8926,14 @@ export default function LayoutEditor() {
       // piece, above-band piece, and an unrelated full-height copy of the
       // same width never merge onto one Shop Fab page.
       const parts = [panelTypeId, inst.widthIn.toFixed(3), (inst.heightOverrideIn ?? -1).toFixed(3)];
+      /* B33 — `heightOverrideIn` is already in `parts` above, but a Big
+         Header's height is not that field (see `bigHeaderHeightIn`), so
+         without this two Big Headers of the same width and different heights
+         would share one sheet and half of them would be built wrong. The sill
+         flag is in the key for the same reason: it changes the member list. */
+      if (panelTypeId === "big-header") {
+        parts.push((inst.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value).toFixed(3), String(inst.includeSillOnBigHeader === true));
+      }
       if (panelTypeId === "header" || panelTypeId === "sill") {
         parts.push(inst.sourceSlotType ?? "", resolvedWindowHeightInFor(inst).toFixed(3), resolvedSillHeightInFor(inst).toFixed(3));
       }
@@ -8981,6 +9096,10 @@ export default function LayoutEditor() {
        unit toggle has to re-derive it — otherwise a metric project reads
        `8' Super Carrot 48"` on every sheet. */
     unitSystem,
+    /* B33 — `membersForPanelTypeId`'s Big Header branch reads it (its two jack
+       studs are built to this setting), and this memo's sheets are drawn and
+       cut from those members. */
+    jackStudConfig,
   ]);
 
   // Real per-wall (or per-section-of-a-wall) roof-bearing (truss plate /
@@ -9122,6 +9241,12 @@ export default function LayoutEditor() {
     /* The cross-tilted row on a shed's tall wall — real fabricated panels,
        and the last row in the building that this count did not know about. */
     crossTilt: crossTiltTakeoff.instances.length,
+    /* ⚠ **B33 — and the Big Headers.** Counted on their own rather than by
+       joining `WALL_PANEL_SLOT_TYPES`, which is deliberate: that set also
+       feeds `strawSlots`, and a Big Header holds no straw. A window or door
+       slot is likewise absent from it and reaches this total through its own
+       header/sill pair terms below. */
+    bigHeader: allSlots.filter((slot) => slot.type === "big-header").length,
   };
   const panelsTotal =
     panelCounts.wall +
@@ -9130,7 +9255,8 @@ export default function LayoutEditor() {
     panelCounts.floor +
     panelCounts.roof +
     panelCounts.windowPairs * 2 +
-    panelCounts.doors;
+    panelCounts.doors +
+    panelCounts.bigHeader;
   const panelsNote = [
     `${panelCounts.wall} wall`,
     panelCounts.gable > 0 ? `${panelCounts.gable} gable` : null,
@@ -9141,6 +9267,7 @@ export default function LayoutEditor() {
       ? `${panelCounts.windowPairs} window header/sill pair${panelCounts.windowPairs === 1 ? "" : "s"}`
       : null,
     panelCounts.doors > 0 ? `${panelCounts.doors} door header${panelCounts.doors === 1 ? "" : "s"}` : null,
+    panelCounts.bigHeader > 0 ? `${panelCounts.bigHeader} big header${panelCounts.bigHeader === 1 ? "" : "s"}` : null,
   ]
     .filter((part) => part !== null)
     .join(" + ") + ".";
@@ -10140,6 +10267,38 @@ export default function LayoutEditor() {
   const costsRedacted = documentSession.browseContext !== null;
   const effectivePriceModifier = costsRedacted ? Number.NaN : role === "public" ? 1 : priceModifier;
 
+  /**
+   * ⚠ **B33 — a Big Header's own face, because `areaSqFtFor` cannot give it
+   * one.** That helper multiplies every slot of a type by the STORY's wall
+   * height, which is the whole reason a Big Header could not simply be added
+   * to the `price` memo's list: a 24in header in a 96in slot would have been
+   * charged for four times the panel there is. Its real face is its own
+   * height x its width, plus the opt-in sill below it when there is one —
+   * that sill comes out of `buildBigHeaderMembers` as part of the same member
+   * list and goes on the same fabrication sheet, so it is the same part and
+   * carries the same rate. **A separate rate for it was not invented.**
+   *
+   * ⚠ Until B33 a Big Header had NO bucket at all: you could place one and
+   * the project price would not move. His $25 therefore moves totals UP on
+   * any design that has one, which is the opposite of what a new rate
+   * replacing an old one would do.
+   *
+   * ⚠ **A plain `const`, and OUTSIDE the `price` memo, both deliberately.**
+   * `panelCounts` above gives the first reason — this is one loop over slots
+   * that are already memoised, and a number compares by value, so the memo
+   * below stays as stable with it as without. The second reason is measured:
+   * computed INSIDE the memo (either as this call or inline), the React
+   * Compiler stops being able to preserve `price`'s own memoization and
+   * `react-hooks/preserve-manual-memoization` goes 61 -> 62 — a rule this
+   * repo's gate rations. Two lines of growth there costs nothing; thirty
+   * costs the memo.
+   */
+  const bigHeaderAreaSqFt = bigHeaderFaceAreaSqFt({
+    slots: allSlots,
+    defaultHeightIn: bigHeaderDefaultHeightIn.value,
+    sillHeightIn: sillDefaultHeightIn.value,
+  });
+
   const price = useMemo(() => {
     // Height-dependent (area = width x height), so — like strawWeight/
     // totalWoodWeightKg above — this sums each story's own contribution
@@ -10252,6 +10411,13 @@ export default function LayoutEditor() {
         { type: "braced", areaSqFt: areaSqFtFor("braced") },
         { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") + spanningHeaderAreaSqFt },
         { type: "column", areaSqFt: areaSqFtFor("column") },
+        /* ⚠ **His own $25, 2026-11-05**, and its own bucket rather than the
+           `opening` one a spanning header sits in — two decisions of his about
+           two things with the same geometry, which is the same shape as the
+           Big Header BEAM sitting in `beam` while a spanning header sits in
+           `opening`. Measured off its own face, not the wall's: see
+           `bigHeaderAreaSqFt`. */
+        { type: "big-header", areaSqFt: bigHeaderAreaSqFt },
         /* ⚠ The `roof` rate is now the GABLE row's rate and nothing else.
            It used to carry the beams as well, which is why they could not be
            repriced without repricing the gable too. */
@@ -10291,6 +10457,9 @@ export default function LayoutEditor() {
     spanningHeaderFabricationGroups,
     deckPanelTakeoff,
     crossTiltTakeoff,
+    /* B33 - a number, derived just above off the raw slots rather than off
+       `stories` times a wall height. */
+    bigHeaderAreaSqFt,
   ]);
 
   /* ⚠ Over ALL the straw, not just the walls' — see `projectStrawWeightKg`.

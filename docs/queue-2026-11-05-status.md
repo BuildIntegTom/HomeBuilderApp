@@ -26,7 +26,7 @@ One page for the meeting. The long history stays in
 | --- | --- |
 | How many ring girts per panel, and where? | **The same rule as a straight girt** — one per 3ft of stud span. |
 | Does a ring change where a brace lands? | **Yes — the brace rides the ring's top face**, so diagonals sit 1″ higher in a ring-girt panel and the angle follows. |
-| Big Header price rate | **$25/sq ft.** His number, not a placeholder. |
+| Big Header price rate | **$25/sq ft.** His number, not a placeholder. **Built B33, 2026-11-06.** |
 | Second-storey deck in the packet | **Leave it** — all deck sheets at the front. |
 
 ⚠ One thing from the same round that I had wrong and he corrected: a **Ring
@@ -37,12 +37,19 @@ is cut, what sets the radius) was answering the wrong question.
 
 ## C. Next up, in order, all unblocked
 
-1. **Ring girts** — everything needed is now in hand: four 2x4s on edge per
+1. ~~**Ring girts**~~ — **DONE, B31 2026-11-06**, generalised into a
+   cut-and-tie pass over the whole panel by **B32** the same day. Everything
+   needed was in hand: four 2x4s on edge per
    ring (two 45″, two 12½″ on a 4ft panel), one ring per 3ft of stud span,
    28 × 3½″ #10 screws per ring (4 at each of the 4 corners, 3 at each of the 4
    frame contacts), and braces ride the ring's 3½″ top face.
-2. **Big Header's own fabrication sheet**, at **$25/sq ft** — the last panel
-   type without either.
+2. ~~**Big Header's own fabrication sheet**, at **$25/sq ft**~~ — **DONE, B33,
+   2026-11-06.** It was worse than "without either": a placed Big Header had no
+   sheet, no weight, no plywood, no export row, no overlap audit entry, no
+   panel count and **no price bucket at all**, so his $25 moves a total **up**,
+   not down. One disagreement was named rather than settled — a Big Header is
+   given zero straw and a window header a member-aware volume, for the same
+   cavity. See `plan-2026-10-31-queue.md`.
 3. **The 3D member hit test** — unblocks BOTH the pointer-drag gesture in the
    panel editor and the right-click menu in the 3D view. One piece, two
    surfaces; building it twice is how they come to disagree about what you
@@ -57,6 +64,11 @@ is cut, what sets the radius) was answering the wrong question.
   illustrative and truck-bed dimensions that are industry-typical placeholders.
 - **Gable window** — spec given 2026-11-01 (gable panel + header body, no sill,
   bottom edge on the truss plate). Not built.
+- **A header's straw** — B33, 2026-11-06. A Big Header is given **zero** straw
+  and a window/door header a **member-aware volume**, for the same kind of
+  cavity, and he has said the two *"are really the same thing."* Which way they
+  agree is his: is the space between a header's chords and W-web stuffed, or
+  void? ⚠ Not blocking anything; both numbers are small.
 - **Saving an edited panel to the library as a named type** — needs its own
   interview; a saved type is stored JSON, so it has to be stored as a recipe,
   not a member list, or it goes stale.

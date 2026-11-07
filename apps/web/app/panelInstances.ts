@@ -190,6 +190,25 @@ export interface PanelInstance {
    * slot covered by multiple Mid-Wall Bond Beams can split into more than
    * 2 bands. */
   midWallBandIndex?: number;
+  /**
+   * B33 — a **Big Header's own total height**, read off its slot.
+   *
+   * ⚠ **Not `heightOverrideIn`**, which is the Mid-Wall Bond Beam band's
+   * height and means *"this instance is one slice of a wall that got split"*.
+   * A Big Header is not a slice of anything: it is a short assembly placed in
+   * a full-height slot, and `heightOverrideIn` has to stay free to say that a
+   * Big Header sits inside a banded wall. Two different facts, two fields.
+   *
+   * Undefined = fall back to `bigHeaderDefaultHeightIn` (which is itself
+   * `pending-BI-confirmation`), exactly as the 3D view already does.
+   */
+  bigHeaderHeightIn?: number;
+  /** B33 — Big Header only: whether the opt-in sill panel is built below it
+   * (Tommy: *"2 with the option to have a sill under it as an option in the
+   * left bar but default not"*). The sill is part of the SAME fabricated
+   * part — `buildBigHeaderMembers` appends it — so it is a field here rather
+   * than a separate Sill instance. */
+  includeSillOnBigHeader?: boolean;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -339,6 +358,10 @@ export function allPanelInstances(
     braceFigure?: "super-carrot" | "big-carrot" | "little-carrot",
     editedMembers?: StoredPanelMemberSpec[],
     panelName?: string,
+    /* B33 — one object rather than two more positionals, the same call this
+       signature already made for the brace pair: this list is twenty deep and
+       the two fields are never meaningful apart. */
+    bigHeader?: { heightIn?: number; includeSill: boolean },
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     const panelNumber = counters[direction]!;
@@ -370,6 +393,8 @@ export function allPanelInstances(
       ...(braceFigure !== undefined && { braceFigure }),
       ...(editedMembers !== undefined && { editedMembers }),
       ...(panelName !== undefined && { panelName }),
+      ...(bigHeader?.heightIn !== undefined && { bigHeaderHeightIn: bigHeader.heightIn }),
+      ...(bigHeader !== undefined && { includeSillOnBigHeader: bigHeader.includeSill }),
     });
   };
 
@@ -546,6 +571,11 @@ export function allPanelInstances(
                would be drawn and cut as the panel it used to be. */
             slot.editedMembers,
             slot.panelName,
+            /* B33 — only a Big Header carries these, and it carries them from
+               the SLOT rather than the zone: a Big Header's height is what the
+               user typed into its own left-bar field, not a band the wall was
+               cut into. */
+            zone.type === "big-header" ? { heightIn: slot.heightIn, includeSill: slot.includeSillOnBigHeader ?? false } : undefined,
           );
         }
       }
