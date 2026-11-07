@@ -32,7 +32,7 @@ thumbnails are one piece of work.
 
 | | item | his word | state |
 | --- | --- | --- | --- |
-| **U1** | HIDE tab + Reset View | yes | **ready — next up after the B-queue** |
+| **U1** | HIDE tab + Reset View | yes | **BUILT 2026-11-06** — see the record at the end |
 | **U2** | Named path, static arrows | **Edit → View → Price → Print** | **answered, ready** |
 | **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **specced and unblocked — Cindy ships as its overall rectangle, 2026-11-06** |
 | **U4** | Props for scale | yes | **ready** |
@@ -331,3 +331,90 @@ quote form**, so I have not seen what a customer receives afterwards. If that
 follow-up contains a priced bill of materials, the *"we produce a price, they
 produce a phone call"* comparison is weaker than it reads — worth re-checking
 before anyone repeats it in a meeting.
+
+---
+
+## U1 — BUILT 2026-11-06: the tools fold away, and the camera comes back
+
+Three pieces, and the third is what makes the first one mean anything.
+
+### The `← HIDE` tab
+
+A tab on the canvas's own left edge, `leftBarHidden` local state, reading
+`← HIDE` / `SHOW →`. It lives in `.editorCanvasLayer`'s coordinate space rather
+than the sidebar's, because when the bar is folded there IS no sidebar box to
+hang off and a tab that moves house between its two states is a tab that
+drifts. Here it sits at the canvas's left edge in both states and only the
+arrow turns.
+
+⚠ **Local state, deliberately not in `ProjectState`** — the same two reasons
+`editorSurface` beside it gives: loading somebody's project must not fold their
+tools away, and undo must never undo *how wide the drawing is*.
+
+⚠ **`aria-hidden` is NOT applied when the user folds it.** A bar hidden because
+the surface has no sidebar is gone; a bar the user folded is still part of the
+page and its tab says so through `aria-expanded`. Marking it `aria-hidden`
+would make a reversible fold read as a deletion.
+
+### The 3D view fills its column
+
+Without this the tab folds 240px away and **the model stays exactly as big as
+it was**, which is not what the tab is for: *"the 3D view fights the left bar
+for width."* `Building3DView`'s two wrappers were hard `width: 720`; the
+interactive one is now `100%` and only the CAPTURE canvas keeps 720x480,
+because that figure is the Project Summary PNG's own size. r3f resizes its
+drawing buffer to the element, so nothing else had to know.
+
+**Measured in the browser:** 783px of canvas with the bar, **1023px without**.
+The capture canvas stayed at 720 beside it, parked at `left: -9999px`, exactly
+as it should.
+
+⚠ Note what this does NOT touch: the plan, floor, foundation and elevation
+canvases are all still `CANVAS_WIDTH = 720`, and `elevationViewport.ts` already
+calls that *"five copies of the same problem."* This is one of the five, taken
+because it is the one the HIDE tab exists to serve.
+
+### Reset view
+
+On the 3D view (beside the exports) and in the panel editor's left bar.
+
+⚠ **Not `controls.reset()`.** Three's own reset restores the target the
+controls were CONSTRUCTED with — the origin — not the building's centre, so it
+would aim the camera at the corner of the world. Both handlers instead set the
+same two values their Canvas mounts with: `cameraPosition` and the default
+target, then `update()`.
+
+⚠ The building's one also clears `orbitTargetOverride`. A double-click on a
+panel promotes that panel's centre into it, and leaving it set would reset the
+camera to a position that no longer matches what it is pointed at.
+
+⚠ **Outside the `browsing` gate** the OBJ/COLLADA exports sit behind. A browsed
+design is *"design yes, money no"*; putting the camera back is neither — it is
+how you look at the thing at all.
+
+⚠ **The panel editor's button is a plain `<button>`, not `barButton`.** That is
+a lint finding, not a style choice: `barButton` is a helper CALLED during
+render, so handing it a handler that reads `controlsRef` makes the React
+Compiler lint see a ref read in render. `react-hooks/refs` went 29 → 30, which
+this repo's gate says may never happen. Inline as a JSX prop it is not flagged,
+which is also why `Building3DView`'s identical handler never was.
+
+### What was verified, and what was not
+
+- **Verified in the running app:** the tab toggles both ways (`aria-expanded`
+  flips, the bar's computed `display` goes `flex` → `none` → `flex`), the 3D
+  canvas measures 783 → 1023, the 3D view's **Reset view** button renders and
+  clicking it raises nothing in the console.
+- ⚠ **Not verified in the browser:** that the camera visibly snaps back.
+  Neither a real drag nor synthesised pointer events orbit drei's
+  `OrbitControls` in the pane (three calls `setPointerCapture`, which a
+  synthetic pointer has no id for), so there was no "before" to compare a
+  reset against. The handler is five lines and typechecks; what is untested is
+  the eye.
+- ⚠ **Not verified in the browser:** the panel editor's own Reset view button.
+  The right-click menu opens and its `Panel editor…` item is there, but the
+  item does not activate under synthetic events, so the editor never mounted.
+  Same handler shape as the one above.
+
+Gates: 3749 tests / 203 files, typecheck clean in all four projects, lint
+**169 / 119 / 50 — every rule byte-identical** after the `refs` fix above.

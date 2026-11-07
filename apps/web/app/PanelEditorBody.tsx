@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { OrbitControls } from "@react-three/drei";
@@ -168,6 +168,13 @@ export default function PanelEditorBody({
   const [showStraw, setShowStraw] = useState(false);
   const [drag, setDrag] = useState<MemberDragState | null>(null);
   const [menu, setMenu] = useState<MemberContextMenuTarget | null>(null);
+  /* U1 — Reset view. The editor camera can be orbited until the panel is edge
+     on and reads as a line, which has happened in every browser session since
+     B30. `reset()` on three's own controls is NOT used: it restores the
+     target the controls were CONSTRUCTED with, which is the origin rather
+     than this panel's centre, so it would park the camera looking past the
+     panel. The two numbers below are the same two the Canvas mounts with. */
+  const controlsRef = useRef<React.ElementRef<typeof OrbitControls> | null>(null);
 
   /**
    * ⚠ **The drag always ends, even when the pointer comes up somewhere the
@@ -387,6 +394,14 @@ export default function PanelEditorBody({
     centre[1] + distance * Math.sin(elevationRad),
     centre[2] + distance * Math.cos(elevationRad) * Math.sin(azimuthRad),
   ];
+
+  const resetView = () => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    controls.object.position.set(cameraPosition[0], cameraPosition[1], cameraPosition[2]);
+    controls.target.set(centre[0], centre[1], centre[2]);
+    controls.update();
+  };
 
   const selectedMembers = selected ? members.filter((m) => m.memberId === selected.id) : [];
   const otherMembers = selected ? members.filter((m) => m.memberId !== selected.id) : members;
@@ -633,6 +648,31 @@ export default function PanelEditorBody({
           </>
         )}
 
+        {sectionHeading("View")}
+        {/* ⚠ A plain <button>, not `barButton`. `barButton` is a helper CALLED
+            during render, so handing it a handler that reads `controlsRef`
+            makes the React Compiler lint see a ref read in render
+            (`react-hooks/refs`, which this repo's gate says may never rise).
+            Inline here the handler is only a JSX prop, which is what
+            `Building3DView`'s own Reset view does and is not flagged. */}
+        <button
+          type="button"
+          onClick={resetView}
+          title="Put the camera back where it started \u2014 the same angle and distance this editor opens at."
+          style={{
+            display: "block",
+            width: "100%",
+            textAlign: "left",
+            padding: "5px 8px",
+            marginBottom: 3,
+            font: "inherit",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Reset view
+        </button>
+
         {sectionHeading("This panel")}
         {barButton(
           isEdited ? "Revert to the derived pattern" : "Not edited — nothing to revert",
@@ -765,7 +805,7 @@ export default function PanelEditorBody({
               pointer dragged across the canvas, so leaving the camera live
               meant every board move also swung the view, and the board
               appeared to move the wrong way. */}
-          <OrbitControls target={centre} makeDefault enabled={drag === null} />
+          <OrbitControls ref={controlsRef} target={centre} makeDefault enabled={drag === null} />
         </Canvas>
       </div>
     </div>

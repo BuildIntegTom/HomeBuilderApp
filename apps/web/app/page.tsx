@@ -884,6 +884,19 @@ export default function LayoutEditor() {
    * document means `undoHistory` cannot see it at all, which beats
    * classifying it `transient` and trusting the classification to hold. */
   const [editorSurface, setEditorSurface] = useState<"drawing" | "summary" | "print">("drawing");
+
+  /**
+   * U1 — whether the left bar is folded away.
+   *
+   * > *"The 3D view fights the left bar for width; a hide tab gives the model
+   * > the whole screen for a client walkthrough."*
+   *
+   * ⚠ **Local state, and deliberately not in `ProjectState`**, for the same
+   * two reasons as `editorSurface` directly above: loading somebody's project
+   * must not fold their tools away, and undo must never undo *how wide the
+   * drawing is*. Nothing about the building changes when this flips.
+   */
+  const [leftBarHidden, setLeftBarHidden] = useState(false);
   /** The Summary page's host element, held as state rather than a ref so
    * that the sections portalling into it re-render the moment it exists.
    * A `useRef` would be filled during the same commit and read on a render
@@ -13938,8 +13951,14 @@ export default function LayoutEditor() {
         >
           <div
             className={
-              editorSurface === "drawing" ? styles.editorSidebar : `${styles.editorSidebar} ${styles.editorSidebarHidden}`
+              editorSurface === "drawing" && !leftBarHidden
+                ? styles.editorSidebar
+                : `${styles.editorSidebar} ${styles.editorSidebarHidden}`
             }
+            /* ⚠ Hidden from assistive technology only when the SURFACE has no
+               sidebar. A bar the user folded away with the tab is still part of
+               this page and its tab says so (`aria-expanded`); marking it
+               `aria-hidden` would make a reversible fold read as a deletion. */
             aria-hidden={editorSurface === "drawing" ? undefined : "true"}
           >
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
@@ -14501,6 +14520,21 @@ export default function LayoutEditor() {
                rather than a behaviour change. */
             aria-hidden={editorSurface === "drawing" ? undefined : "true"}
           >
+            {editorSurface === "drawing" && (
+              <button
+                type="button"
+                className={styles.sidebarHideTab}
+                onClick={() => setLeftBarHidden((hidden) => !hidden)}
+                aria-expanded={!leftBarHidden}
+                title={
+                  leftBarHidden
+                    ? "Bring the tools back"
+                    : "Fold the tools away and give the drawing the whole window"
+                }
+              >
+                {leftBarHidden ? "SHOW →" : "← HIDE"}
+              </button>
+            )}
             {editorTab === "wall" && (
               <div className={styles.compassDock}>
                 <CompassWidget ref={compassNeedleRef} />

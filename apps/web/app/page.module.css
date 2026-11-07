@@ -354,6 +354,47 @@
   display: none;
 }
 
+
+/* U1 — THE HIDE TAB. A tab on the canvas's own left edge that folds the left
+   bar away, so the 3D model gets the whole window for a client walkthrough.
+
+   It lives in `.editorCanvasLayer`'s coordinate space, not the sidebar's, for
+   one reason: when the bar is hidden there IS no sidebar box to hang off, and
+   a tab that moves house between its two states is a tab that drifts. Here it
+   sits at the canvas's left edge in both states and only its arrow turns.
+
+   `z-index: 30` clears the canvas and the docked widgets (compass, legend) and
+   stays under `.editorSection`'s own overlay layer at 40. */
+.sidebarHideTab {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  padding: 10px 2px;
+  border: 1px solid #ddd;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  background: #fff;
+  color: #444;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  cursor: pointer;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.sidebarHideTab:hover {
+  background: #f2f2f2;
+}
+
+@media print {
+  .sidebarHideTab {
+    display: none;
+  }
+}
+
 /* The cluster's home on a formal-document surface. Right-aligned so it reads
    as page furniture rather than as the start of the document. */
 .editorPageIcons {

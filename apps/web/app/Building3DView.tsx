@@ -1350,6 +1350,12 @@ export default function Building3DView({
   // whenever the Orbit tool isn't active, so a stale override from a
   // previous session doesn't linger once the user switches tools and back.
   const [orbitTargetOverride, setOrbitTargetOverride] = useState<[number, number, number] | null>(null);
+  /* U1 — Reset view, for every user who has orbited themselves under the
+     floor. ⚠ Deliberately NOT three's own `controls.reset()`: that restores
+     the target the controls were CONSTRUCTED with (the origin), not the
+     building's centre, so it would aim the camera at the corner of the world.
+     `resetView` below sets the same two values the Canvas mounts with. */
+  const controlsRef = useRef<React.ElementRef<typeof OrbitControls> | null>(null);
   useEffect(() => {
     if (tool3D !== "orbit") setOrbitTargetOverride(null);
   }, [tool3D]);
@@ -2653,6 +2659,19 @@ export default function Building3DView({
   const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
   const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
 
+  /* ⚠ Clears the orbit-target OVERRIDE as well as moving the camera. A
+     double-click on a panel promotes that panel's centre into
+     `orbitTargetOverride`, and leaving it set would mean the view resets to a
+     camera position that no longer matches what it is pointed at. */
+  const resetView = () => {
+    setOrbitTargetOverride(null);
+    const controls = controlsRef.current;
+    if (!controls) return;
+    controls.object.position.set(cameraPosition[0], cameraPosition[1], cameraPosition[2]);
+    controls.target.set(defaultTarget[0], defaultTarget[1], defaultTarget[2]);
+    controls.update();
+  };
+
 
   // Sill & Header drag tool (Tommy: "manipulate sill and header height with
   // the drag tool") — only rendered for the currently-selected window slot,
@@ -2716,21 +2735,48 @@ export default function Building3DView({
   };
 
   return (
-    <div style={{ width: CANVAS_WIDTH }}>
+    /* U1 — the interactive view FILLS its column; only the capture canvas
+       keeps the fixed 720x480, because that figure is the PNG's own size.
+       Without this the HIDE tab folds the left bar away and the model stays
+       exactly as big as it was, which is not what the tab is for: *"the 3D
+       view fights the left bar for width."* r3f resizes its own drawing
+       buffer to the element, so nothing else has to know. */
+    <div style={{ width: captureMode ? CANVAS_WIDTH : "100%" }}>
       {/* Stage 4B: no Export as OBJ while a browsed design is on screen
           (decision 23). The 3D view itself stays — browsing is "design yes,
           money no", and the model is part of the design. */}
-      {!captureMode && !browsing && (
+      {!captureMode && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
-          <button type="button" onClick={handleDownloadObj} style={{ fontSize: 12 }}>
-            Export as OBJ
+          {/* U1. Outside the `browsing` gate the exports sit behind: a browsed
+              design is "design yes, money no", and putting the camera back is
+              neither — it is how you look at the thing at all. */}
+          <button
+            type="button"
+            onClick={resetView}
+            style={{ fontSize: 12 }}
+            title="Put the camera back where it started \u2014 the same bird's-eye angle and distance this view opens at."
+          >
+            Reset view
           </button>
-          <button type="button" onClick={handleDownloadCollada} style={{ fontSize: 12, marginLeft: 6 }}>
-            Export as COLLADA (.dae)
-          </button>
+          {!browsing && (
+            <>
+              <button type="button" onClick={handleDownloadObj} style={{ fontSize: 12, marginLeft: 6 }}>
+                Export as OBJ
+              </button>
+              <button type="button" onClick={handleDownloadCollada} style={{ fontSize: 12, marginLeft: 6 }}>
+                Export as COLLADA (.dae)
+              </button>
+            </>
+          )}
         </div>
       )}
-      <div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, border: captureMode ? "none" : "1px solid #ccc" }}>
+      <div
+        style={{
+          width: captureMode ? CANVAS_WIDTH : "100%",
+          height: CANVAS_HEIGHT,
+          border: captureMode ? "none" : "1px solid #ccc",
+        }}
+      >
         <Canvas
           camera={{ position: cameraPosition, fov: 50, near: 0.1, far: 10000 }}
           /* react-three-fiber's default is `frameloop="always"`, which
@@ -3049,7 +3095,7 @@ export default function Building3DView({
             </group>
           ))}
           </StrawFillProvider>
-          {!captureMode && <OrbitControls target={target} makeDefault enabled={!isDraggingHandle} />}
+          {!captureMode && <OrbitControls ref={controlsRef} target={target} makeDefault enabled={!isDraggingHandle} />}
           {!captureMode && compassRef && <CompassTracker compassRef={compassRef} target={target} />}
         </Canvas>
       </div>
