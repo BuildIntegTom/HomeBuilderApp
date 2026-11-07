@@ -481,6 +481,7 @@ import ShopDrawingPage from "./ShopDrawingPage";
 import PlanViewPage from "./PlanViewPage";
 import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
+import { SCALE_PROP_PROVENANCE } from "./scaleProps";
 import CompassWidget from "./CompassWidget";
 import PageFeaturesButton from "./PageFeaturesButton";
 import {
@@ -1003,6 +1004,24 @@ export default function LayoutEditor() {
      fills. */
   const [showStraw3D, setShowStraw3D] = useState(false);
   const [strawTextured3D, setStrawTextured3D] = useState(true);
+  /**
+   * ⚠ **U4 — props for scale, 2026-11-07.** *"A 6 ft figure, a car, a tree...
+   * the one thing that tells a client whether a 12 ft wall is big."*
+   *
+   * ⚠ **A TRI-STATE, and that is the whole trick.** `null` means "follow the
+   * role": props come on for the client-facing **Public** view and stay off for
+   * Fabricator, Admin and Engineer — U5's rule (*"defaulted OFF for the
+   * fabricator role and ON for a client-facing one"*) applied to the first of
+   * the two toggles it governs. The moment the user ticks the box themselves
+   * their answer sticks and the role stops deciding.
+   *
+   * Storing a plain boolean instead would need an effect to re-default it when
+   * the role changes, and `react-hooks/set-state-in-effect` is a rule this
+   * app's lint gate forbids from rising at all (see `apps/web/AGENTS.md`). A
+   * derived default needs no effect, which is the better reason anyway: there
+   * is no moment at which the state and the role are out of step.
+   */
+  const [showScalePropsOverride, setShowScalePropsOverride] = useState<boolean | null>(null);
   const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
   const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
   /* ⚠ Half the roof is see-through by default, so a new project shows the
@@ -1215,6 +1234,9 @@ export default function LayoutEditor() {
     }));
   };
   const [role, setRole] = useState<ViewerRole>("fabricator");
+  /** U4's effective answer — see `showScalePropsOverride` for why this is
+   * derived rather than stored. */
+  const showScaleProps3D = showScalePropsOverride ?? role === "public";
   // Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
   // mockup: a free-text note signed "- Eng. Smith") — see
   // wallReviewNotes.ts's own doc comment for why this is separate from
@@ -13302,6 +13324,21 @@ export default function LayoutEditor() {
             stops at the low end of the rake rather than following the slope.
           </p>
         )}
+        <label style={{ display: "block" }}>
+          <input
+            type="checkbox"
+            checked={showScaleProps3D}
+            onChange={(e) => setShowScalePropsOverride(e.target.checked)}
+          />{" "}
+          Props for scale (person, car, tree)
+        </label>
+        {showScaleProps3D && <p className={styles.note}>{SCALE_PROP_PROVENANCE}</p>}
+        {showScalePropsOverride === null && (
+          <p className={styles.note}>
+            On by default in the <strong>Public</strong> view and off for Fabricator, Admin and Engineer — a shop
+            drawing does not gain scenery. Tick or untick it and your answer sticks whatever the role.
+          </p>
+        )}
         {floorsEnabled && (
           <label style={{ display: "block" }}>
             <input type="checkbox" checked={showFloorDeck3D} onChange={(e) => setShowFloorDeck3D(e.target.checked)} />{" "}
@@ -15022,6 +15059,7 @@ export default function LayoutEditor() {
                   showWraps={showWraps}
                   showStraw={showStraw3D}
                   strawTextured={strawTextured3D}
+                  showScaleProps={showScaleProps3D}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
                   showRoofPanels={roofEnabled && showRoofDeck3D}
                   /* ⚠ Straight out of `deckPanelTakeoffInput`, not

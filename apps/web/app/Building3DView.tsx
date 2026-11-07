@@ -99,6 +99,8 @@ import PanelMembersGroup, { StrawFillProvider } from "./PanelMembersGroup";
 import { PANEL_TYPE_COLORS } from "./panelColors";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { useBrowsing } from "./BrowseModeContext";
+import ScalePropsGroup from "./ScalePropsGroup";
+import { scalePropsPlanBounds, type PlanBoundsFt } from "./scaleProps";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
@@ -129,6 +131,11 @@ interface Bounds {
   centerX: number;
   centerZ: number;
   maxDim: number;
+  /** The plan bounding box itself, feet. U4's scale props stand off its SOUTH
+   * and EAST edges — the two the bird's-eye camera opens facing — so they need
+   * the edges, not just the centre. Kept on `Bounds` rather than recomputed so
+   * the props and the camera cannot disagree about where the building is. */
+  box: PlanBoundsFt;
 }
 
 function footprintBounds(footprint: Footprint): Bounds {
@@ -146,6 +153,7 @@ function footprintBounds(footprint: Footprint): Bounds {
     centerX: (minX + maxX) / 2,
     centerZ: (minZ + maxZ) / 2,
     maxDim: Math.max(maxX - minX, maxZ - minZ, 10),
+    box: { minX, maxX, minZ, maxZ },
   };
 }
 
@@ -1040,6 +1048,29 @@ interface Building3DViewProps {
   /** His *"texture toggle"* — swaps the flat fill for a procedural straw
    * texture (generated on a canvas, so it costs no asset). */
   strawTextured?: boolean;
+  /**
+   * ⚠ **U4 — props for scale.** His ask, 2026-11-05: *"A 6 ft figure, a car, a
+   * tree. The cheapest realism in their whole product, and the one thing that
+   * tells a client whether a 12 ft wall is big."*
+   *
+   * Three objects of known size on the ground off the building's south and
+   * east faces — the two the bird's-eye camera opens facing. Sizes and
+   * placements live in `scaleProps.ts` and are measured by its own test; see
+   * that file for which figures are his and which are typical-for-the-class.
+   *
+   * ⚠ **Scenery, never a part.** Props enter no takeoff, price, weight, sheet
+   * or export: `handleDownloadObj`/`handleDownloadCollada` build from
+   * `buildExportPanels()`, a data path, not a walk of this scene, so there is
+   * no route by which a human figure reaches a cut list.
+   *
+   * ⚠ **Not forwarded to `captureMode`.** `BuildingSummaryRenderProps` takes
+   * design data and no view toggles — `showStraw` is already absent for the
+   * same reason — so the Project Summary's printed render never gains scenery.
+   * That is U5's own rule (*"a shop drawing never gains scenery"*) applied to
+   * the one document this view produces. Reversible in one line if he wants a
+   * figure in the client PDF.
+   */
+  showScaleProps?: boolean;
   simplified?: boolean;
   /** 3D Wraps view (Tommy: "3d model selected after box mode and is
    * everything box mode is with a few changes: panels not labeled, and
@@ -1311,6 +1342,7 @@ export default function Building3DView({
   showWraps = false,
   showStraw = false,
   strawTextured = false,
+  showScaleProps = false,
   checkedInteriorIds = EMPTY_ID_SET,
   checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
@@ -2654,7 +2686,19 @@ export default function Building3DView({
   // any wider — factor total height into the camera distance too, so the
   // default starting view doesn't come in cropped against the roofline.
   const totalHeightFt = wallHeightFt + (secondStory ? secondStory.wallHeightFt : 0);
-  const bounds: Bounds = { ...footprintBoundsRaw, maxDim: Math.max(footprintBoundsRaw.maxDim, totalHeightFt) };
+  /* ⚠ **U4: with props on, the camera frames the props too.** Without this the
+     view is fitted to the BUILDING and the car is drawn half past the edge of
+     the canvas — measured in the browser 2026-11-07 on the 24 x 16 Tiny House.
+     The union comes from `scalePropsPlanBounds`, which reads the same
+     placements `ScalePropsGroup` draws, so the camera cannot pull back to
+     frame props that are somewhere else. The TARGET is untouched below: the
+     building stays the subject and the extra room opens on the side the props
+     are on. */
+  const framedBox = showScaleProps ? scalePropsPlanBounds(footprintBoundsRaw.box) : footprintBoundsRaw.box;
+  const bounds: Bounds = {
+    ...footprintBoundsRaw,
+    maxDim: Math.max(framedBox.maxX - framedBox.minX, framedBox.maxZ - framedBox.minZ, footprintBoundsRaw.maxDim, totalHeightFt),
+  };
   const cameraPosition = birdsEyeCameraPosition(bounds);
   const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
   const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
@@ -2811,6 +2855,12 @@ export default function Building3DView({
           )}
           <ambientLight intensity={0.6} />
           <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
+          {/* U4. Outside StrawFillProvider below on purpose: a prop is not a
+              panel and has no cavity, so it has no business inside the
+              provider every PanelMembersGroup reads. The label grows with the
+              building because the camera pulls back with it — at a fixed
+              size, 6'-0" is unreadable on the Cindy. */}
+          {showScaleProps && <ScalePropsGroup bounds={bounds.box} labelScaleFt={Math.max(0.6, bounds.maxDim * 0.04)} />}
           {/* ⚠ One provider for the whole scene rather than a prop on each of
               the eleven `PanelMembersGroup`s below — wall slots, gable tiles,
               opening assemblies, both decks, the bale foundation. A prop would

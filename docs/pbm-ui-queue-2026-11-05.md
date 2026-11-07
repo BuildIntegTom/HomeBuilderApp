@@ -35,7 +35,7 @@ thumbnails are one piece of work.
 | **U1** | HIDE tab + Reset View | yes | **BUILT 2026-11-06** — see the record at the end |
 | **U2** | Named path, static arrows | **Edit → View → Price → Print** | **BUILT 2026-11-06 — and it made the bar 49px narrower** |
 | **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **STRIDE 1 BUILT 2026-11-07** — eight tiles, real buildings, real plan previews. The 3D render thumbnails are stride 2. |
-| **U4** | Props for scale | yes | **ready** |
+| **U4** | Props for scale | yes | **BUILT 2026-11-07** — a 6-foot person, a car and a tree; default ON for Public, OFF for everyone else |
 | **U5** | Site toggle | yes | **ready** |
 | **U6** | Dimension handles | *"genius move"* — 5 handles named | **specced, one risk to settle first** |
 | **U7** | Per-tool tutorial | yes — *"how would the remembering work?"* | **answered below; follows U2** |
@@ -53,7 +53,9 @@ is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06
 - ~~**U3**~~ **STRIDE 1 DONE 2026-11-07.** The biggest single change to what a
   stranger sees, and it needed no new engine — his own dimensions produced
   his own roofs.
-- **U4 before U5**, because a 6 ft figure tells a client more than grass does.
+- ~~**U4**~~ **DONE 2026-11-07.** Before U5, because a 6 ft figure tells a
+  client more than grass does — and it settled the role-default question U5
+  also has to answer, in a shape U5 can copy.
 - **U6** is front-loaded into a seam, not a UI — see its entry.
 - **U7** once the names and the tools have stopped moving.
 - **U8** last, because it is a sharing decision and not a UI one.
@@ -660,3 +662,126 @@ Gates: 3778 tests / 205 files, typecheck clean in all four projects, lint
 3. **The Cindy's notch, step and real opening schedule**, which need a
    wall-run list or a DXF. ⚠ `buildinteg.com/cindy` still 404s; the page is at
    `/the-cindy`.
+
+---
+
+## U4 — BUILT 2026-11-07: three things of known size, standing outside
+
+> *"A 6 ft figure, a car, a tree. The cheapest realism in their whole product,
+> and the one thing that tells a client whether a 12 ft wall is big."*
+
+A `Props for scale (person, car, tree)` tick in **3D Layers**, beside the straw
+and the deck toggles.
+
+### The one rule this feature lives or dies by
+
+⚠ **A prop drawn at the wrong size is worse than no prop at all.** It does not
+look broken — it just makes the building look bigger or smaller than it is, and
+nothing else on screen contradicts it. So the size is not a constant with a
+confident name; it is a **claim that gets measured**:
+
+- `scaleProps.ts` states each prop's overall extent.
+- `scaleProps.test.ts` **assembles the parts** — legs, torso, arms, head — and
+  measures their bounding box against that statement.
+- It then does it **a second time** against `drawnPart()`, the pure function
+  that converts a part into the three.js primitive in FEET that actually
+  reaches the scene. A figure that is 72in in the data and half that on screen
+  is exactly the failure that can hide, so the drawn numbers are tested too,
+  not just the stated ones.
+
+The person is **6'-0" exactly**: legs 0–38in, torso 38–63in, head 63–72in.
+
+### Which numbers are his, which are typical, which are chosen
+
+Stated in one place (`SCALE_PROP_PROVENANCE`) that the on-screen note prints
+**verbatim**, so the app cannot say something milder than the source does:
+
+| prop | size | what kind of number that is |
+| --- | --- | --- |
+| **Person** | 6'-0" | **his**, and the one a client reads a wall against |
+| **Car** | 16'-0" x 6'-0" x 4'-9", 111in wheelbase | **typical published dimensions for a mid-size sedan** — a 2025 Camry is 192.1 x 72.4 x 56.9in, an Accord 195.7 x 73.3 x 57.1in, a Model 3 185.8 x 72.8 x 56.8in; any of the three is this box within about 4in |
+| **Tree** | 16'-0" tall, 10'-0" spread | **chosen, not measured.** A tree has no standard size. The note says so in those words |
+
+⚠ **None of the three is a part.** No prop enters a takeoff, a price, a weight,
+a fabrication sheet or an export — and that is structural, not a promise: the
+OBJ and COLLADA exports build from `buildExportPanels()`, a data path, not a
+walk of the three.js scene, so there is no route by which a human figure
+reaches a cut list. `scaleProps.ts` imports nothing from the panel catalog.
+
+⚠ **Props are grey on purpose**, and a test enforces it. Every panel colour in
+this app is warm or saturated and lumber renders tan; a prop in that family
+would read as a member at a glance. So they are desaturated cool greys — a
+physical architectural model's own convention — with foliage the only colour in
+the set, and `scaleProps.test.ts` asserts no prop colour equals any entry of
+`PANEL_TYPE_COLORS`, `DECK_PANEL_COLORS` or `ASSEMBLY_COLORS`.
+
+### The default is a TRI-STATE, and that is the interesting part
+
+`showScalePropsOverride: boolean | null`. `null` means **follow the role**:
+props are on for the client-facing **Public** view and off for Fabricator,
+Admin and Engineer. The moment the user ticks the box themselves, their answer
+sticks and the role stops deciding.
+
+That is U5's own rule — *"defaulted OFF for the fabricator role and ON for a
+client-facing one"* — applied to the first of the two toggles it governs, so
+**U5 now has a worked pattern to copy rather than a question to re-answer.**
+
+⚠ A plain boolean would have needed an effect to re-default it when the role
+changed, and `react-hooks/set-state-in-effect` is a rule this app's lint gate
+forbids from rising at all. The derived value needs no effect — and that is the
+better reason anyway: there is no instant at which the stored state and the
+role are out of step.
+
+⚠ **Not forwarded to `captureMode`.** `BuildingSummaryRenderProps` takes design
+data and no view toggles (`showStraw` is already absent for the same reason), so
+the Project Summary's printed render never gains scenery — U5's *"a shop drawing
+never gains scenery"* applied to the one document this view produces. One line
+reverses it if he wants a figure in the client PDF.
+
+⚠ **Props are out of the pointer path entirely** — a no-op `raycast` on every
+mesh, not on the group above them, because the raycaster walks children
+regardless of what the parent does. The 3D left-click selects a panel and the
+right-click opens the panel menu; a figure standing in front of a wall must not
+swallow either, and a tree must never become an orbit target.
+
+### Three things found by measuring in the browser, not by looking
+
+1. **The camera framed the building, so the car was drawn half past the edge of
+   the canvas.** Measured on the 24 x 16 Tiny House. Turning props on now
+   widens the camera's framing box via `scalePropsPlanBounds`, which is
+   computed from the same placements the props are drawn at — so the camera
+   cannot pull back to frame props that are somewhere else. The TARGET does not
+   move: the building stays the subject. It costs the Cindy under 1.3x and a
+   16ft octagon over 1.5x, which is correct — a 16ft car beside a 16ft octagon
+   really is half the scene.
+2. **All three props stood on the camera's own sight line**, because they were
+   placed on the SE diagonal, and the tree stood in front of the person. The
+   tree moved to the south face 22ft west of the figure; spreading them across
+   two faces spreads them across the frame.
+3. **⚠ The figure's 5in legs came out under a pixel wide and vanished**, so it
+   read as a floating torso — i.e. as a person half his own height, which is
+   the one mistake this feature cannot make. Legs are 7in now (a trousered
+   thigh is about that anyway) and a test refuses any box part thinner than
+   4.5in.
+
+⚠ **The standoffs are real distances in feet and do NOT scale with the
+building** — 4ft off the wall for the person, 5ft for the car. Scaling them
+would hold every prop at the same share of the screen at every building size,
+which is precisely the information a scale reference exists to destroy. On a
+big building the figure SHOULD look small.
+
+### Verified in the running app
+
+- Role **Fabricator**: unticked, no props, and the note explains the default.
+- Switching to **Public** with the box untouched: props appear, no effect, no
+  flicker, and the tick follows.
+- Unticking then switching role: the answer sticks.
+- **The proportion check that is not an eyeball**: with the tree 16ft and the
+  figure 6ft, the drawn ratio should be 2.67. Measured on screen at the opening
+  camera: **126px to 47px = 2.68**.
+- The car checks out against the building the same way: its 16ft length to the
+  Tiny House's 24ft wall measured 1.29 against a true 1.5, the gap being the
+  car sitting nearer the camera.
+- Reset view puts the camera back at the widened framing. No console errors.
+
+Gates: 3828 tests / 206 files, typecheck clean in all four projects.
