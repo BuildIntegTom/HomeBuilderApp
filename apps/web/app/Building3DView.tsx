@@ -100,7 +100,17 @@ import { PANEL_TYPE_COLORS } from "./panelColors";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { useBrowsing } from "./BrowseModeContext";
 import ScalePropsGroup from "./ScalePropsGroup";
+import SiteGroup from "./SiteGroup";
 import { scalePropsPlanBounds, type PlanBoundsFt } from "./scaleProps";
+import {
+  SITE_SUN_DIRECTION,
+  VOID_SUN_DIRECTION,
+  deckGroupRotationX,
+  lowestDrawnYFt,
+  siteGroundYFt,
+  siteSunShadow,
+  type SitePlacedGroup,
+} from "./site";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
@@ -1071,6 +1081,30 @@ interface Building3DViewProps {
    * figure in the client PDF.
    */
   showScaleProps?: boolean;
+  /**
+   * ⚠ **U5 — a site around the building.** His ask, 2026-11-05: *"Grass,
+   * sky, a horizon and a shadow. Ours is a grey void — honest for a fabricator,
+   * cold for a client."*
+   *
+   * ⚠ **This is the 2026-10-29 ground plane back as a switch, and the reason
+   * it was deleted is the reason it is a switch.** He turned it off because
+   * *"it blocks the floor panels from being visible"* — true, and exactly
+   * measurable: the floor deck hangs 15 1/2in BELOW the datum once the view
+   * tips it, and the old plane sat at −0.6in, inside it. The grass here is
+   * placed one inch under the lowest member the scene actually draws, off the
+   * same render data that draws it, so it cannot hide a panel at any floor
+   * system. See `site.ts` and `site.test.ts`.
+   *
+   * ⚠ **Scenery, never a part**, on the same structural footing as U4's
+   * props: no takeoff, price, weight, sheet or export reads anything from
+   * here, because the exports build from `buildExportPanels()`, a data path
+   * rather than a walk of this scene.
+   *
+   * ⚠ **Not forwarded to `captureMode`**, same as `showScaleProps` and
+   * `showStraw` — so the Project Summary's printed render never gains
+   * scenery. That is this item's own rule applied to itself.
+   */
+  showSite?: boolean;
   simplified?: boolean;
   /** 3D Wraps view (Tommy: "3d model selected after box mode and is
    * everything box mode is with a few changes: panels not labeled, and
@@ -1343,6 +1377,7 @@ export default function Building3DView({
   showStraw = false,
   strawTextured = false,
   showScaleProps = false,
+  showSite = false,
   checkedInteriorIds = EMPTY_ID_SET,
   checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
@@ -2699,6 +2734,62 @@ export default function Building3DView({
     ...footprintBoundsRaw,
     maxDim: Math.max(framedBox.maxX - framedBox.minX, framedBox.maxZ - framedBox.minZ, footprintBoundsRaw.maxDim, totalHeightFt),
   };
+  /* ⚠ **U5: the two things this app draws BELOW the datum**, handed to
+     `lowestDrawnYFt` so the grass goes under them rather than through them.
+     The floor deck is anchored at Y = 0 and tipped by `deckGroupRotationX`,
+     which swings its 15 1/2in depth downwards; the bale foundation hangs
+     below the datum outright, bottom skin included. Everything else — walls,
+     gables, roof panels, beams, the ridge column, the cross-tilt row — is
+     anchored at or above 0, which `lowestDrawnYFt`'s own `min(0, …)` floor
+     already covers, so walking their members would cost a pass over the whole
+     building to learn a number that cannot change. Computed only when the
+     site is ON: off, this is an empty array and costs nothing. */
+  const siteGroups: SitePlacedGroup[] = showSite
+    ? [
+        ...deckRenderData
+          .filter((d) => d.kind === "floor")
+          .map((d) => ({
+            anchorYFt: d.anchorYFt,
+            frame: { kind: "deck" as const, tiltRad: d.tiltRad },
+            members: d.members,
+          })),
+        ...baleFoundationRenderData.map((g) => ({
+          anchorYFt: g.anchorYFt,
+          frame: { kind: "upright" as const },
+          members: g.members,
+        })),
+      ]
+    : [];
+  /* ⚠ **How tall U5's shadow caster stands.** The top of the roof where this
+     building has one — `simpleRoofPlanes` already answers that for both a shed
+     and a peak, and refuses on a plan it cannot resolve — and the top of the
+     walls where it does not. A shadow thrown only by the walls would come out
+     about a quarter short on a gable, which is the sort of wrongness nobody
+     can name and everybody can feel. Computed only when the site is ON. */
+  const siteRoofHighFt =
+    showSite && roofEnabled && roofForm !== undefined && roofPitchIn12 !== undefined && roofEaveHeightFt !== undefined
+      ? (() => {
+          const roof = simpleRoofPlanes(footprint, {
+            form: roofForm,
+            pitchIn12: roofPitchIn12,
+            eaveHeightFt: roofEaveHeightFt,
+          });
+          return roof.refusal !== null ? 0 : Math.max(0, ...roof.planes.map((plane) => plane.highHeightFt));
+        })()
+      : 0;
+  /* The footprint's own outline for the shadow caster. A fresh array each
+     render is fine: `casterGeometry`'s cache is keyed by the corners' VALUES,
+     not by the array's identity. */
+  const footprintCornersFt = footprint.corners.map((corner) => ({ x: corner.point.x, z: corner.point.y }));
+  const siteGroundY = siteGroundYFt(lowestDrawnYFt(siteGroups));
+  const siteCasterHeightFt = showSite ? Math.max(totalHeightFt, siteRoofHighFt) - siteGroundY : 0;
+  const siteSunShadowCamera = siteSunShadow(bounds.maxDim, framedBox);
+  /* ⚠ **The sun only moves when there is a site to see it in.** With the site
+     off nothing casts and nothing is drawn in the sky, so the light's azimuth
+     is purely about reading the frame and stays exactly where it has always
+     been. With the site on it has to stand somewhere its shadow is visible —
+     see `SITE_SUN_DIRECTION` for the measurement that forced it. */
+  const sunDirection = showSite ? SITE_SUN_DIRECTION : VOID_SUN_DIRECTION;
   const cameraPosition = birdsEyeCameraPosition(bounds);
   const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
   const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
@@ -2839,6 +2930,11 @@ export default function Building3DView({
              panels, for a PNG it had already taken. `demand` renders only
              when r3f's reconciler commits a change to the scene, which is
              also exactly when the PNG needs re-taking — see CaptureFrame. */
+          /* ⚠ U5. Free while nothing casts or receives: three's shadow pass
+             walks the scene and renders nothing when no object has the flags.
+             `captureMode` never gets the site (`showSite` is not forwarded to
+             it), so the Project Summary's render is untouched either way. */
+          shadows
           frameloop={captureMode ? "demand" : "always"}
           gl={captureMode ? { preserveDrawingBuffer: true } : undefined}
           onPointerMissed={() => {
@@ -2854,7 +2950,56 @@ export default function Building3DView({
             />
           )}
           <ambientLight intensity={0.6} />
-          <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
+          {/* ⚠ One sun for the whole scene: this light, the sky's own sun disc
+              and the shadow on the lawn are all built from `sunDirection`, so
+              the lit side of the building, the bright side of the sky and the
+              side the shadow falls on cannot drift apart. */}
+          <directionalLight
+            position={[
+              bounds.maxDim * sunDirection[0],
+              bounds.maxDim * sunDirection[1],
+              bounds.maxDim * sunDirection[2],
+            ]}
+            intensity={0.8}
+            /* ⚠ Casting only with the site on. With it off nothing in the
+               scene casts or receives, so three's shadow pass has nothing to
+               render and the fabricator's view costs exactly what it did
+               before. See `siteSunShadow` for how the camera is sized. */
+            castShadow={showSite}
+            /* ⚠ **Without this the shadow camera keeps its DEFAULT 10ft box.**
+               r3f writes `shadow-camera-left` and friends straight onto the
+               camera object, and three never recomputes a camera's projection
+               matrix on its own — so the frustum stays at the ±5ft default and
+               a 24ft building casts almost nothing. Measured in the browser
+               2026-11-07: no shadow at all until this line existed. */
+            onUpdate={(light) => light.shadow.camera.updateProjectionMatrix()}
+            shadow-mapSize-width={siteSunShadowCamera.mapSize}
+            shadow-mapSize-height={siteSunShadowCamera.mapSize}
+            shadow-camera-left={-siteSunShadowCamera.halfSizeFt}
+            shadow-camera-right={siteSunShadowCamera.halfSizeFt}
+            shadow-camera-top={siteSunShadowCamera.halfSizeFt}
+            shadow-camera-bottom={-siteSunShadowCamera.halfSizeFt}
+            shadow-camera-near={siteSunShadowCamera.nearFt}
+            shadow-camera-far={siteSunShadowCamera.farFt}
+            shadow-normalBias={siteSunShadowCamera.normalBiasFt}
+          />
+          {/* ⚠ **U5 — the site.** Outside `StrawFillProvider` below, same
+              reason as the props: a lawn is not a panel and has no cavity.
+              `siteGroundYFt` of the scene's own lowest member is what keeps it
+              from burying the floor deck — see `showSite`'s doc comment. The
+              shadow is handed the CAMERA's framed box, so with props on their
+              shadows land too. */}
+          {showSite && (
+            <SiteGroup
+              groundYFt={siteGroundY}
+              maxDimFt={bounds.maxDim}
+              centerXFt={bounds.centerX}
+              centerZFt={bounds.centerZ}
+              footprintCornersFt={footprintCornersFt}
+              casterHeightFt={siteCasterHeightFt}
+              sunDirection={sunDirection}
+            />
+          )}
           {/* U4. Outside StrawFillProvider below on purpose: a prop is not a
               panel and has no cavity, so it has no business inside the
               provider every PanelMembersGroup reads. The label grows with the
@@ -3075,7 +3220,7 @@ export default function Building3DView({
           ))}
           {ringRoofRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, members }) => (
             <group key={`ring-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
-              <group rotation={[Math.PI / 2 - tiltRad, 0, 0]}>
+              <group rotation={[deckGroupRotationX(tiltRad), 0, 0]}>
                 <PanelMembersGroup members={members} />
               </group>
             </group>
@@ -3104,7 +3249,7 @@ export default function Building3DView({
                   written by a script that threw before writing the file, so
                   the deck went on drawing FLAT while the data carried a tilt
                   nothing used. */}
-              <group rotation={[Math.PI / 2 - tiltRad, 0, 0]}>
+              <group rotation={[deckGroupRotationX(tiltRad), 0, 0]}>
                 {simplified ? (
                   /* ⚠ THE PANEL'S REAL SILHOUETTE, not a box of its extents.
                      A box kept the corners the plumb cuts removed, which is

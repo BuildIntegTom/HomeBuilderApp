@@ -36,7 +36,7 @@ thumbnails are one piece of work.
 | **U2** | Named path, static arrows | **Edit → View → Price → Print** | **BUILT 2026-11-06 — and it made the bar 49px narrower** |
 | **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **STRIDE 1 BUILT 2026-11-07** — eight tiles, real buildings, real plan previews. The 3D render thumbnails are stride 2. |
 | **U4** | Props for scale | yes | **BUILT 2026-11-07** — a 6-foot person, a car and a tree; default ON for Public, OFF for everyone else |
-| **U5** | Site toggle | yes | **ready** |
+| **U5** | Site toggle | yes | **BUILT 2026-11-07** — sky, lawn, horizon and a real sun shadow; the ground plane is back as a switch and sits under the floor deck |
 | **U6** | Dimension handles | *"genius move"* — 5 handles named | **specced, one risk to settle first** |
 | **U7** | Per-tool tutorial | yes — *"how would the remembering work?"* | **answered below; follows U2** |
 | **U8** | Share by link | yes | **ready, but it is a sharing decision** |
@@ -56,6 +56,8 @@ is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06
 - ~~**U4**~~ **DONE 2026-11-07.** Before U5, because a 6 ft figure tells a
   client more than grass does — and it settled the role-default question U5
   also has to answer, in a shape U5 can copy.
+- ~~**U5**~~ **DONE 2026-11-07.** It copied U4's tri-state unchanged, and U4's
+  props gained shadows out of it.
 - **U6** is front-loaded into a seam, not a UI — see its entry.
 - **U7** once the names and the tools have stopped moving.
 - **U8** last, because it is a sharing decision and not a UI one.
@@ -217,7 +219,7 @@ the one thing that tells a client whether a 12 ft wall is big.
 
 ---
 
-## U5 — A site around the building, as a toggle
+## U5 — ~~A site around the building, as a toggle~~ **BUILT 2026-11-07** — see the record at the end
 
 Grass, sky, horizon, a shadow. ⚠ **Defaulted OFF for the fabricator role and ON
 for a client-facing one**, so a shop drawing never gains scenery and a homeowner
@@ -785,3 +787,171 @@ big building the figure SHOULD look small.
 - Reset view puts the camera back at the widened framing. No console errors.
 
 Gates: 3828 tests / 206 files, typecheck clean in all four projects.
+
+---
+
+## U5 — BUILT 2026-11-07: the void gets a sky, and the ground stops hiding the floor
+
+> *"Grass, sky, a horizon and a shadow. Ours is a grey void — honest for a
+> fabricator, cold for a client."*
+
+One tick, `Site (sky, grass, horizon, shadow)`, in **3D Layers** beside U4's
+props. Default **on for Public, off for Fabricator/Admin/Engineer**, as a
+tri-state copied straight from U4 — `null` means follow the role, and a user's
+own tick stops the role deciding. That was U5's open question and U4 answered
+it; this item spent nothing re-answering it.
+
+### The 2026-10-29 objection, as a number
+
+⚠ He turned the ground plane off because *"it blocks the floor panels from
+being visible and doesn't really illustrate anything for the user."* That was
+right, and the cause is exact rather than aesthetic:
+
+- `deckPanelTakeoff.ts` anchors a floor panel at `anchorYFt: 0` — *"The floor
+  deck hangs below Z=0, the finished floor the walls stand on."*
+- The view then tips each deck panel by `Math.PI / 2 − tiltRad`, which swings
+  the panel's **15 1/2in depth from up to down**. So a floor deck occupies
+  **Y = −15 1/2in to 0**, and a bale foundation hangs below the datum too.
+- The old plane was drawn at **y = −0.05ft, i.e. −0.6in** — *inside* the floor
+  system. It buried the whole deck and left the walls standing on nothing.
+
+So the grass is **not** at a fixed offset. `siteGroundYFt` puts it **one inch
+below the lowest point the scene actually draws**, measured off the same render
+data that draws it and through the same rotation the renderer applies —
+`deckGroupRotationX` is now exported from `site.ts` and used by
+`Building3DView`, so there is one expression of that quarter turn rather than
+two that can drift. `site.test.ts` checks "no member is below the grass"
+against every floor system this app builds: floor panels, a bale foundation, a
+bale foundation with the clay/steel bottom skin, both together, and no floor
+system at all. The bound on a tilted member is deliberately **loose on the safe
+side** — a brace reports a few inches deeper than it is, because a few inches of
+extra lawn is nothing and a buried panel is the defect.
+
+### The shadow took three goes, and the first two are worth writing down
+
+**1. drei's `ContactShadows` renders nothing here.** It was the obvious choice —
+it needs no change to any panel component, because it works by re-rendering the
+scene with `scene.overrideMaterial`. In this app's three.js 0.185 / r3f 9.6 /
+drei 10.7 combination it produced an empty texture. ⚠ Measured, not assumed:
+with the shadow forced to **opaque red**, its frustum opened from 2.5ft to 50ft,
+on a freshly reloaded page with no console error and no lost context, the lawn
+was still untouched. Two real bugs were found and fixed on the way there and
+neither was the cause:
+
+- `scale={[w, h]}` is a **fresh array identity every render**, and drei keys its
+  two `WebGLRenderTarget`s on it — so it was allocating a new pair of render
+  targets every frame. A primitive `scale` is stable by value.
+- A small positive `near` **clips drei's own blur quad**, which sits at distance
+  0 from the shadow camera. It has to be 0; the thing that keeps the lawn out of
+  its own shadow map is the plane's lift above the grass, not `near`.
+
+**2. The shadow is three's own now: one casting light, one receiving ground, and
+ONE caster — a solid prism of the footprint.** Not the frame. Two reasons, and
+the second is the better one:
+
+- Casting from the members would mean `castShadow` on every member mesh, which
+  means editing `PanelMembersGroup`, the component the panel editor shares — and
+  a depth pass over thousands of 1 1/2in sticks that comes out as aliased noise
+  at any map size this app can afford.
+- ⚠ **The real building is not a lattice.** It is solid straw-panel walls under
+  plaster; the frame is a fabrication view of it. A client looking at the site
+  toggle should see the shadow the finished building throws, which is its
+  massing. The note on screen says so in those words, and a test checks it does.
+
+The caster is invisible — `colorWrite` and `depthWrite` both off — and still
+casts, because three's shadow pass swaps in its own depth material and checks
+only `object.visible` and `material.visible`. Its outline is the real footprint
+extruded, so an octagon or a notched plan throws its own shape. Its height is
+the **top of the roof** where `simpleRoofPlanes` can answer and the top of the
+walls where it cannot; walls alone would run about a quarter short on a gable,
+which is the kind of wrongness nobody can name and everybody can feel.
+
+**3. Two things that produced no shadow at all and looked like the same bug:**
+
+- ⚠ **r3f writes `shadow-camera-left` and friends straight onto the camera and
+  nothing recomputes its projection matrix**, so the frustum stayed at three's
+  default ±5ft box and a 24ft building cast almost nothing. Fixed with an
+  `onUpdate` that calls `updateProjectionMatrix`.
+- ⚠ **The sun was at the camera's own azimuth.** `BIRDS_EYE_AZIMUTH_DEG` is 45°
+  and the light has always sat at `[maxDim, maxDim × 2, maxDim]` — also 45°. A
+  shadow cast from there falls **directly away from the viewer and hides behind
+  the building**: it was real, correct and invisible until the view had been
+  orbited most of the way round.
+
+So the sun now has **two positions, and only the site moves it.**
+`VOID_SUN_DIRECTION` is `[1, 2, 1]`, exactly what the scene has always carried,
+and the fabricator's lighting is untouched. `SITE_SUN_DIRECTION` mirrors the X
+to `[-1, 2, 1]`, which puts the shadow at **90° to the view** — beside the
+building at the opening camera and visible through most of an orbit. A test
+asserts both: that the site's sun throws its shadow more than 60° off the view
+axis, and that the void sun is still literally `[1, 2, 1]`.
+
+The cost is that one of the two faces a bird's-eye sees falls to ambient light
+with the site on. That is a fair trade for a client view — differentiated faces
+read as three-dimensional, equal ones read flat — and it is exactly why the
+fabricator's own lighting was left where it was.
+
+### The horizon is fog, not an edge
+
+`OrbitControls` is mounted with no `maxPolarAngle`, so a user can swing down to
+the horizon and past it. The lawn is twenty building-widths across (floored at
+400ft, capped at 3000ft) and linear fog takes it to haze at just over half that,
+so the lawn does not end, it dissolves. ⚠ Fog is a scene property and every
+panel material takes it, so `nearFt` is `4 × maxDim` — the farthest corner of
+the building at the opening camera is about `2.4 × maxDim` away, so **nothing on
+the building is ever fogged there**, and a test says so.
+
+⚠ The lawn is drawn with **64 × 64 segments and that is not cosmetic**: three's
+fog is a per-vertex varying, so a single 6000ft quad shows a gradient
+interpolated between four corners — a diagonal seam across the ground instead of
+a horizon.
+
+The sky is drei's `Sky`, a box scaled by `distance`, centred on the building via
+a group because its own props accept no transform. Two constraints, both tested:
+it has to **contain the lawn** (or the grass runs out through the side of the
+sky) and its half-extent has to stay inside the camera's 10000ft far plane (or
+it is clipped away entirely). 2.4 × the lawn radius satisfies both at every
+building size, which is what the 3000ft cap on the radius is there to guarantee.
+
+### Scenery, and nothing else
+
+`SITE_PROVENANCE` is printed verbatim by the 3D Layers note, so the screen
+cannot say something milder than the source file: no survey, no grade, no slope,
+no soil, no setbacks, no orientation, no time of day. The sun is placed to light
+the model, not to match an hour. The lawn's height is a drawing decision and not
+a ground level — the building is not sited on anything. ⚠ **Not forwarded to
+`captureMode`**, same as the straw and the props, so the Project Summary's
+printed render never gains scenery; that is this item's own rule applied to
+itself. And nothing here reaches a takeoff, a price, a weight, a sheet or an
+export, structurally: the OBJ and COLLADA downloads build from
+`buildExportPanels()`, a data path, not a walk of this scene.
+
+⚠ Site colours are dull on purpose and a test enforces that none of them is a
+panel colour — a bright lawn would compete with the frame in a view whose
+subject is the frame. ⚠ The lawn has a no-op `raycast`: it is thousands of feet
+across, and `Building3DView`'s `onPointerMissed` is what clears the Orbit tool's
+re-centring, so a lawn that can be hit is a lawn that silently breaks a tool.
+
+### One thing U4 gained from this
+
+U4's props now `castShadow`. It is free with the site off — nothing in the scene
+casts unless the site's own light is the one casting — and with the site on it
+is what puts the 6'-0" figure, the car and the tree **on** the grass instead of
+an inch above it.
+
+### Verified in the running app
+
+- Role **Fabricator**: unticked, grey void, lighting unchanged.
+- Ticking it: sky, lawn, horizon and a shadow falling clear of the building.
+- Unticking it: the void comes back exactly — no fog residue, no background
+  colour, no shadow. r3f detaches `scene.fog` and `scene.background` cleanly.
+- Switching to **Public** with the box already unticked: props came on (U4's
+  tri-state, untouched) and the site stayed off. The answer sticks.
+- Props and site together: the figure, the car and the tree each cast their own
+  shadow onto the lawn.
+- Orbited to the horizon: sky above, grass below, the two meeting in haze with
+  no edge and no band.
+- No console errors, no shadow acne, no peter-panning.
+
+Gates: 3928 tests / 207 files, typecheck clean in all four projects, lint
+169 / 119 / 50 — every rule byte-identical to the baseline.

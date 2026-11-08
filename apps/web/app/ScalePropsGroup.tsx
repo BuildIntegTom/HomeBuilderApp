@@ -32,7 +32,12 @@ const NO_RAYCAST = () => {};
 function PropPartMesh({ part }: { part: ScalePropPart }) {
   const { positionFt, rotation, geometry, color } = drawnPart(part);
   return (
-    <mesh position={positionFt} rotation={rotation} raycast={NO_RAYCAST}>
+    /* ⚠ `castShadow` added by U5, and it is free with the site off: nothing
+       in the scene casts unless the site's own light is the one with
+       `castShadow`, so with the site off three's shadow pass has nothing to
+       render. With the site ON it is what puts the figure, the car and the
+       tree ON the grass rather than hovering an inch above it. */
+    <mesh position={positionFt} rotation={rotation} castShadow raycast={NO_RAYCAST}>
       {geometry.kind === "box" ? (
         <boxGeometry args={geometry.sizeFt} />
       ) : geometry.kind === "sphere" ? (

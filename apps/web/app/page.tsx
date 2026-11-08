@@ -482,6 +482,7 @@ import PlanViewPage from "./PlanViewPage";
 import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
 import { SCALE_PROP_PROVENANCE } from "./scaleProps";
+import { SITE_PROVENANCE } from "./site";
 import CompassWidget from "./CompassWidget";
 import PageFeaturesButton from "./PageFeaturesButton";
 import {
@@ -1022,6 +1023,18 @@ export default function LayoutEditor() {
    * is no moment at which the state and the role are out of step.
    */
   const [showScalePropsOverride, setShowScalePropsOverride] = useState<boolean | null>(null);
+  /**
+   * ⚠ **U5 — the site, 2026-11-07.** *"Grass, sky, a horizon and a shadow.
+   * Ours is a grey void — honest for a fabricator, cold for a client."*
+   *
+   * Same TRI-STATE as `showScalePropsOverride` above, and deliberately so:
+   * U5's brief asked for *"defaulted OFF for the fabricator role and ON for a
+   * client-facing one"*, which is the question U4 answered first. `null` =
+   * follow the role; a user's own tick sticks and the role stops deciding. See
+   * `showScalePropsOverride` for why this is not a plain boolean plus an
+   * effect.
+   */
+  const [showSiteOverride, setShowSiteOverride] = useState<boolean | null>(null);
   const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
   const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
   /* ⚠ Half the roof is see-through by default, so a new project shows the
@@ -1237,6 +1250,8 @@ export default function LayoutEditor() {
   /** U4's effective answer — see `showScalePropsOverride` for why this is
    * derived rather than stored. */
   const showScaleProps3D = showScalePropsOverride ?? role === "public";
+  /** U5's effective answer — the same derivation, for the same reason. */
+  const showSite3D = showSiteOverride ?? role === "public";
   // Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
   // mockup: a free-text note signed "- Eng. Smith") — see
   // wallReviewNotes.ts's own doc comment for why this is separate from
@@ -13339,6 +13354,19 @@ export default function LayoutEditor() {
             drawing does not gain scenery. Tick or untick it and your answer sticks whatever the role.
           </p>
         )}
+        <label style={{ display: "block" }}>
+          <input type="checkbox" checked={showSite3D} onChange={(e) => setShowSiteOverride(e.target.checked)} />{" "}
+          Site (sky, grass, horizon, shadow)
+        </label>
+        {showSite3D && <p className={styles.note}>{SITE_PROVENANCE}</p>}
+        {showSite3D && (
+          <p className={styles.note}>
+            ⚠ The ground plane was turned off on 2026-10-29 because it hid the floor panels. It is back as this
+            switch rather than as a line of code, and it is drawn one inch under the lowest member in the model
+            instead of just under the datum — so a floor deck, a bale foundation and its clay/steel bottom skin all
+            stay visible with the grass on. Default follows the role, exactly like the props above.
+          </p>
+        )}
         {floorsEnabled && (
           <label style={{ display: "block" }}>
             <input type="checkbox" checked={showFloorDeck3D} onChange={(e) => setShowFloorDeck3D(e.target.checked)} />{" "}
@@ -15060,6 +15088,7 @@ export default function LayoutEditor() {
                   showStraw={showStraw3D}
                   strawTextured={strawTextured3D}
                   showScaleProps={showScaleProps3D}
+                  showSite={showSite3D}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
                   showRoofPanels={roofEnabled && showRoofDeck3D}
                   /* ⚠ Straight out of `deckPanelTakeoffInput`, not
