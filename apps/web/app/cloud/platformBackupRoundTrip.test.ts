@@ -20,11 +20,11 @@ import { REDACTION_MARKER_KEY, readRedactionMarker } from "./redaction";
  * ── AND WHY THE NEGATIVE CONTROL IS LOAD-BEARING, NOT DECORATION ────────────
  *
  * Redacting the cross-company half of a backup was chosen first and then
- * REVERSED ON EVIDENCE: `priceModifier` is in `REQUIRED_STATE_KEYS`, so
+ * REVERSED ON EVIDENCE: `pricePerSqFt` is in `REQUIRED_STATE_KEYS`, so
  * `parseProjectFile` refuses a redacted document outright, and the file picker
  * uses that strict parser. A redacted backup file would therefore not open at
  * all — not "open with a gap". `describe("the negative control")` below is that
- * fact, pinned. It must keep failing for a document with `priceModifier`
+ * fact, pinned. It must keep failing for a document with `pricePerSqFt`
  * removed, so a later pass cannot reintroduce a redaction here and believe the
  * files still open. IT IS NOT A TEST OF THE REDACTOR; `browse_redact` and
  * `parseRedactedProjectFile` are untouched by this slice and stay exactly as
@@ -55,10 +55,10 @@ import { REDACTION_MARKER_KEY, readRedactionMarker } from "./redaction";
  *  - every width and height is already a whole eighth of an inch, so
  *    `repairStateToEighths` (which every load runs, unconditionally) has
  *    nothing to move and a deep-equality assertion means what it says;
- *  - `priceModifier` is a value that appears nowhere else in the fixture, so
+ *  - `pricePerSqFt` is a value that appears nowhere else in the fixture, so
  *    "the margin survived" is checkable as text and not just as a key.
  */
-const FIXTURE_PRICE_MODIFIER = 1.3777;
+const FIXTURE_PRICE_PER_SQ_FT = 25.4321;
 
 function makeRestorableState(overrides: Partial<ProjectState> = {}): ProjectState {
   return {
@@ -107,7 +107,7 @@ function makeRestorableState(overrides: Partial<ProjectState> = {}): ProjectStat
     role: "fabricator",
     unitSystem: "imperial",
     // The one price-shaped value in the fixture. It is copied, never computed.
-    priceModifier: FIXTURE_PRICE_MODIFIER,
+    pricePerSqFt: FIXTURE_PRICE_PER_SQ_FT,
     floorSystemId: null,
     perpendicular2x4Enabled: false,
     baleFoundationTopDepthIn: 5.5,
@@ -208,7 +208,7 @@ describe("a backup file reloads into the same building", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("round-trips the whole state, priceModifier included", () => {
+  it("round-trips the whole state, pricePerSqFt included", () => {
     const state = makeRestorableState();
     const { text } = writeAsBackupFile(state);
     const result = parseProjectFile(text);
@@ -216,8 +216,8 @@ describe("a backup file reloads into the same building", () => {
 
     // The margin, on its own and first: this is the field whose absence from a
     // redacted document is what killed the redaction.
-    expect(result.state.priceModifier).toBe(FIXTURE_PRICE_MODIFIER);
-    expect(text).toContain(String(FIXTURE_PRICE_MODIFIER));
+    expect(result.state.pricePerSqFt).toBe(FIXTURE_PRICE_PER_SQ_FT);
+    expect(text).toContain(String(FIXTURE_PRICE_PER_SQ_FT));
 
     // The whole building. `toEqual` compares Sets structurally, and the four
     // Set-valued keys are ALSO compared explicitly below, because
@@ -272,34 +272,34 @@ describe("a backup file reloads into the same building", () => {
 
 describe("the negative control: WHY the redaction was abandoned", () => {
   /**
-   * Removing `state.priceModifier` and nothing else is exactly what
+   * Removing `state.pricePerSqFt` and nothing else is exactly what
    * `browse_redact` does to a cross-company document (its `removedPaths` is
-   * `["state.priceModifier"]`). The assertion is that such a file DOES NOT
+   * `["state.pricePerSqFt"]`). The assertion is that such a file DOES NOT
    * OPEN — refused by name, not opened with a gap.
    *
    * ⚠ If a later pass makes this test pass with the key removed, that pass has
    * reintroduced a redaction into the backup and the files no longer open.
    * Do not relax it; change the design instead.
    */
-  function withoutPriceModifier(text: string): string {
+  function withoutPricePerSqFt(text: string): string {
     const parsed = JSON.parse(text) as { state: Record<string, unknown> };
-    delete parsed.state.priceModifier;
+    delete parsed.state.pricePerSqFt;
     return JSON.stringify(parsed, null, 2);
   }
 
-  it("a document with priceModifier removed is REFUSED by parseProjectFile", () => {
+  it("a document with pricePerSqFt removed is REFUSED by parseProjectFile", () => {
     const { text } = writeAsBackupFile(makeRestorableState());
-    const redactedLike = withoutPriceModifier(text);
-    expect(redactedLike).not.toContain("priceModifier");
+    const redactedLike = withoutPricePerSqFt(text);
+    expect(redactedLike).not.toContain("pricePerSqFt");
 
     const result = parseProjectFile(redactedLike);
     expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toBe('That file is missing the "priceModifier" field.');
+    expect(result.ok ? "" : result.error).toBe('That file is missing the "pricePerSqFt" field.');
   });
 
   it("and the SAME document with the key present opens — so the refusal is about the key, not the fixture", () => {
     const { text } = writeAsBackupFile(makeRestorableState());
     expect(parseProjectFile(text).ok).toBe(true);
-    expect(parseProjectFile(withoutPriceModifier(text)).ok).toBe(false);
+    expect(parseProjectFile(withoutPricePerSqFt(text)).ok).toBe(false);
   });
 });

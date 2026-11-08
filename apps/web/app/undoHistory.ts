@@ -69,7 +69,7 @@ export const UNDO_CLASSIFICATION = {
   foundationTypeId: "document",
   pierSpacingFt: "document",
   zipCode: "document",
-  priceModifier: "document",
+  pricePerSqFt: "document",
   floorSystemId: "document",
   perpendicular2x4Enabled: "document",
   baleFoundationTopDepthIn: "document",

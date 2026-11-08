@@ -1000,6 +1000,40 @@ export const strawCoreVdrf: CatalogValue<number> = {
 // --- Price -------------------------------------------------------------------
 
 export const priceRates = {
+  /**
+   * ⚠ **THE PRICE. One flat rate, every bucket, per square foot of coverage.**
+   *
+   * > *"it would just make it easy peasy and i believe well within our price
+   * > point abilities to just give floors, walls, and roof panels a flat
+   * > $25/sq ft of coverage. public users should see that price."*
+   * > — Tommy, 2026-11-08
+   *
+   * Asked whether the buckets he did not name — the gable row, the beams and
+   * truss plates, the Big Header — should keep their own rates, he answered
+   * **"Flat $25 for absolutely everything"**. So this is the only rate the
+   * total reads. Every `*PerSqFt` figure below it is kept for reference and
+   * **nothing computes with them any more**; see the note at the bottom of
+   * this object.
+   *
+   * ⚠ **PLYWOOD JACK STUDS ARE INSIDE THIS NUMBER**, by his own answer, and
+   * that is written here so nobody later adds them a second time:
+   *
+   * > *"Id like to still consider exactly pricing each panel (and plywood jack
+   * > stud that takes up very little surface area but still costs money) as an
+   * > attributes in play, maybe plywood jacks just have a flat fee associated
+   * > with them."*
+   *
+   * He chose "explicitly rolled into the $25" over a separate fee. A jack stud
+   * occupies almost no coverage area, so charging it by area under-charges it
+   * — that is a known and accepted rounding, not an oversight.
+   *
+   * ⚠ **IT IS A PRICE, NOT A COST.** There is no cost data anywhere in this
+   * app: not material, not labour, not overhead. So nothing here can tell you
+   * whether $25/sq ft is profitable, and the per-type rates below could not
+   * either — they were prices too (see the note). "Is there margin at $25" is
+   * a question that lives outside this file.
+   */
+  coveragePerSqFt: 25,
   standardPerSqFt: 28,
   cornerPerSqFt: 36,
   bracedPerSqFt: 32,
@@ -1013,8 +1047,12 @@ export const priceRates = {
    * > then charge nothing at all for.
    *
    * His number, not a placeholder - which is why it sits in this block under
-   * the shared `confirmed` status rather than in its own `CatalogValue` the
-   * way `beamPriceRatePerSqFt` had to.
+   * the shared `confirmed` status rather than in its own `CatalogValue`, the
+   * way the retired beam rate had to.
+   *
+   * ⚠ Superseded for the TOTAL by `coveragePerSqFt` on 2026-11-08, when he
+   * put every bucket on one rate. $25 is what a Big Header was already
+   * charged, so this is the one panel type whose price did not move.
    *
    * It is the one rate here BELOW the standard panel's $28. Worth saying out
    * loud, because it reads like a mistake and is not: a Big Header is mostly
@@ -1039,40 +1077,61 @@ export const priceRates = {
    */
   floorPanelPerSqFt: 24,
   roofPanelPerSqFt: 24,
-  totalModifier: 1.3,
+  /**
+   * ⚠ **`totalModifier` IS GONE, AND IT WAS DOUBLE-COUNTING.** It was a 1.3x
+   * "fabricator/admin markup" applied on top of the per-type rates, and the
+   * code described those rates as base material cost. Asked directly on
+   * 2026-11-08, Tommy answered: **"those rates were all-in prices, the 1.3x is
+   * double counting."**
+   *
+   * So for as long as it existed, every fabricator-, admin- and engineer-side
+   * total in this app was 1.3x the real price, and the figure shown to PUBLIC
+   * viewers — which the UI apologetically called "the base material cost
+   * only" — was the correct one. Removing it takes 23% off the number those
+   * three roles saw.
+   *
+   * Its replacement is not another multiplier. `coveragePerSqFt` above is the
+   * price, and a fabricator adjusts THAT — one number, in dollars, so there
+   * is nothing left for a second factor to silently multiply.
+   */
   status: "confirmed" as const,
-  note: "Based on biggest face; total = sum(area x rate-by-type) x totalModifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy). Big Header has its own $25/sqft rate (Tommy, 2026-11-05) - charged on its own height x width face, plus the opt-in sill below it when there is one, since that sill is part of the same fabricated part. Before that it was charged nothing at all. Floor and roof panels are priced per square foot of COVERAGE at $24 (Tommy), a roof's measured up its real slope. totalModifier (default 1.3) is a fabricator/admin-only markup, editable in the UI — public viewers see the base material cost with no markup applied (Tommy).",
+  note:
+    "ONE RATE: total = sum(every priceable area) x coveragePerSqFt. $25/sq ft of coverage across every bucket " +
+    "- floor panels, wall panels of every type, roof panels, the gable row, beams, truss plates, box beams, " +
+    "Mid-Wall Bond Beams and Big Headers - Tommy 2026-11-08, who answered \"Flat $25 for absolutely everything\" " +
+    "when asked about the buckets his instruction did not name. Plywood jack studs are INSIDE this rate by his " +
+    "own answer, not charged separately. A fabricator or proposer may adjust the rate (he wants to test $20/sq ft); " +
+    "PUBLIC viewers always see the catalog default above, never an adjusted one, because \"the public user should " +
+    "definetely not be the one seeing what could be the lowest price point\". " +
+    "THE PER-TYPE RATES BELOW ARE NO LONGER USED BY ANY TOTAL. They are kept because he asked to keep per-panel " +
+    "pricing in play as a possibility, and they are left exactly as he gave them: standard $28, corner $36, " +
+    "braced $32, header/sill $34, column $36, Big Header $25, gable row $42, floor and roof panels $24/sq ft of " +
+    "coverage. They were ALL-IN PRICES, not costs - his 2026-11-08 correction - which is why the 1.3x modifier " +
+    "that used to sit on top of them was double counting and has been deleted.",
 };
 
 /**
- * ⚠ **What a BEAM costs per square foot of its own elevation face — and
- * nobody has said.**
+ * ⚠ **`beamPriceRatePerSqFt` IS GONE, AND THAT RETIRES A REVIEW LOG ENTRY.**
  *
- * > *"Beams and roof and floor panels should all have their own prices."*
- * > — Tommy, giving $24/sqft for the floor and roof panels in the same
- * > breath and no figure at all for the beams.
+ * It existed because Tommy asked for beams to have their own price and gave
+ * no figure, so the bucket was seeded at the roof rate ($42/sq ft) and carried
+ * `pending-BI-confirmation` to stop that seed reading as his number. On
+ * 2026-11-08 he answered the question it was waiting on — **"Flat $25 for
+ * absolutely everything"** — so beams, truss plates, box beams and Mid-Wall
+ * Bond Beams are priced at `coveragePerSqFt` like every other bucket, by his
+ * own decision.
  *
- * So the beams get their own bucket, because he asked for one, and that
- * bucket is seeded at the `roof` rate — which is exactly where every truss
- * plate, box beam and Mid-Wall Bond Beam was already being priced. Nothing
- * about any project's cost moves on the day this lands; what changes is that
- * the number is now ASKABLE, sitting in one place with its own status,
- * instead of being indistinguishable from a rate he did confirm.
+ * The placeholder is deleted rather than set to 25, because a `CatalogValue`
+ * exists to mark a number nobody has confirmed, and this one is now confirmed.
+ * Its Review Log entry ("the BEAM rate itself is unset") is deleted with it.
  *
- * A plausible-looking invented figure would have been worse than this in
- * every way: it would have moved real money and claimed a confidence nobody
- * has. This one is honest about being a placeholder and about which
- * placeholder it is.
+ * ⚠ Note what this did to the money: beams drop from $42 to $25 per square
+ * foot, and the area they are charged against is still a stand-in — these are
+ * linear members with no real width-x-wall-height face, so each piece is
+ * priced on its own covered length x its own assembly's cross-sectional
+ * height. That stand-in is unchanged and is NOT what he confirmed; he
+ * confirmed the rate.
  */
-export const beamPriceRatePerSqFt: CatalogValue<number> = {
-  value: 42,
-  status: "pending-BI-confirmation",
-  note:
-    "Seeded at the roof rate ($42/sqft), which is where truss plates, box beams and Mid-Wall Bond Beams have " +
-    "been priced all along — so this changes no project's cost. Tommy asked for beams to have their own price " +
-    'and gave none: "Beams and roof and floor panels should all have their own prices... floor and roof should ' +
-    'be $24/sq ft coverage." The floor and roof figures are his; this one is waiting on him.',
-};
 
 // --- Panel type roster --------------------------------------------------------
 

@@ -28,6 +28,7 @@ import {
   BALE_FOUNDATION_GAP_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
   ROOF_TRUSS_SPACING_DEFAULT_IN,
+  priceRates,
   standardPanelHeightIn,
 } from "@building-integrity/panel-catalog";
 import type {
@@ -53,7 +54,7 @@ import type { TilingBasis } from "./tilingBasis";
 // Stage 4B, for `parseRedactedProjectFile` only. `redaction.ts` imports
 // `ProjectState` back from here with `import type`, which is erased, so this is
 // not a runtime cycle.
-import { MONEY_STATE_KEYS, isRedactablePath, readRedactionMarker } from "./cloud/redaction";
+import { isRedactablePath, moneyStateKeysFor, readRedactionMarker } from "./cloud/redaction";
 
 /**
  * Save/Load a project file — Tommy: "a saveable file that the user or
@@ -136,8 +137,31 @@ import { MONEY_STATE_KEYS, isRedactablePath, readRedactionMarker } from "./cloud
  * Stage 3's own per-wall run-stop record (`wallRunStopsByWallId`) is added
  * here too, inert and empty, so the file format settles once this week
  * rather than twice — see the Smearforn plan's Stage 0.
+ *
+ * v25->v26 (one price): `priceModifier` becomes `pricePerSqFt`. ⚠ **THIS IS
+ * THE FIRST MIGRATION IN THIS FILE'S HISTORY THAT RENAMES A KEY RATHER THAN
+ * ADDING ONE**, and the first that cannot carry a stored value across. The old
+ * key held a MULTIPLIER (1.3x by default) applied on top of per-panel-type
+ * rates; the new one holds a RATE IN DOLLARS per square foot of coverage
+ * (25 by default). Those are not convertible: translating a 1.4x markup into
+ * a dollar rate would need the building's own areas, which a file parser does
+ * not have and must not guess.
+ *
+ * **So every v25 file migrates to the catalog default of $25/sq ft, and any
+ * customised markup it carried is dropped.** That is stated loudly rather than
+ * hidden because it moves money: a project somebody had set to 1.5x will open
+ * at a different price than it was saved at. It is nevertheless the right
+ * answer, because the stored multiplier was double-counting in the first place
+ * — Tommy, 2026-11-08, asked directly: *"those rates were all-in prices, the
+ * 1.3x is double counting."* A v25 file's price was wrong by construction;
+ * there is no faithful value to preserve.
+ *
+ * The rename is what forces the bump. An additive optional key needs none (see
+ * `wallReviewNotes`, `maxPanelHeightIn`); a key whose NAME and UNIT both change
+ * needs one, or `parseProjectFile`'s required-key check would reject every
+ * existing file with "missing the pricePerSqFt field".
  */
-export const PROJECT_FILE_VERSION = 25;
+export const PROJECT_FILE_VERSION = 26;
 
 export interface ProjectState {
   /**
@@ -234,7 +258,21 @@ export interface ProjectState {
   zipCode: string;
   role: ViewerRole;
   unitSystem: "imperial" | "metric";
-  priceModifier: number;
+  /**
+   * ⚠ **Dollars per square foot of coverage — a RATE, not a multiplier.**
+   * Replaced `priceModifier` at v26; see PROJECT_FILE_VERSION's v25->v26 note
+   * for why the old value could not be carried across. Defaults to
+   * `priceRates.coveragePerSqFt` ($25). A fabricator or proposer may change
+   * it; a PUBLIC viewer is always shown the catalog figure instead, never
+   * this one.
+   *
+   * ⚠ This is the app's ONE money key — the single field
+   * `apps/web/app/cloud/redaction.ts` classifies as `"money"` and strips from
+   * a browsed document. Renaming it means the database's redaction marker
+   * names a different path, which is why v26 needs a `browse_schema_redaction`
+   * row of its own before any v26 document can be browsed.
+   */
+  pricePerSqFt: number;
   floorSystemId: string | null;
   perpendicular2x4Enabled: boolean;
   /** Bale Foundation framing (Tommy: "the top framing member, bottom
@@ -546,7 +584,7 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "zipCode",
   "role",
   "unitSystem",
-  "priceModifier",
+  "pricePerSqFt",
   "floorSystemId",
   "perpendicular2x4Enabled",
   "roofSystemTypeId",
@@ -577,15 +615,20 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "foundationEnabled",
 ];
 
-/** Keys that exist in v25 and did NOT exist in v24. The required-keys check
- * skips exactly these when reading the one accepted prior version — a v24
- * file is not missing `foundationEnabled`, it predates it, and refusing to
- * open it would be the "a file must never become unopenable because the
- * format moved" failure this parser exists to avoid. The list is deliberately
- * separate from `REQUIRED_STATE_KEYS` rather than a carve-out inside it, so
- * that when v24 falls out of the window it is one deletion, not an edit to
- * the required list. */
-const KEYS_ADDED_IN_V25: readonly string[] = ["foundationEnabled"];
+/** Keys that exist in v26 and did NOT exist in v25. The required-keys check
+ * skips exactly these when reading the one accepted prior version — a v25
+ * file is not missing `pricePerSqFt`, it predates it, and refusing to open it
+ * would be the "a file must never become unopenable because the format moved"
+ * failure this parser exists to avoid. The list is deliberately separate from
+ * `REQUIRED_STATE_KEYS` rather than a carve-out inside it, so that when v25
+ * falls out of the window it is one deletion, not an edit to the required
+ * list.
+ *
+ * ⚠ v25's own entry (`foundationEnabled`) is deleted here rather than kept:
+ * v24 is now outside the accepted window, so skipping it would excuse a key
+ * on a version this parser no longer reads — which is how a required-key
+ * check quietly stops being one. */
+const KEYS_ADDED_IN_V26: readonly string[] = ["pricePerSqFt"];
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays.
@@ -1005,16 +1048,31 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
   }
   const state = file.state as Record<string, unknown>;
 
-  // v24 (the one prior version this file also accepts) carries every required
-  // key EXCEPT the ones v25 introduced — see KEYS_ADDED_IN_V25, which is what
-  // this skip reads, and PROJECT_FILE_VERSION's own v24->v25 note for what
-  // each of them defaults to. Everything else about the two shapes is
-  // identical: v24->v25 adds keys, it renames and removes nothing.
+  // v25 (the one prior version this file also accepts) carries every required
+  // key EXCEPT the ones v26 introduced — see KEYS_ADDED_IN_V26, which is what
+  // this skip reads, and PROJECT_FILE_VERSION's own v25->v26 note for what it
+  // defaults to.
+  //
+  // ⚠ v25->v26 RENAMES a key, which no earlier migration in this file did.
+  // So unlike every previous bump there is also a key to IGNORE on the way in:
+  // a v25 file carries `priceModifier`, which v26 has no field for. It is
+  // dropped below rather than listed here, because this loop only checks for
+  // absence — an extra key has never been an error in this parser and must
+  // not become one now (a v25 file is not malformed for having been saved by
+  // v25).
   for (const key of REQUIRED_STATE_KEYS) {
     if (excusedStateKeys.has(key)) continue;
-    if (isPriorVersion && KEYS_ADDED_IN_V25.includes(key)) continue;
+    if (isPriorVersion && KEYS_ADDED_IN_V26.includes(key)) continue;
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
+  // v25->v26: the renamed key is REMOVED here rather than ignored. `state` is
+  // spread wholesale into the returned ProjectState below, and a spread gets
+  // no excess-property check, so a v25 file's `priceModifier` would otherwise
+  // ride along invisibly in memory and be written back out by
+  // serializeProject - putting a dead multiplier into a v26 file and leaving
+  // the next reader to wonder which number won.
+  delete state.priceModifier;
+
   if (!Array.isArray(state.primaryCornerIds)) {
     return { ok: false, error: '"primaryCornerIds" should be a list of corner ids.' };
   }
@@ -1067,6 +1125,12 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       baleFoundationGapIn: (state.baleFoundationGapIn as number | undefined) ?? BALE_FOUNDATION_GAP_DEFAULT_IN,
       baleFoundationFieldSpacingIn:
         (state.baleFoundationFieldSpacingIn as BaleFoundationFieldSpacingIn | undefined) ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+      /* v25->v26. A v25 file has no `pricePerSqFt`, and its `priceModifier`
+         cannot be converted into one - see PROJECT_FILE_VERSION's v25->v26
+         note. So every such file opens at the catalog default, which is also
+         the only honest answer: the multiplier it carried was double-counting,
+         so there is no correct prior price to preserve. */
+      pricePerSqFt: (state.pricePerSqFt as number | undefined) ?? priceRates.coveragePerSqFt,
       floorBottomSkinEnabled: (state.floorBottomSkinEnabled as boolean | undefined) ?? true,
       maxPanelHeightIn: (state.maxPanelHeightIn as number | undefined) ?? standardPanelHeightIn.value,
       // Optional — absent on any file saved before this feature existed, so
@@ -1247,16 +1311,26 @@ export function parseRedactedProjectFile(raw: string): ParseRedactedProjectFileR
   }
   const state = (typeof file.state === "object" && file.state !== null ? file.state : {}) as Record<string, unknown>;
 
+  /* ⚠ BOTH checks below are keyed to the DOCUMENT's format, not to the one
+     this build writes. The money key was renamed at v26, so a v25 document's
+     marker legitimately names `state.priceModifier` while a v26 document's
+     names `state.pricePerSqFt`; measuring either against the current build's
+     single list refuses a document that is perfectly well formed. An unknown
+     format yields null here and is refused outright. */
+  const moneyKeys = moneyStateKeysFor(marker.schemaVersion);
+  if (moneyKeys === null) return { ok: false, error: REDACTED_UNMARKED_MESSAGE };
+
   const excused = new Set<string>();
   for (const path of marker.removedPaths) {
-    if (!isRedactablePath(path)) return { ok: false, error: redactedUnknownPathMessage(path) };
+    if (!isRedactablePath(path, marker.schemaVersion)) return { ok: false, error: redactedUnknownPathMessage(path) };
     const key = path.slice("state.".length);
     if (key in state) return { ok: false, error: REDACTED_FIELD_SURVIVED_MESSAGE };
     excused.add(key);
   }
   // A money key the marker did NOT name, still sitting in the document, is the
-  // same fault from the other side: the redactor should never serve one.
-  for (const key of MONEY_STATE_KEYS) {
+  // same fault from the other side: the redactor should never serve one. Also
+  // read for the document's own format, for the same reason.
+  for (const key of moneyKeys) {
     if (key in state) return { ok: false, error: REDACTED_FIELD_SURVIVED_MESSAGE };
   }
 

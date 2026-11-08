@@ -9,6 +9,7 @@ import {
   MONEY_STATE_KEYS,
   REDACTION_MARKER_KEY,
   isRedactablePath,
+  moneyDocumentPathsFor,
   readRedactionMarker,
 } from "./redaction";
 
@@ -32,17 +33,21 @@ const migrationPath = join(migrationsDir, "0009_stage4_browsing.sql");
  * Its own conventions are asserted in describe (c). */
 const v25SeedMigrationPath = join(migrationsDir, "0010_smearforn_v25_redaction_seed.sql");
 
+/** 0012 seeded version 26 and widened browse_redact's belt to both money key
+ * names. Read here so a rename that forgets either half fails in this file. */
+const v26SeedMigrationPath = join(migrationsDir, "0012_pricing_v26_and_company_rate.sql");
+
 /**
  * A REAL redacted document, captured from `browse_redact` running on local
  * PostgreSQL 17.4 with migrations 0001–0009 applied — not hand-written to look
- * like one. The input carried `state.priceModifier: 1.3777`, a value that
+ * like one. The input carried `state.pricePerSqFt: 25.4321`, a value that
  * appears nowhere else, plus nested arrays, so "the value does not survive" is
  * checkable as text.
  */
 const REAL_REDACTED_DOCUMENT =
   '{"state": {"stories": [{"wallSlots": {"w1": [{"type": "standard", "widthIn": 48}]}, "wallHeightFt": 8}], "zipCode": "05001", ' +
   '"projectName": "Smith House"}, "savedAt": "2026-09-14T13:00:00.000Z", "redaction": {"reason": "another company\'s cost information", ' +
-  '"removedPaths": ["state.priceModifier"], "schemaVersion": 24}, "schemaVersion": 24}';
+  '"removedPaths": ["state.pricePerSqFt"], "schemaVersion": 24}, "schemaVersion": 24}';
 
 /** The margin that was in the document before the redactor ran. */
 const REDACTED_VALUE = "1.3777";
@@ -98,7 +103,7 @@ describe("(b) the runtime keys agree with the type", () => {
     zipCode: "05001",
     role: "fabricator",
     unitSystem: "imperial",
-    priceModifier: 1.3,
+    pricePerSqFt: 25,
     floorSystemId: null,
     perpendicular2x4Enabled: false,
     roofSystemTypeId: "truss",
@@ -137,44 +142,67 @@ describe("(b) the runtime keys agree with the type", () => {
   });
 
   it("classifies exactly one field as money, and it is the price modifier", () => {
-    expect(MONEY_STATE_KEYS).toEqual(["priceModifier"]);
-    expect(MONEY_DOCUMENT_PATHS).toEqual(["state.priceModifier"]);
+    expect(MONEY_STATE_KEYS).toEqual(["pricePerSqFt"]);
+    expect(MONEY_DOCUMENT_PATHS).toEqual(["state.pricePerSqFt"]);
   });
 
   it("the money field is a number, so NaN is a usable gap", () => {
     // The compile-time half of this lives in redaction.ts. This is the runtime
     // half: the field really is numeric in a real serialized document.
-    expect(typeof serializeProject(state).state.priceModifier).toBe("number");
+    expect(typeof serializeProject(state).state.pricePerSqFt).toBe("number");
   });
 });
 
 describe("(c) the migration agrees with the classification", () => {
   const sql = readFileSync(migrationPath, "utf8");
   const v25Sql = readFileSync(v25SeedMigrationPath, "utf8");
+  const v26Sql = readFileSync(v26SeedMigrationPath, "utf8");
 
   /** Every `browse_schema_redaction` seed row across every migration that
    * writes one, as they are written:
-   *    (24, '[["state","priceModifier"]]'::jsonb, …) */
+   *    (24, '[["state","pricePerSqFt"]]'::jsonb, …) */
   const seedRowsIn = (text: string) => [...text.matchAll(/\(\s*(\d+)\s*,\s*'(\[[\s\S]*?\])'::jsonb/g)];
-  const seededRows = () => [...seedRowsIn(sql), ...seedRowsIn(v25Sql)];
+  const seededRows = () => [...seedRowsIn(sql), ...seedRowsIn(v25Sql), ...seedRowsIn(v26Sql)];
 
   /** Every format the shipped redactor knows how to strip. It is a property of
    * the DATABASE (the seed rows above), not of the app, so it does not follow
    * `PROJECT_FILE_VERSION` — 24 stays classified forever, because saved v24
    * documents are never migrated in place and must keep being servable. */
-  const CLASSIFIED_SCHEMA_VERSIONS = [24, 25];
+  const CLASSIFIED_SCHEMA_VERSIONS = [24, 25, 26];
 
   it("seeds exactly the money keys for every format it does classify", () => {
+    /* ⚠ PER VERSION, not against one current list. Until v26 the money key
+       had the same name in every format, so comparing every seeded row to
+       `MONEY_DOCUMENT_PATHS` was right. v26 renamed it, so that comparison
+       would now demand `state.pricePerSqFt` in v24's row — and v24 documents
+       really do carry `priceModifier`. The registry in redaction.ts is the
+       thing the database has to agree with. */
     const rows = seededRows();
     const seeded = new Map(rows.map((m) => [Number(m[1]), JSON.parse(m[2]) as string[][]]));
     expect([...seeded.keys()].sort()).toEqual(CLASSIFIED_SCHEMA_VERSIONS);
     for (const version of CLASSIFIED_SCHEMA_VERSIONS) {
       const paths = (seeded.get(version) ?? []).map((p) => p.join("."));
-      expect(paths.sort()).toEqual([...MONEY_DOCUMENT_PATHS].sort());
+      const expected = moneyDocumentPathsFor(version);
+      expect(expected, `version ${version} must be in the app's registry too`).not.toBeNull();
+      expect(paths.sort()).toEqual([...(expected ?? [])].sort());
     }
   });
 
-  it("classifies the format the app actually writes today — v25", () => {
+  it("⚠ the registry and the classification agree about the CURRENT format", () => {
+    /* The registry is hand-maintained, so this is what stops it rotting: the
+       row for the version the app writes must equal what MONEY_CLASSIFICATION
+       says, which the compiler already forces to cover every ProjectState
+       key. Without this, a future rename could update the classification and
+       leave the registry naming a key that no longer exists. */
+    expect(moneyDocumentPathsFor(PROJECT_FILE_VERSION)).toEqual([...MONEY_DOCUMENT_PATHS]);
+  });
+
+  it("⚠ an unclassified format fails CLOSED in the app, as it does in the database", () => {
+    expect(moneyDocumentPathsFor(99)).toBeNull();
+    expect(isRedactablePath("state.pricePerSqFt", 99)).toBe(false);
+  });
+
+  it("classifies the format the app actually writes today", () => {
     // **The gap this replaces was real and this test is its closing.**
     // Smearforn Stage 0 bumped PROJECT_FILE_VERSION 24 -> 25 for the
     // Foundation scope flag while stating it touched nothing in `supabase/`.
@@ -189,7 +217,9 @@ describe("(c) the migration agrees with the classification", () => {
     // README carries paste steps and a post-flight query for it.
     const rows = seededRows();
     expect(rows.some((m) => Number(m[1]) === PROJECT_FILE_VERSION)).toBe(true);
-    expect(PROJECT_FILE_VERSION).toBe(25);
+    expect(PROJECT_FILE_VERSION).toBe(26);
+    // Every older format keeps its row, for the reason below.
+    expect(rows.some((m) => Number(m[1]) === 25)).toBe(true);
     // v24 keeps its row. A saved version is not migrated in place, so the
     // database holds both formats indefinitely and dropping 24 would make
     // every already-saved document unservable.
@@ -231,26 +261,39 @@ describe("(c) the migration agrees with the classification", () => {
     expect(sql).toMatch(/using errcode = '0A000'/);
   });
 
-  it("carries the belt: a surviving priceModifier key at any depth refuses the whole document", () => {
-    expect(sql).toMatch(/jsonb_path_exists\(v_doc, 'lax \$\.\*\*\.priceModifier'\)/);
+  it("⚠ carries the belt for EVERY money key name there has ever been", () => {
+    /* The belt is the second net: the loop above it removes every declared
+       path and raises if one survives, which is the actual guarantee. The belt
+       catches a money key sitting somewhere the declared paths did not name.
+
+       0009 wrote it naming `priceModifier`, which was every format's money key
+       then. v26 renamed it, so from that bump the belt stopped covering the
+       format the app writes — not a hole, but worse than no belt, because the
+       next reader counts on it. 0012 widens it to both names. This test is
+       what found that, and it reads BOTH migrations so a future rename that
+       forgets the belt fails here. */
+    const beltSql = sql + v26Sql;
+    for (const key of ["priceModifier", "pricePerSqFt"]) {
+      expect(beltSql, `the belt must still name ${key}`).toContain(`lax $.**.${key}`);
+    }
   });
 });
 
 describe("(d) a redacted document's shape", () => {
   const document = JSON.parse(REAL_REDACTED_DOCUMENT) as Record<string, unknown>;
 
-  it("has no key named priceModifier at any depth", () => {
-    expect(hasKeyAtAnyDepth(document, "priceModifier")).toBe(false);
+  it("has no key named pricePerSqFt at any depth", () => {
+    expect(hasKeyAtAnyDepth(document, "pricePerSqFt")).toBe(false);
     for (const key of MONEY_STATE_KEYS) expect(hasKeyAtAnyDepth(document, key)).toBe(false);
   });
 
-  it("does not contain the string priceModifier OUTSIDE the marker", () => {
+  it("does not contain the string pricePerSqFt OUTSIDE the marker", () => {
     // Stated this way and not as "the whole string does not contain it": the
-    // marker's own removedPaths SAYS `state.priceModifier`, so the whole-string
+    // marker's own removedPaths SAYS `state.pricePerSqFt`, so the whole-string
     // form both fails against a correct redactor and passes when only the
     // marker carries the name (4A as built, item 1).
     const { redaction: _marker, ...rest } = document;
-    expect(JSON.stringify(rest)).not.toContain("priceModifier");
+    expect(JSON.stringify(rest)).not.toContain("pricePerSqFt");
   });
 
   it("does not contain the modifier's VALUE anywhere, marker included", () => {
@@ -261,7 +304,7 @@ describe("(d) a redacted document's shape", () => {
     const marker = readRedactionMarker(document);
     expect(marker).toEqual({
       schemaVersion: REAL_REDACTED_DOCUMENT_VERSION,
-      removedPaths: ["state.priceModifier"],
+      removedPaths: ["state.pricePerSqFt"],
       reason: "another company's cost information",
     });
   });
@@ -276,7 +319,7 @@ describe("(d) a redacted document's shape", () => {
 });
 
 describe("readRedactionMarker", () => {
-  const good = { schemaVersion: 24, removedPaths: ["state.priceModifier"], reason: "another company's cost information" };
+  const good = { schemaVersion: 24, removedPaths: ["state.pricePerSqFt"], reason: "another company's cost information" };
 
   it("reads a well-formed marker", () => {
     expect(readRedactionMarker({ [REDACTION_MARKER_KEY]: good })).toEqual(good);
@@ -291,7 +334,7 @@ describe("readRedactionMarker", () => {
     expect(readRedactionMarker({ redaction: [] })).toBeNull();
     expect(readRedactionMarker({ redaction: { ...good, schemaVersion: "24" } })).toBeNull();
     expect(readRedactionMarker({ redaction: { ...good, schemaVersion: 24.5 } })).toBeNull();
-    expect(readRedactionMarker({ redaction: { ...good, removedPaths: "state.priceModifier" } })).toBeNull();
+    expect(readRedactionMarker({ redaction: { ...good, removedPaths: "state.pricePerSqFt" } })).toBeNull();
     expect(readRedactionMarker({ redaction: { ...good, removedPaths: [7] } })).toBeNull();
     expect(readRedactionMarker({ redaction: { ...good, reason: undefined } })).toBeNull();
   });
@@ -299,14 +342,20 @@ describe("readRedactionMarker", () => {
 
 describe("isRedactablePath", () => {
   it("accepts only the paths the classification calls money", () => {
-    expect(isRedactablePath("state.priceModifier")).toBe(true);
+    expect(isRedactablePath("state.pricePerSqFt", PROJECT_FILE_VERSION)).toBe(true);
+    /* ⚠ And the OLD name is redactable on an OLD document, which is the whole
+       reason this function took a version. A v25 document's marker names
+       state.priceModifier and is perfectly well formed. */
+    expect(isRedactablePath("state.priceModifier", 25)).toBe(true);
+    expect(isRedactablePath("state.priceModifier", 26)).toBe(false);
+    expect(isRedactablePath("state.pricePerSqFt", 25)).toBe(false);
   });
 
   it("refuses a path that is a real design input, however plausible it looks", () => {
     // A marker claiming this was removed must NOT excuse it: the document
     // would then open with a hole in the design rather than in the money.
-    for (const path of ["state.zipCode", "state.footprint", "state", "priceModifier", "state.PriceModifier", ""]) {
-      expect(isRedactablePath(path)).toBe(false);
+    for (const path of ["state.zipCode", "state.footprint", "state", "pricePerSqFt", "state.PricePerSqFt", ""]) {
+      expect(isRedactablePath(path, PROJECT_FILE_VERSION)).toBe(false);
     }
   });
 });

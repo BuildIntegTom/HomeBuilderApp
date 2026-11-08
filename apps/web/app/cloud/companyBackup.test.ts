@@ -53,7 +53,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     zipCode: "97201",
     role: "fabricator",
     unitSystem: "imperial",
-    priceModifier: 1.3,
+    pricePerSqFt: 25,
     floorSystemId: null,
     perpendicular2x4Enabled: false,
     baleFoundationTopDepthIn: 5.5,

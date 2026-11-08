@@ -2144,3 +2144,631 @@ now counted past RLS first and through his own view second, as two facts.
 - **It is not the hosted configuration.** `local_shim.sql` reproduces the policy
   surface, not GoTrue, not Supabase's internal roles. A green run proves the
   policy logic.
+
+---
+
+# `0011` — Stage 6: share a design by link
+
+**UI queue item U8, stride 1.** Written 2026-11-08. Everything below is the
+record of what to paste and what to expect back.
+
+## What `0011` creates
+
+| object | what it is |
+| --- | --- |
+| table `share_links` | one link, one project. Stores the token's **SHA-256 only** — the raw token is in the URL and nowhere else, exactly as `invites` works. Soft-revoked (`revoked_at`), never deleted by the app. |
+| `create_share_link(uuid, text, timestamptz, text, boolean)` | mints one. Needs `can_write_project`. The app hashes the token; this function never sees it. Its last argument is `p_grants_write`, **false by default**. |
+| `holds_project_write_grant(uuid)` | the write half of `holds_project_grant`. A view-only grant answers false here and true there. |
+| `share_link_preview(text)` | ⚠ **the one function here `anon` may call.** Four strings, two booleans and a timestamp: what the design is called, who shared it, which company owns it, whether it is locked, whether claiming it grants write, when it dies. No document, no version, no price, **no project id**, and never the locked address itself. |
+| `claim_share_link(text)` | `authenticated` only — this is Tommy's "sign-in required". Turns a URL into an ordinary `collaborators` grant. |
+| `revoke_share_link(uuid)` | switches a link off. Idempotent. |
+| `project_share_links(uuid)` | the owner's list: every link on a project and who came in through each. **No token column**, so a lost URL is replaced, not recovered. |
+| `share_link_is_live(share_links)` | one expression for "live", so the preview, the claim and the list cannot disagree. |
+
+And **four earlier objects change**, each because it has to:
+
+- `collaborators_kind_check` is widened to admit `'link'`. A claim is a grant
+  that says how it was made — and because `pending_share_notices` filters
+  `kind = 'shared'`, the new kind also stops the app telling a claimant their
+  own claim as news. Neither function had to be edited for that.
+- `list_shared_projects(uuid)` gains one `case` branch, so a claimed project
+  reads as **via a link** in Shared with us. Without it, 0008's `case` would
+  have said "a person shared this with you", which is not what happened.
+
+- `can_write_project(uuid)` keys off the new write helper, so a view-only
+  grant cannot save a version, rename, share onward or mint a link. Signature
+  and privileges unchanged; `create or replace` preserves both.
+- ⚠ `projects_update` is replaced **separately**, because 0008 wrote it
+  against `holds_project_grant` directly rather than `can_write_project`.
+  Tightening only the function would have left a view-only collaborator able to
+  rename a project and drag it between folders — including out of somebody's
+  proposals queue. `stage6_rls.test.sql` section 4b checks all five write paths
+  for exactly this reason, and the mutation run confirms that assertion is what
+  catches it.
+
+`collaborators` also gains two columns: `via_link_id`, nullable, with
+**`on delete set null`** — deleting a link must never silently revoke access
+somebody already claimed — and `can_write`, **not null, default true**.
+
+## The three decisions this encodes
+
+1. **"Everything, as you see it."** There is no new redaction and no second,
+   thinner view of a project. A claim produces the *same row* a person-share
+   produces, so a link-holder sees what a shared person sees. Stage 4's browse
+   redactor is not in this path at all.
+2. **"Sign-in required."** `claim_share_link` is not executable by `anon`, and
+   `stage6_rls.test.sql` asserts it twice — once on the privilege grid and once
+   by actually calling it with no session.
+3. **Ownership does not transfer, and after 2026-11-08 it does not need to.**
+   The 2026-11-07 answer was "ownership transfers", which
+   `guard_project_columns` forbids. A day later Tommy described the flow that
+   makes the transfer unnecessary: a proposal is **submitted to** a company, so
+   the project is created owned by that company from its first row and no
+   `company_id` ever changes. The guard is untouched, and section 8 of the
+   suite asserts that out loud — so a later migration that relaxes it has to
+   replace that assertion deliberately rather than inherit it quietly.
+4. **A claimed link is VIEW ONLY** (2026-11-08: *"no need for the client to be
+   able to make changes after the hand off"*). `share_links.grants_write`
+   defaults false; `collaborators.can_write` defaults **true**, so no grant
+   that exists today changes meaning and the three functions that write grants
+   are not edited. The only writer that sets it false is `claim_share_link`.
+
+## ⚠ Two consequences worth reading before you paste
+
+**A forwarded unlocked link works.** For a link to be a *share* it has to MINT
+a grant when claimed, so the sign-in records **who** came in — it does not gate
+**whether** they can. Anyone the link reaches, who signs in, gets the full
+design and its prices with their name attached. That is the trade accepted on
+2026-11-08, in exchange for: every claim visible on the access list and
+revocable there, and `locked_email` for when a real gate is wanted. The suite
+asserts the forwarded case as a passing test, by name, so nobody later mistakes
+it for a bug.
+
+**A WRITING collaborator can make a link.** Minting one needs
+`can_write_project`, so somebody you shared a project with — a person share or
+a company share, both still read *and* write — can hand out a URL to it. That
+is not new reach (they could already share it onward) but it is reach in a form
+that travels, and the access list is where it shows up. ⚠ A **view-only**
+collaborator cannot: that is write path 5 of 5 in section 4b, and it is what
+stops a view-only grant laundering itself into a writing one.
+
+## Applying it — the exact steps
+
+Everything below is **read-only except Step 2.** Run each block **on its own**:
+the SQL editor shows only the last result of a paste.
+
+### Step 1 — pre-flight (read-only)
+
+**(a)** 0008 and 0010 are applied, and 0011 is not. Expect
+`has_0008 t | has_0010 t | has_0011 f`.
+
+```sql
+select to_regclass('public.collaborators') is not null as has_0008,
+       to_regclass('public.browse_schema_redaction') is not null as has_0010,
+       to_regclass('public.share_links') is not null as has_0011;
+```
+
+**(b)** Write these five numbers down.
+
+```sql
+select (select count(*) from public.companies)        as companies,
+       (select count(*) from public.memberships)      as memberships,
+       (select count(*) from public.projects)         as projects,
+       (select count(*) from public.project_versions) as project_versions,
+       (select count(*) from public.collaborators)    as collaborators;
+```
+
+**Don't save, share or delete anything in the app from here until post-flight
+(G) is done**, or the counts won't match.
+
+**(c)** The objects `0011` replaces are exactly as 0006/0008 left them, and so
+are the ones it must not touch. Expect **9 rows, all `t`**:
+
+```
+can_read_project        | t     <- must not change
+can_write_project       | t     <- 0011 replaces this
+guard_project_columns   | t     <- must not change
+holds_project_grant     | t     <- must not change
+list_shared_projects    | t     <- 0011 replaces this
+pending_share_notices   | t     <- must not change
+project_versions_insert | t     <- must not change
+projects_select         | t     <- must not change
+projects_update         | t     <- 0011 replaces this
+```
+
+```sql
+select f.object_name,
+       md5(regexp_replace(pg_get_functiondef(f.oid), '\s+', ' ', 'g')) = f.expected as unchanged
+  from (values
+    ('can_read_project',      'public.can_read_project(uuid)'::regprocedure,      'adcfa86d68b1e72174858f175a30b77a'),
+    ('can_write_project',     'public.can_write_project(uuid)'::regprocedure,     '6f35afeba487daf355c5c0ac18b76ae4'),
+    ('guard_project_columns', 'public.guard_project_columns()'::regprocedure,     'b5dcf55bf54b4d2c514288a22e191877'),
+    ('holds_project_grant',   'public.holds_project_grant(uuid)'::regprocedure,   '4132d034bdd5aed44cc6ff773dfd8644'),
+    ('list_shared_projects',  'public.list_shared_projects(uuid)'::regprocedure,  'cf4ffcb5bfdbdc0580850edb4a329c83'),
+    ('pending_share_notices', 'public.pending_share_notices()'::regprocedure,     '12fd0ebfa40d6652e97152f2e3386ceb')
+  ) as f(object_name, oid, expected)
+union all
+select p.policyname,
+       md5(p.cmd || '|' || p.permissive || '|' || array_to_string(p.roles, ',') || '|'
+           || replace(coalesce(p.qual, ''), 'public.', '') || '|'
+           || replace(coalesce(p.with_check, ''), 'public.', ''))
+         = case p.policyname
+             when 'projects_select' then '35871592d8c9ffd6909ad624b169f41e'
+             when 'projects_update' then '1e3217e1715c6172a01d2181c0a4bfb2'
+             else 'bf07e519680b9e46e1e380326037ef82' end
+  from pg_policies p
+ where p.schemaname = 'public'
+   and (p.tablename, p.policyname) in (('projects', 'projects_select'),
+                                       ('projects', 'projects_update'),
+                                       ('project_versions', 'project_versions_insert'))
+ order by 1;
+```
+
+The fingerprint ignores spacing and line endings, so it answers the same whether
+the migrations were pasted or run from files. The three `can_*` /
+`holds_project_grant` values are **the same ones 0009's pre-flight published in
+2026-09**, computed then on PostgreSQL 17.4 and re-derived independently for
+this section — which is the cross-check that the two other numbers here are
+trustworthy too. **If any row is `f`, stop and send me the output:** live
+differs from the repository, and post-flight (F) could not prove anything.
+
+**(d)** The kind check is still the two-kind version, and neither new column
+exists yet. Expect one row ending in `| 0`.
+
+```sql
+select (select pg_get_constraintdef(oid)
+          from pg_constraint
+         where conrelid = 'public.collaborators'::regclass
+           and conname = 'collaborators_kind_check') as kind_check,
+       (select count(*) from information_schema.columns
+         where table_schema = 'public' and table_name = 'collaborators'
+           and column_name in ('can_write', 'via_link_id')) as new_columns;
+```
+
+Stop if (a), (c) or (d) is not as described.
+
+### Step 2 — run `0011` after `0010`
+
+Open `migrations/0011_stage6_share_links.sql`, paste the **whole file** into the
+SQL editor, and run it. It begins with `begin;` and ends with `commit;`. Expect
+"Success. No rows returned." If it reports an error, nothing was applied: copy
+the error and stop.
+
+**The editor will probably stop and ask you to confirm** — a warning about
+potentially destructive operations. That is expected and it is the same warning
+0008 and 0009 raised: the file contains `drop policy if exists`,
+`drop trigger if exists`, `drop constraint if exists` and `revoke`, which is
+what makes it safe to run twice. Every `drop` is immediately followed by its
+replacement. **No table, no column and no row is dropped.** Confirm and run.
+
+### Step 3 — post-flight, the short form (four pastes)
+
+⚠ **This is what was actually run on 2026-11-08**, and it is the version to
+use. The eight lettered blocks below it say the same things one at a time; they
+are kept because each one names what it is checking, which is useful when a
+short-form row comes back wrong and you need to find out which half of it
+failed. Every query here was executed against a local PGlite database carrying
+`0001`-`0011` before being handed over, so a syntax error in one of them is not
+a thing you should be discovering.
+
+**Paste 1 — the security grid. All eight columns must be `true`.** If
+`anon_cannot_claim` is false, stop and tell me: that is "sign-in required" not
+holding, and it is the single most important row in this whole file.
+
+```sql
+select
+  has_function_privilege('anon', 'public.share_link_preview(text)', 'execute')                                  as anon_can_preview,
+  not has_function_privilege('anon', 'public.claim_share_link(text)', 'execute')                                as anon_cannot_claim,
+  not has_function_privilege('anon', 'public.create_share_link(uuid,text,timestamptz,text,boolean)', 'execute') as anon_cannot_create,
+  not has_function_privilege('anon', 'public.revoke_share_link(uuid)', 'execute')                               as anon_cannot_revoke,
+  not has_function_privilege('anon', 'public.project_share_links(uuid)', 'execute')                             as anon_cannot_list,
+  not has_table_privilege('anon', 'public.share_links', 'select')                                               as anon_no_table,
+  has_function_privilege('authenticated', 'public.claim_share_link(text)', 'execute')                           as auth_can_claim,
+  not has_function_privilege('service_role', 'public.claim_share_link(text)', 'execute')                        as svc_cannot_claim;
+```
+
+**Paste 2 — structure, the two defaults, and nothing moved.** Expect
+`0 | true | 2 | true | true | true | true | false | <your grant count> | 0 |
+<your projects> | <your versions>`. The two defaults are the whole safety
+argument: `can_write` **true** so no existing grant changes meaning,
+`grants_write` **false** so a link is view-only unless minted otherwise. And
+`grants_view_only` must be **0** — if it is not, something set an existing
+grant to view-only, which nothing in `0011` does.
+
+```sql
+select
+  (select count(*) from public.share_links)                                                       as share_links_rows,
+  (select relrowsecurity from pg_class where oid = 'public.share_links'::regclass)                as rls_on,
+  (select count(*) from pg_policies where schemaname = 'public' and tablename = 'share_links')    as policies,
+  has_table_privilege('authenticated', 'public.share_links', 'select')                            as auth_may_read,
+  (not has_table_privilege('authenticated', 'public.share_links', 'insert')
+   and not has_table_privilege('authenticated', 'public.share_links', 'update')
+   and not has_table_privilege('authenticated', 'public.share_links', 'delete'))                  as auth_read_only,
+  (not has_table_privilege('service_role', 'public.share_links', 'select'))                       as svc_nothing,
+  (select column_default from information_schema.columns
+    where table_schema = 'public' and table_name = 'collaborators' and column_name = 'can_write') as can_write_default,
+  (select column_default from information_schema.columns
+    where table_schema = 'public' and table_name = 'share_links' and column_name = 'grants_write') as grants_write_default,
+  (select count(*) filter (where can_write) from public.collaborators)                            as grants_read_write,
+  (select count(*) filter (where not can_write) from public.collaborators)                        as grants_view_only,
+  (select count(*) from public.projects)                                                          as projects,
+  (select count(*) from public.project_versions)                                                  as project_versions;
+```
+
+**Paste 3 — what changed and what was not allowed to. 9 rows, all `t`.** Three
+objects have new fingerprints (`can_write_project`, `list_shared_projects`,
+`projects_update`); six are byte-identical to pre-flight (c).
+`guard_project_columns` is in the list because it is the guard that refuses
+"ownership transfers", and its `t` is the proof `0011` left it alone.
+
+```sql
+select f.object_name,
+       md5(regexp_replace(pg_get_functiondef(f.oid), '\s+', ' ', 'g')) = f.expected as as_expected
+  from (values
+    ('can_read_project',      'public.can_read_project(uuid)'::regprocedure,      'adcfa86d68b1e72174858f175a30b77a'),
+    ('can_write_project',     'public.can_write_project(uuid)'::regprocedure,     '347dc134e117cfaecb42a76324e6b598'),
+    ('guard_project_columns', 'public.guard_project_columns()'::regprocedure,     'b5dcf55bf54b4d2c514288a22e191877'),
+    ('holds_project_grant',   'public.holds_project_grant(uuid)'::regprocedure,   '4132d034bdd5aed44cc6ff773dfd8644'),
+    ('list_shared_projects',  'public.list_shared_projects(uuid)'::regprocedure,  '54358632446628bf487bc2c138ce0a40'),
+    ('pending_share_notices', 'public.pending_share_notices()'::regprocedure,     '12fd0ebfa40d6652e97152f2e3386ceb')
+  ) as f(object_name, oid, expected)
+union all
+select p.policyname,
+       md5(p.cmd || '|' || p.permissive || '|' || array_to_string(p.roles, ',') || '|'
+           || replace(coalesce(p.qual, ''), 'public.', '') || '|'
+           || replace(coalesce(p.with_check, ''), 'public.', ''))
+         = case p.policyname
+             when 'projects_select' then '35871592d8c9ffd6909ad624b169f41e'
+             when 'projects_update' then '315e7cec907f0a47597575ed9adccb9a'
+             else 'bf07e519680b9e46e1e380326037ef82' end
+  from pg_policies p
+ where p.schemaname = 'public'
+   and (p.tablename, p.policyname) in (('projects', 'projects_select'),
+                                       ('projects', 'projects_update'),
+                                       ('project_versions', 'project_versions_insert'))
+ order by 1;
+```
+
+**Paste 4 — the visitor path works at all.** The only block that proves an
+account-free visitor can reach anything. Expect `false | not_found | NULL |
+NULL | NULL` — the refusal is the pass: it answered, and it disclosed nothing.
+
+```sql
+set local role anon;
+select valid, reason, project_name, owner_company_name, shared_by_name
+  from public.share_link_preview('not-a-real-token-hash');
+```
+
+(Then `reset role;`, or just open a new editor tab, which resets it for you.)
+
+### Step 3 (long form) — the same checks, one at a time
+
+
+**(A)** The table exists with row level security on. Expect `share_links | t`.
+
+```sql
+select c.relname, c.relrowsecurity
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'share_links';
+```
+
+**(B)** ⚠ **The privilege grid — the most important block here.** Expect
+**8 rows**, and read the `anon` column:
+
+```
+claim_share_link           | t | f | t | f
+create_share_link          | t | f | t | f
+holds_project_write_grant  | t | f | t | f
+normalize_share_link_email | f | f | f | f
+project_share_links        | f | f | t | f
+revoke_share_link          | t | f | t | f
+share_link_is_live         | f | f | t | f
+share_link_preview         | t | t | t | f
+```
+
+Only `share_link_preview` may be `t` under `anon`. **If `claim_share_link` is
+`t` under `anon`, stop and tell me** — that is "sign-in required" not holding.
+
+```sql
+select p.proname,
+       p.prosecdef as definer,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+       has_function_privilege('service_role', p.oid, 'execute')  as service_role
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('share_link_is_live', 'create_share_link', 'share_link_preview',
+                     'claim_share_link', 'revoke_share_link', 'project_share_links',
+                     'normalize_share_link_email', 'holds_project_write_grant')
+ order by p.proname;
+```
+
+**(C)** The table's own privileges. Expect **3 rows**, and `anon` holding
+nothing:
+
+```
+anon          | f | f | f | f
+authenticated | t | f | f | f
+service_role  | f | f | f | f
+```
+
+```sql
+select r.rolname,
+       has_table_privilege(r.rolname, 'public.share_links', 'select') as sel,
+       has_table_privilege(r.rolname, 'public.share_links', 'insert') as ins,
+       has_table_privilege(r.rolname, 'public.share_links', 'update') as upd,
+       has_table_privilege(r.rolname, 'public.share_links', 'delete') as del
+  from pg_roles r
+ where r.rolname in ('anon', 'authenticated', 'service_role')
+ order by r.rolname;
+```
+
+**(D)** Two policies, and no insert / update / delete policy at all. Expect
+exactly these 2 rows:
+
+```
+share_links_require_aal | ALL    | RESTRICTIVE | {authenticated} | meets_required_aal()
+share_links_select      | SELECT | PERMISSIVE  | {authenticated} | can_read_project(project_id)
+```
+
+```sql
+select policyname, cmd, permissive, roles::text, qual
+  from pg_policies
+ where schemaname = 'public' and tablename = 'share_links'
+ order by policyname;
+```
+
+**(E)** The `collaborators` changes. Expect **2 rows**:
+
+```
+collaborators_kind_check             | CHECK ((kind = ANY (ARRAY['shared'::text, 'creator'::text, 'link'::text])))
+collaborators_via_link_only_for_link | CHECK (((via_link_id IS NULL) OR (kind = 'link'::text)))
+```
+
+```sql
+select conname, pg_get_constraintdef(oid)
+  from pg_constraint
+ where conrelid = 'public.collaborators'::regclass
+   and conname in ('collaborators_kind_check', 'collaborators_via_link_only_for_link')
+ order by conname;
+```
+
+**(E2)** ⚠ **The two column defaults, which are the whole safety argument.**
+`can_write` defaults TRUE so no grant that exists on your database changes
+meaning; `grants_write` defaults FALSE so a link is view-only unless minted
+otherwise. Expect exactly `true | false | NO`.
+
+```sql
+select (select column_default from information_schema.columns
+         where table_schema = 'public' and table_name = 'collaborators'
+           and column_name = 'can_write')                        as can_write_default,
+       (select column_default from information_schema.columns
+         where table_schema = 'public' and table_name = 'share_links'
+           and column_name = 'grants_write')                     as grants_write_default,
+       (select is_nullable from information_schema.columns
+         where table_schema = 'public' and table_name = 'collaborators'
+           and column_name = 'can_write')                        as can_write_nullable;
+```
+
+**(E3)** And every grant you already had is still read-and-write. The count
+must equal the `collaborators` number from pre-flight (b), and the second
+column must be **0**.
+
+```sql
+select count(*) filter (where can_write)     as read_and_write,
+       count(*) filter (where not can_write) as view_only
+  from public.collaborators;
+```
+
+**(F)** ⚠ **What `0011` changed, and what it was not allowed to touch.** Three
+objects have new fingerprints and six are byte-identical to pre-flight (c).
+Expect **9 rows, all `t`**:
+
+```
+can_read_project        | t     <- unchanged
+can_write_project       | t     <- NEW fingerprint
+guard_project_columns   | t     <- unchanged
+holds_project_grant     | t     <- unchanged
+list_shared_projects    | t     <- NEW fingerprint
+pending_share_notices   | t     <- unchanged
+project_versions_insert | t     <- unchanged
+projects_select         | t     <- unchanged
+projects_update         | t     <- NEW fingerprint
+```
+
+```sql
+select f.object_name,
+       md5(regexp_replace(pg_get_functiondef(f.oid), '\s+', ' ', 'g')) = f.expected as as_expected
+  from (values
+    ('can_read_project',      'public.can_read_project(uuid)'::regprocedure,      'adcfa86d68b1e72174858f175a30b77a'),
+    ('can_write_project',     'public.can_write_project(uuid)'::regprocedure,     '347dc134e117cfaecb42a76324e6b598'),
+    ('guard_project_columns', 'public.guard_project_columns()'::regprocedure,     'b5dcf55bf54b4d2c514288a22e191877'),
+    ('holds_project_grant',   'public.holds_project_grant(uuid)'::regprocedure,   '4132d034bdd5aed44cc6ff773dfd8644'),
+    ('list_shared_projects',  'public.list_shared_projects(uuid)'::regprocedure,  '54358632446628bf487bc2c138ce0a40'),
+    ('pending_share_notices', 'public.pending_share_notices()'::regprocedure,     '12fd0ebfa40d6652e97152f2e3386ceb')
+  ) as f(object_name, oid, expected)
+union all
+select p.policyname,
+       md5(p.cmd || '|' || p.permissive || '|' || array_to_string(p.roles, ',') || '|'
+           || replace(coalesce(p.qual, ''), 'public.', '') || '|'
+           || replace(coalesce(p.with_check, ''), 'public.', ''))
+         = case p.policyname
+             when 'projects_select' then '35871592d8c9ffd6909ad624b169f41e'
+             when 'projects_update' then '315e7cec907f0a47597575ed9adccb9a'
+             else 'bf07e519680b9e46e1e380326037ef82' end
+  from pg_policies p
+ where p.schemaname = 'public'
+   and (p.tablename, p.policyname) in (('projects', 'projects_select'),
+                                       ('projects', 'projects_update'),
+                                       ('project_versions', 'project_versions_insert'))
+ order by 1;
+```
+
+Two rows here are doing specific jobs. `guard_project_columns` is the guard that
+refuses "ownership transfers", and its `t` is the proof that `0011` left it
+alone. `project_versions_insert` is the policy that gates saving a version: it
+is **unchanged on purpose**, because it already calls `can_write_project`, so
+view-only enforcement reached it through the function rather than through an
+edit. `projects_update` is the opposite case — it had to be replaced, because it
+never called that function at all.
+
+**(G)** Nothing moved. These five numbers must match pre-flight (b) exactly,
+and `share_links` must be **0**.
+
+```sql
+select (select count(*) from public.companies)        as companies,
+       (select count(*) from public.memberships)      as memberships,
+       (select count(*) from public.projects)         as projects,
+       (select count(*) from public.project_versions) as project_versions,
+       (select count(*) from public.collaborators)    as collaborators,
+       (select count(*) from public.share_links)      as share_links;
+```
+
+**(H)** And `anon` can in fact preview — answering `not_found` for a token
+nobody minted, with every other column null. This is the only block that proves
+the visitor path works at all. Expect `f | not_found | NULL | NULL | NULL`.
+
+```sql
+set local role anon;
+select valid, reason, project_name, owner_company_name, shared_by_name
+  from public.share_link_preview('not-a-real-token-hash');
+```
+
+(Then `reset role;` — or just start a new editor tab, which resets it for you.)
+
+## Verifying locally
+
+Against a throwaway local PostgreSQL, never the project:
+
+```sh
+createdb stage6_local
+psql -d stage6_local -v ON_ERROR_STOP=1 -f supabase/tests/local_shim.sql
+for f in supabase/migrations/00*.sql; do psql -d stage6_local -v ON_ERROR_STOP=1 -f "$f"; done
+psql -d stage6_local -v ON_ERROR_STOP=1 -f supabase/tests/stage1_rls.test.sql   # must still pass
+psql -d stage6_local -v ON_ERROR_STOP=1 -f supabase/tests/stage2_rls.test.sql   # must still pass
+psql -d stage6_local -v ON_ERROR_STOP=1 -f supabase/tests/stage3_rls.test.sql   # must still pass
+psql -d stage6_local -v ON_ERROR_STOP=1 -f supabase/tests/stage6_rls.test.sql
+```
+
+Each prints `… ALL ASSERTIONS PASSED` or stops at the first `FAIL:`. No earlier
+suite needed any change for `0011`.
+
+## ⚠ Stage 6 verification status — how it was actually run, which is NOT psql
+
+**Not applied to the live project.** Only Tommy's post-flight results will
+confirm the hosted result.
+
+**There is no PostgreSQL on the machine this was written on**, and no Docker
+either — so the recipe above, which every earlier stage was verified with, could
+not be the thing that verified this one. Saying so matters more than the result.
+What was actually run, 2026-11-08:
+
+- **PGlite 0.3** (`@electric-sql/pglite`) — real PostgreSQL 17 compiled to
+  WebAssembly, installed in a scratch directory **outside the repository** so it
+  is not a dependency of this project. The shim, `0001`–`0011`, and then
+  `stage1_rls`, `stage2_rls`, `stage3_rls` and `stage6_rls` were applied through
+  it in that order. All four suites pass. `0011` was also applied **twice in a
+  row** to prove it is re-runnable.
+- **The cross-check that makes those numbers worth anything:** PGlite
+  independently produced `adcfa86d…`, `6f35afeb…` and `4132d034…` for
+  `can_read_project`, `can_write_project` and `holds_project_grant` — the exact
+  three fingerprints 0009's pre-flight published in September from real
+  PostgreSQL 17.4. So the fingerprints in Step 1 (c) and Step 3 (F) are not
+  PGlite artefacts.
+- **`stage4_rls.test.sql` and the Stage 5 suites were not run**, and neither was
+  either concurrency script. The Stage 4 suite cannot pass with `0010` applied
+  (documented in its own section, not a regression); the concurrency scripts are
+  `bash` + `psql` and need two real connections, which PGlite does not have.
+  ⚠ **So the one thing local verification did NOT cover is the concurrency
+  claim** in `claim_share_link` — the `for update` plus
+  `on conflict do nothing` path for two people claiming one link at the same
+  instant. That shape is copied verbatim from
+  `share_project_with_person`, which `stage3_concurrency.test.sh` does cover,
+  and the single-connection cases are asserted in section 4 — but the two-
+  connection race is reasoned-from-precedent here, not measured.
+
+**`stage6_rls.test.sql` was mutation-tested**, because a suite that passes first
+time proves nothing until you have seen it fail. **Eighteen** defects were
+injected into `0011` one at a time, each one a thing a future edit could
+plausibly do, and **every one was caught** — seventeen by a named assertion and
+one by a fixture refusing to build.
+
+⚠ **Two of those eighteen found faults in the checking, not in the migration,
+and both are worth recording.**
+
+1. **The mutation harness was lying about one catch.** JavaScript's
+   `String.replace` treats `$$` in a replacement as an escape, so any mutation
+   whose replacement contained a plpgsql `$$` terminator was silently
+   corrupted. The `can_write_project` mutation therefore "passed" by producing
+   a *syntax error* — the mutated migration never applied, which is not the
+   same thing as the suite catching a defect. The harness now substitutes
+   through a replacer function and **prints how each mutation was caught**, so
+   an abort can no longer masquerade as an assertion. With that fixed, the
+   mutation is caught properly, by section 4b.
+2. **One mutation was genuinely MISSED: flipping `share_links.grants_write` to
+   default true.** Every assertion in the file passed the flag explicitly or
+   relied on the *function* default, so the *column* default was never
+   exercised — a flipped default would have shipped green and quietly handed
+   edit rights to every link. Section 4b now asserts both column defaults
+   directly out of `information_schema`, and post-flight (E2) checks the same
+   two values on the live database.
+
+| mutation | the assertion that caught it |
+| --- | --- |
+| `anon` granted execute on `claim_share_link` | ⚠ SIGN-IN REQUIRED: anon may NOT claim one |
+| `list_shared_projects` loses the `'link'` case | and it says VIA A LINK, not "shared with you by a person" |
+| a claim attributed to the claimer, not the link's creator | but granted_by is the LINK'S CREATOR |
+| `revoke` deletes the row instead of switching it off | a revoked link previews as revoked |
+| the locked-email gate skipped | a LOCKED link refuses an account at another address |
+| an owner member's claim writes a redundant grant | an OWNER MEMBER claiming gets no grant |
+| the preview hands back the project id | the preview returns NO project id |
+| `share_links` readable by `anon` | anon holds NO select on share_links |
+| a revoked link still claimable | a REVOKED link raises rather than answering |
+| `share_links_select` drops `can_read_project` | a stranger sees no link on a project they cannot read |
+| `create_share_link` accepts a past expiry | an expiry in the past is refused |
+| the kind check widened to anything | the widened kind check still admits only three kinds |
+| `can_write_project` left on `holds_project_grant` | but CANNOT WRITE it: a claimed link is view-only |
+| `projects_update` left as 0008's | 3/5 he cannot MOVE IT BETWEEN FOLDERS |
+| `collaborators.can_write` defaults FALSE | *(fixture abort: frank can no longer mint a link)* |
+| a claim always writes `can_write = true` | but CANNOT WRITE it: a claimed link is view-only |
+| `share_links.grants_write` defaults TRUE | grants_write DEFAULTS TO FALSE — **this one was missed first time** |
+| `already-claimed` reports the link's level | iris does NOT quietly lose write by opening it |
+
+`stage6_rls.test.sql` runs as ordinary members of three companies — Building
+Integrity (bob and alice), Rare Forms (frank, fiona) and a company outside the
+consortium (carol) — plus **henry and iris, who hold no membership anywhere**.
+henry is the client in Tommy's own story; **iris is the person the link gets
+forwarded to**, and her claim succeeding is a passing assertion, not a bug.
+Only the platform-admin case runs as pat. iris and fiona deliberately have no
+display name, so their snapshots fall back to the email — which is the rule
+`create_share_link` and `claim_share_link` share with
+`prepare_project_version`.
+
+## What this migration does NOT do
+
+- **It does not transfer ownership, and no longer needs to.** See decision 3
+  above: a submitted proposal is created owned by the receiving company, so
+  nothing moves between companies. `guard_project_columns` stands.
+- ⚠ **It does not let anybody submit a proposal.** This file is the BACK HALF
+  of the flow Tommy described on 2026-11-08 — the company hands the client a
+  link, the client signs in, the client gets a view-only grant and watches the
+  building. The FRONT half, an account-free person sending a design TO a
+  company, is a separate migration and has open questions (does a company opt
+  in to a public inbox? is the submitter identified by an email or only by a
+  URL they keep?). Nothing here presumes an answer to either.
+- ⚠ **It does not create an account.** Signing up is still invite-only
+  (decision 3), so **until the sign-up stride lands, a shared link only works
+  for somebody who already has an account.** That is the single biggest gap
+  between this migration and the flow as Tommy describes it, and it is a
+  deliberate order of work rather than an oversight: the link is useless
+  without the grant machinery, and the grant machinery is what this file is.
+- **It does not make a PERSON or COMPANY share read-only.** Those three paths
+  still write read-and-write grants, by taking the column default. Only a
+  claimed link is view-only, and only because its link says so. Offering
+  view-only on the ordinary share flow is a one-argument change to two
+  functions, and nobody has asked for it.
+- **It keeps no claim history.** The claims list is live access: revoke a claim
+  and it leaves the list, because the question it answers is "who can open this
+  now".
+- **It is not the app.** The routes, the landing page, the Copy-link UI and the
+  token generation are app-side work and are not in this file.

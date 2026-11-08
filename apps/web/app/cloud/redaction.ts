@@ -51,8 +51,19 @@ export type MoneyClassification = "money" | "not-money";
  * below can be derived from it instead of restated.
  */
 export const MONEY_CLASSIFICATION = {
-  // --- the one money field, for schema version 24 ---------------------------
-  priceModifier: "money",
+  /* --- the one money field ------------------------------------------------
+     Renamed from `priceModifier` at schema version 26, when the 1.3x markup
+     was replaced by a dollars-per-square-foot rate. Still exactly ONE money
+     field, which is what keeps this whole surface small.
+
+     ⚠ THE RENAME CHANGES THE DOTTED PATH THE DATABASE'S MARKER NAMES.
+     `browse_schema_redaction` is seeded per schema version, and v25's row
+     names `state.priceModifier`; a v26 document needs its own row naming
+     `state.pricePerSqFt` before it can be browsed at all. That is a migration
+     to paste, not a code change, and until it is pasted the browse path fails
+     CLOSED (0A000 -> 422) rather than serving a document unredacted — which
+     is the behaviour that was designed for exactly this moment. */
+  pricePerSqFt: "money",
 
   // --- everything else, said explicitly rather than by default --------------
   editorTab: "not-money",
@@ -175,8 +186,57 @@ export const MONEY_STATE_KEYS: readonly MoneyStateKey[] = (Object.keys(MONEY_CLA
   .filter((key): key is MoneyStateKey => MONEY_CLASSIFICATION[key] === "money")
   .sort();
 
-/** `["state.priceModifier"]` — the dotted paths the database's marker names. */
+/** `["state.pricePerSqFt"]` — the dotted paths the database's marker names
+ * for the format the app writes TODAY. For an older document, see the registry
+ * below; this constant is the current version's row of it. */
 export const MONEY_DOCUMENT_PATHS: readonly string[] = MONEY_STATE_KEYS.map((key) => `state.${key}`);
+
+/**
+ * ⚠ **THE MONEY KEY'S NAME IS VERSION-DEPENDENT, AND THIS IS THE REGISTRY.**
+ *
+ * Until schema version 26 there was one money key with one name in every
+ * format, so a single list served every document and `MONEY_DOCUMENT_PATHS`
+ * above was the whole story. v26 renamed `priceModifier` to `pricePerSqFt`
+ * (a 1.3x multiplier became a dollars-per-square-foot rate), and that broke
+ * the assumption in a way worth stating plainly:
+ *
+ *   **The redactor classifies BY FORMAT, and the database keeps every format
+ *   forever**, because a saved version is never migrated in place. So a v25
+ *   document's marker says `state.priceModifier` and a v26 document's says
+ *   `state.pricePerSqFt`, and BOTH are live at the same time. Checking either
+ *   one against a single current list refuses a perfectly good document.
+ *
+ * Caught by `redaction.test.ts`, which compares the database's own seed rows
+ * against this classification — the test exists precisely because an
+ * unclassified format had shipped once before (the v24->v25 bump).
+ *
+ * ⚠ **A version missing from this map FAILS CLOSED**: `moneyStateKeysFor`
+ * returns null, every caller refuses, and nothing is served unredacted. That
+ * is the same rule the database follows (a schema version with no
+ * `browse_schema_redaction` row raises `0A000`), and it is why adding a row
+ * here is part of a version bump rather than an afterthought.
+ *
+ * ⚠ **Old rows are never deleted.** A v24 document saved in 2026 is still
+ * servable in 2030; dropping its row would make it unservable, which is the
+ * one thing this subsystem must never do.
+ */
+export const MONEY_STATE_KEYS_BY_SCHEMA_VERSION: Readonly<Record<number, readonly string[]>> = {
+  24: ["priceModifier"],
+  25: ["priceModifier"],
+  26: ["pricePerSqFt"],
+};
+
+/** The money keys in a document of this format, or null if this app does not
+ * know the format — in which case every caller must refuse. */
+export function moneyStateKeysFor(schemaVersion: number): readonly string[] | null {
+  return MONEY_STATE_KEYS_BY_SCHEMA_VERSION[schemaVersion] ?? null;
+}
+
+/** The dotted paths a marker on a document of this format may name. */
+export function moneyDocumentPathsFor(schemaVersion: number): readonly string[] | null {
+  const keys = moneyStateKeysFor(schemaVersion);
+  return keys === null ? null : keys.map((key) => `state.${key}`);
+}
 
 // ---------------------------------------------------------------------------
 // The marker the database adds in place of what it removed
@@ -223,10 +283,16 @@ export function readRedactionMarker(document: unknown): RedactionMarker | null {
 }
 
 /**
- * Is this dotted path one this app knows how to open without? Only the paths
- * the classification calls money are, so a marker claiming `state.zipCode` was
- * removed is refused rather than opened with a hole in the design.
+ * Is this dotted path one this app knows how to open a document of THIS FORMAT
+ * without? Only the paths the classification calls money for that version are,
+ * so a marker claiming `state.zipCode` was removed is refused rather than
+ * opened with a hole in the design.
+ *
+ * ⚠ The version argument is required, and an unknown version answers false
+ * for every path — fail closed. Before v26 this function took a path alone,
+ * which was correct only while the money key had the same name in every
+ * format; see `MONEY_STATE_KEYS_BY_SCHEMA_VERSION`.
  */
-export function isRedactablePath(path: string): boolean {
-  return MONEY_DOCUMENT_PATHS.includes(path);
+export function isRedactablePath(path: string, schemaVersion: number): boolean {
+  return moneyDocumentPathsFor(schemaVersion)?.includes(path) ?? false;
 }

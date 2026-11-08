@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import {
   computeAssemblyPerm,
   computeCarbonRange,
-  computePrice,
+  computeCoveragePrice,
   computeStrawWeight,
   toReviewLog,
   validateVaporOpenness,
@@ -14,6 +14,7 @@ import {
 } from "@building-integrity/calc-engine";
 import {
   carbonFractionOfDryMass,
+  priceRates,
   fastenerTableStatus,
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
@@ -66,9 +67,10 @@ export default function PanelCalcSandbox() {
 
   const price = useMemo(
     () =>
-      computePrice([
-        { type: panelType, areaSqFt: wallRunLengthFt * wallHeightFt },
-      ]),
+      computeCoveragePrice(
+        [{ type: panelType, areaSqFt: wallRunLengthFt * wallHeightFt }],
+        priceRates.coveragePerSqFt,
+      ),
     [panelType, wallRunLengthFt, wallHeightFt],
   );
 

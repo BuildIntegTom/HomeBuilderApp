@@ -155,7 +155,9 @@ import {
   computePanelWeightBreakdown,
   computePlasterLaborCost,
   computePlasterLaborHours,
-  computePrice,
+  computeCoveragePrice,
+  PUBLIC_COVERAGE_RATE_PER_SQ_FT,
+  type PriceablePanel,
   computeSillTapeLengthFt,
   computeStandardPanelStrawVolume,
   computeStrawWeight,
@@ -287,7 +289,6 @@ import {
   plasterLaborRatesRef,
   plasterMixPartsDefaults,
   plasterPriceDefaults,
-  beamPriceRatePerSqFt,
   priceRates,
   referenceDensities,
   roofCatcherBeamShapeDefault,
@@ -716,16 +717,15 @@ const phase2Assumptions = () => [
       "this part.",
   },
   {
-    label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing — the BEAM rate itself is unset",
+    label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing — the AREA is a stand-in (the rate is now his)",
     status: "pending-BI-confirmation" as const,
     note:
-      "Tommy, giving the floor and roof panel rates: \"Beams and roof and floor panels should all have their own " +
-      "prices... floor and roof should be $24/sq ft coverage.\" The floor and roof figures are his. For the beams he " +
-      `gave none, so they now have their own bucket seeded at the roof rate ($${beamPriceRatePerSqFt.value}/sqft), ` +
-      "which is exactly where they were already being charged — the split moves no project's cost, it only makes the " +
-      "number askable instead of indistinguishable from a rate he confirmed. The area it is charged against is still " +
-      "a stand-in: these are linear members with no real width x wall-height face, so each piece is priced on its own " +
-      "covered length x its own assembly's cross-sectional height.",
+      "The RATE this entry used to be about is settled: asked on 2026-11-08 whether the buckets his flat rate did " +
+      "not name should keep their own prices, Tommy answered \"Flat $25 for absolutely everything\", so beams, truss " +
+      "plates, box beams and Mid-Wall Bond Beams are priced at $25/sq ft like every other bucket and the " +
+      "$42/sqft placeholder is deleted. What is STILL a stand-in is the AREA that rate is charged against: these " +
+      "are linear members with no real width x wall-height face, so each piece is priced on its own covered " +
+      "length x its own assembly's cross-sectional height. He confirmed the rate, not the area.",
   },
   {
     label: "Wall interior default read as clay plaster",
@@ -1319,7 +1319,10 @@ export default function LayoutEditor() {
   const [unitSystem, setUnitSystem] = useState<"imperial" | "metric">("imperial");
   // Fabricator/admin-only markup (Tommy) — public viewers see the base
   // material cost with no markup applied, regardless of this value.
-  const [priceModifier, setPriceModifier] = useState(priceRates.totalModifier);
+  /* ⚠ Dollars per square foot of coverage, not a multiplier. Replaced the
+     1.3x markup on 2026-11-08 ("those rates were all-in prices, the 1.3x is
+     double counting"). See `priceRates.coveragePerSqFt`. */
+  const [pricePerSqFt, setPricePerSqFt] = useState(priceRates.coveragePerSqFt);
   /**
    * Covers the suspended-joist options, the Thermally Broken Slab option,
    * and the Bale Foundation rim/field framing system — mutually exclusive,
@@ -2615,7 +2618,7 @@ export default function LayoutEditor() {
       zipCode,
       role,
       unitSystem,
-      priceModifier,
+      pricePerSqFt,
       floorSystemId,
       perpendicular2x4Enabled,
       roofSystemTypeId,
@@ -2800,7 +2803,7 @@ export default function LayoutEditor() {
     setZipCode(s.zipCode);
     if (applyRole) setRole(s.role);
     if (applyViewState) setUnitSystem(s.unitSystem);
-    setPriceModifier(s.priceModifier);
+    setPricePerSqFt(s.pricePerSqFt);
     setFloorSystemId(s.floorSystemId as typeof floorSystemId);
     setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
     setRoofProfileType(s.roofProfileType);
@@ -10678,7 +10681,30 @@ export default function LayoutEditor() {
   // below, and if a gate is ever missed the screen reads `$NaN` — obviously
   // broken — instead of a confident figure built from a defaulted markup.
   const costsRedacted = documentSession.browseContext !== null;
-  const effectivePriceModifier = costsRedacted ? Number.NaN : role === "public" ? 1 : priceModifier;
+  /* ⚠ NO ROLE BRANCH, and that is a correction to what I built first.
+     I had pinned a PUBLIC viewer to the catalog rate, reading his *"the public
+     user should definetely not be the one seeing what could be the lowest
+     price point"* as a confidentiality rule. Two things were wrong with it.
+
+     First, `role` is not a boundary. Its own definition says so: *"There's no
+     real login yet — this is a local 'viewing as' toggle"*. It is a dropdown
+     anyone with the project open can flip, so hiding a number behind it
+     protected nothing and only made the app harder to reason about.
+
+     Second, and the reason it is gone rather than replaced: asked what a
+     client's own sheet shows when their building is quoted below list, he
+     chose **both, labelled** — *"Shows the client they're getting a deal, and
+     makes the discount an explicit part of the proposal."* A client being
+     quoted $20 should see $20. Showing them $25 would have made the app
+     overstate their own price, which is worse than any leak it prevented.
+
+     The real confidentiality boundary is the line below, and it is enforced in
+     SQL rather than here: a cross-company browse never receives the money
+     field at all. `NaN` not 0 or 1, for the reason the original comment gave:
+     every price display is gated on `costsRedacted`, and if a gate is ever
+     missed the screen reads `$NaN` — obviously broken — rather than a
+     confident figure built from a defaulted rate. */
+  const effectivePricePerSqFt = costsRedacted ? Number.NaN : pricePerSqFt;
 
   /**
    * ⚠ **B33 — a Big Header's own face, because `areaSqFtFor` cannot give it
@@ -10808,9 +10834,21 @@ export default function LayoutEditor() {
       0,
     );
 
-    return computePrice(
-      [
-        // No distinct rate given for safety/gap panels — priced at the standard rate (assumption, see Review Log).
+    /* One rate now, so the `type` on each entry no longer picks a price - it
+       is the record of WHICH areas are inside the total, which is the thing
+       somebody checking a quote actually needs. */
+    /* ⚠ Returns the AREA too, not just the total. Tommy, 2026-11-08, asked
+       whether the calculation should be printed: *"is it really secret
+       information to tell people this is how we calculate price; based off of
+       square footage of coverage? i think it only makes sense to talk about
+       building that way, and it simply gives people an honest calculation of
+       what's going on and can compare that to other products."* He chose "on
+       every sheet, client and shop". A total alone cannot be compared to
+       anything; area x rate can. */
+    const priceable: PriceablePanel[] = [
+        // Safety/gap panels are charged like everything else; there is no
+        // longer a per-type rate for them to be an assumption about.
+        // (Was: priced at the standard rate, an assumption in the Review Log.) — priced at the standard rate (assumption, see Review Log).
         { type: "standard", areaSqFt: areaSqFtFor("standard") + areaSqFtFor("safety-gap") + gableStandardAreaSqFt },
         // safety-oct-corner is a fabrication-ID variant of the same corner panel, priced identically.
         {
@@ -10856,12 +10894,18 @@ export default function LayoutEditor() {
            sums it per panel rather than off the footprint. */
         { type: "floor-panel", areaSqFt: deckPanelTakeoff.coverageSqFt.floor },
         { type: "roof-panel", areaSqFt: deckPanelTakeoff.coverageSqFt.roof },
-      ],
-      effectivePriceModifier,
-    );
+      ];
+    return {
+      areaSqFt: priceable.reduce((sum, entry) => sum + entry.areaSqFt, 0),
+      total: computeCoveragePrice(priceable, effectivePricePerSqFt),
+      /* What the same building costs at the catalog's list rate. Equal to
+         `total` unless somebody has adjusted the rate, which is exactly the
+         case the display has to label. */
+      listTotal: computeCoveragePrice(priceable, PUBLIC_COVERAGE_RATE_PER_SQ_FT),
+    };
   }, [
     stories,
-    effectivePriceModifier,
+    effectivePricePerSqFt,
     thicknessIn,
     gableTilesAsFabricatedByWallId,
     gableEaveHeightIn,
@@ -15569,8 +15613,17 @@ export default function LayoutEditor() {
              nothing about the gable row, the floor, the roof or the beams,
              because none of them were in it. */
           weightNote={`Straw: ${((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb. Wood in the ${panelCounts.wall + panelCounts.gable} wall and gable panels: ${((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor and roof panels, beams and headers: ${(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from its own fabrication sheet.`}
-          price={price}
-          priceNote="Priced per panel type — wall panels and the gable row by their standing face, beams on their own rate, floor and roof panels at $24/sqft of coverage. See Review Log."
+          price={price.total}
+          /* ⚠ The arithmetic on THIS sheet too — "on every sheet, client and
+             shop" (Tommy, 2026-11-08). A total with no working cannot be
+             compared to a competitor's number, which is the whole reason he
+             wanted the method stated. The list-rate line appears only when
+             the project has been quoted away from list. */
+          priceNote={`${price.areaSqFt.toFixed(2)} sq ft of coverage × $${effectivePricePerSqFt.toFixed(2)}/sq ft — one flat rate across every panel, beam and truss plate. Wall panels and the gable row by their standing face, floor and roof panels by what they cover (a roof up its real slope).${
+            Math.abs(price.total - price.listTotal) >= 0.01
+              ? ` List rate $${PUBLIC_COVERAGE_RATE_PER_SQ_FT.toFixed(2)}/sq ft would be $${price.listTotal.toFixed(2)}.`
+              : ""
+          } See Review Log.`}
           costsRedacted={costsRedacted}
           priceRedactedGap={PRICE_GAP}
           priceRedactedNote={PRICE_REDACTED_NOTE}
@@ -15689,32 +15742,51 @@ export default function LayoutEditor() {
                     </span>
                   ) : (
                     <>
-                      ${price.toFixed(2)}
+                      ${price.total.toFixed(2)}
+                      {/* ⚠ THE ARITHMETIC, PRINTED. His 2026-11-08 answer: the
+                          method is not secret, it is the only honest way to
+                          talk about a building, and a reader can compare it to
+                          another product. One flat rate across every panel,
+                          beam and truss plate. */}
                       <span className={styles.note}>
                         {" "}
-                        — priced per panel type: wall panels and the gable row by their standing face, beams on
-                        their own rate, floor and roof panels at $24/sqft of coverage. See Review Log
+                        — {price.areaSqFt.toFixed(2)} sq ft of coverage × ${effectivePricePerSqFt.toFixed(2)}/sq ft.
+                        Wall panels and the gable row by their standing face, floor and roof panels by what they
+                        cover (a roof up its real slope). See Review Log
                       </span>
+                      {/* ⚠ BOTH, LABELLED — his answer when asked what a
+                          client's own sheet shows if the building is quoted
+                          below list: *"Shows the client they're getting a deal,
+                          and makes the discount an explicit part of the
+                          proposal rather than an invisible one."* Rendered only
+                          when the two differ, so an unadjusted project does not
+                          carry a line saying the price is the price. */}
+                      {Math.abs(price.total - price.listTotal) >= 0.01 && (
+                        <div className={styles.note} data-price-list-comparison="">
+                          List rate ${PUBLIC_COVERAGE_RATE_PER_SQ_FT.toFixed(2)}/sq ft would be $
+                          {price.listTotal.toFixed(2)} — quoted at ${effectivePricePerSqFt.toFixed(2)}/sq ft
+                        </div>
+                      )}
                     </>
                   )}
                   {role !== "public" && !costsRedacted && (
                     <div>
                       <label>
-                        Markup{" "}
+                        ${" "}
                         <input
                           type="number"
-                          step="0.05"
-                          min="1"
-                          value={priceModifier}
-                          onChange={(e) => setPriceModifier(Number(e.target.value))}
+                          step="1"
+                          min="0"
+                          value={pricePerSqFt}
+                          onChange={(e) => setPricePerSqFt(Number(e.target.value))}
                           style={{ width: 64 }}
                         />
-                        x
+                        {" "}/ sq ft of coverage
                       </label>
                       <p className={styles.note}>
-                        Fabricator/admin-only markup, already included in the price above (default{" "}
-                        {priceRates.totalModifier}x). Public viewers never see this markup applied — their price is
-                        the base material cost only (as if this were 1x).
+                        The whole price, in one number (default ${priceRates.coveragePerSqFt}/sqft). Yours to adjust
+                        — try ${"20"} to see the same building at a different price point. Public viewers always see
+                        the ${priceRates.coveragePerSqFt} list rate, never an adjusted one.
                       </p>
                     </div>
                   )}

@@ -11,7 +11,7 @@ import {
 } from "./projectFile";
 import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
 import { findSubMinimumPanelWidths, mergeRunStopOpenings, type PanelSlot } from "@building-integrity/geometry";
-import { fabricationMinPanelWidthIn } from "@building-integrity/panel-catalog";
+import { fabricationMinPanelWidthIn, priceRates } from "@building-integrity/panel-catalog";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
   return {
@@ -49,7 +49,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     zipCode: "97201",
     role: "fabricator",
     unitSystem: "imperial",
-    priceModifier: 1.3,
+    pricePerSqFt: 25,
     floorSystemId: null,
     perpendicular2x4Enabled: false,
     baleFoundationTopDepthIn: 5.5,
@@ -409,12 +409,12 @@ describe("serializeProject / parseProjectFile round-trip", () => {
     });
 
     it("does not move PROJECT_FILE_VERSION — an additive optional key needs no bump", () => {
-      // Stated in projectFile.ts's own v24->v25 note and asserted here so the
+      // Stated in projectFile.ts's own note and asserted here so the
       // claim cannot drift: a file written with the new key is still a v25
-      // file, and a v25 file written without it still opens.
-      expect(PROJECT_FILE_VERSION).toBe(25);
+      // file, and a v26 file written without it still opens.
+      expect(PROJECT_FILE_VERSION).toBe(26);
       const withKey = serializeProject(makeState({ unbuiltOpeningsByStoryAndWallId: { ground: {}, second: {} } }));
-      expect(withKey.schemaVersion).toBe(25);
+      expect(withKey.schemaVersion).toBe(26);
       expect(parseProjectFile(JSON.stringify(withKey)).ok).toBe(true);
     });
   });
@@ -465,7 +465,7 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
+describe("the standing 1/8in grid repair, exercised through a v25 file", () => {
   /** A real 30x20 rectangle, so corner ownership and butt-joint insets are
    * the genuine ones rather than a degenerate 2-corner fixture's.
    *
@@ -489,14 +489,23 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
     ],
   };
 
-  /** Builds a raw v24-shaped file: a current serialization with the version
-   * rolled back AND v25's own keys stripped, which is exactly what a file
-   * saved before Smearforn Stage 0 looks like. (The 1/8in repair these tests
-   * exercise is unconditional — it runs on every load, v24 or v25 — so the
-   * version number here only decides which required-key set applies.) */
-  function makeV24File(overrides: Partial<ProjectState> = {}) {
-    const { foundationEnabled: _f, wallRunStopsByWallId: _s, ...v24State } = serializeProject(makeState(overrides)).state;
-    return { schemaVersion: 24, savedAt: new Date().toISOString(), state: v24State };
+  /** Builds a raw v25-shaped file: a current serialization with the version
+   * rolled back, v26's own key stripped, AND the key v26 renamed put back.
+   * That last part is what makes this different from every earlier fixture in
+   * this file — v25->v26 is the first migration here that renames rather than
+   * adds, so a v25 file is not merely missing `pricePerSqFt`, it is carrying
+   * `priceModifier` instead. Both halves matter: the first proves the
+   * required-key check excuses the new name, the second proves the parser
+   * drops the old one. (The 1/8in repair these tests exercise is
+   * unconditional — it runs on every load — so the version number here only
+   * decides which required-key set applies.) */
+  function makeV25File(overrides: Partial<ProjectState> = {}) {
+    const { pricePerSqFt: _p, ...v25State } = serializeProject(makeState(overrides)).state;
+    return {
+      schemaVersion: 25,
+      savedAt: new Date().toISOString(),
+      state: { ...v25State, priceModifier: 1.3 },
+    };
   }
 
   /** Wall AB of the rectangle above loses a corner at each end to its two
@@ -510,7 +519,7 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
   ];
 
   function loadWithOffGridWall(extraOverrides: Partial<ProjectState> = {}) {
-    const file = makeV24File({
+    const file = makeV25File({
       footprint: rectangleFootprint,
       primaryCornerIds: new Set(["A", "B", "C", "D"]),
       leastAccessibleCorner: "A",
@@ -591,7 +600,7 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
         { id: "DA", startCorner: "D", endCorner: "A", lengthFt: 20.004 },
       ],
     };
-    const result = parseProjectFile(JSON.stringify(makeV24File({ footprint: drifted, baseWallSlots: {}, stories: [] })));
+    const result = parseProjectFile(JSON.stringify(makeV25File({ footprint: drifted, baseWallSlots: {}, stories: [] })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     for (const wall of result.state.footprint!.walls) {
@@ -642,7 +651,7 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
     // via the GUARD instead, and would keep passing if the no-op path broke.
     const result = parseProjectFile(
       JSON.stringify(
-        makeV24File({
+        makeV25File({
           footprint: rectangleFootprint,
           primaryCornerIds: new Set(["A", "B", "C", "D"]),
           leastAccessibleCorner: "A",
@@ -675,15 +684,15 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
       ground: { AB: [{ id: "beam-1", heightIn: 60, sizeId: "9x2-lvl" as const, kind: "box-beam" as const, startSlotIndex: 0, endSlotIndex: 3 }] },
       second: {},
     };
-    const result = parseProjectFile(JSON.stringify(makeV24File({ midWallBeamsByStoryAndWallId: beams })));
+    const result = parseProjectFile(JSON.stringify(makeV25File({ midWallBeamsByStoryAndWallId: beams })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.midWallBeamsByStoryAndWallId.ground.AB).toEqual(beams.ground.AB);
   });
 
-  it("now rejects v23, which has fallen out of the one-version-back window", () => {
-    const v23File = { ...makeV24File(), schemaVersion: 23 };
-    const result = parseProjectFile(JSON.stringify(v23File));
+  it("now rejects v24, which has fallen out of the one-version-back window", () => {
+    const tooOld = { ...makeV25File(), schemaVersion: 24 };
+    const result = parseProjectFile(JSON.stringify(tooOld));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);
@@ -715,11 +724,16 @@ describe("limits are enforced on EDIT, never on LOAD (Smearforn Stage 1)", () =>
     expect(result.state.stories[0]!.wallSlots.AB).toEqual(withNarrowPanel);
   });
 
-  it("opens the same design out of a v24 file too, and still does not touch it", () => {
-    const { foundationEnabled: _f, wallRunStopsByWallId: _s, ...v24State } = serializeProject(
+  it("opens the same design out of a v25 file too, and still does not touch it", () => {
+    /* A v25 file is the current shape minus `pricePerSqFt` and plus the key
+       v26 renamed. It was v24-shaped here until the v26 bump moved the
+       one-version-back window along. */
+    const { pricePerSqFt: _p, ...v25State } = serializeProject(
       makeState({ baseWallSlots: { AB: withNarrowPanel } }),
     ).state;
-    const result = parseProjectFile(JSON.stringify({ schemaVersion: 24, savedAt: "2026-09-01T12:00:00.000Z", state: v24State }));
+    const result = parseProjectFile(
+      JSON.stringify({ schemaVersion: 25, savedAt: "2026-09-01T12:00:00.000Z", state: { ...v25State, priceModifier: 1.3 } }),
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.baseWallSlots.AB).toEqual(withNarrowPanel);
@@ -743,98 +757,100 @@ describe("limits are enforced on EDIT, never on LOAD (Smearforn Stage 1)", () =>
   });
 });
 
-describe("v24 -> v25 migration (Foundation becomes an optional scope branch)", () => {
-  /** A file saved before Smearforn Stage 0: the current serialization with the
-   * version rolled back and v25's own two keys removed, which is byte-for-byte
-   * the shape a real v24 save has. */
-  function makeV24File(overrides: Partial<ProjectState> = {}) {
-    const { foundationEnabled: _f, wallRunStopsByWallId: _s, ...v24State } = serializeProject(makeState(overrides)).state;
-    return { schemaVersion: 24, savedAt: "2026-09-01T12:00:00.000Z", state: v24State };
+/**
+ * ⚠ THE v24 -> v25 BLOCK THAT USED TO BE HERE IS DELETED, NOT RENAMED.
+ *
+ * It tested that a v24 file opened with its Foundation tab still enabled. v24
+ * is now two formats back and `parseProjectFile` refuses it outright, so those
+ * assertions could not pass and must not be made to look as though they do: a
+ * test renamed to the current version while still asserting the old
+ * migration's behaviour is worse than a deleted one, because it reports
+ * coverage it does not have. The v24 -> v25 migration itself is history, and
+ * `PROJECT_FILE_VERSION`'s own doc comment is where that history lives.
+ */
+describe("v25 -> v26 migration (one price, and the first RENAMED key)", () => {
+  /** A file saved before the pricing change: the current serialization with
+   * the version rolled back, v26's key removed, and the key v26 renamed put
+   * BACK. That last part is what makes this the first fixture in this file
+   * that is not simply "current minus a key" — a v25 save really does carry
+   * `priceModifier`, and the parser has to drop it. */
+  function makeV25PricingFile(overrides: Partial<ProjectState> = {}) {
+    const { pricePerSqFt: _p, ...v25State } = serializeProject(makeState(overrides)).state;
+    return {
+      schemaVersion: 25,
+      savedAt: "2026-11-01T12:00:00.000Z",
+      state: { ...v25State, priceModifier: 1.4 },
+    };
   }
 
-  it("opens a v24 project that has floors AND a foundation with both intact and both still enabled", () => {
-    // The whole trap in this stage: the new-project default is OFF, and
-    // applying it to an existing file would hide the Foundation tab on every
-    // project ever saved. This is the test that would fail if the migration
-    // default were copied from the useState call.
-    const v24 = makeV24File({
+  it("opens a v25 file although it has no pricePerSqFt", () => {
+    const v25 = makeV25PricingFile();
+    expect("pricePerSqFt" in v25.state).toBe(false);
+    expect("priceModifier" in v25.state).toBe(true);
+    const result = parseProjectFile(JSON.stringify(v25));
+    expect(result.ok).toBe(true);
+  });
+
+  it("⚠ gives it the CATALOG rate, and does not try to convert the old multiplier", () => {
+    /* The old key held a multiplier (1.4x on top of per-type rates); the new
+       one holds dollars per square foot. Converting between them would need
+       the building's own areas, which a parser does not have. So every v25
+       file opens at the catalog default — stated in PROJECT_FILE_VERSION's
+       note because it moves money, and defensible because the multiplier was
+       double-counting ("those rates were all-in prices, the 1.3x is double
+       counting"), so there was no correct prior price to preserve. */
+    const result = parseProjectFile(JSON.stringify(makeV25PricingFile()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.pricePerSqFt).toBe(priceRates.coveragePerSqFt);
+    expect(result.state.pricePerSqFt).not.toBe(1.4);
+  });
+
+  it("⚠ DROPS the old key, so a re-save cannot carry a dead multiplier forward", () => {
+    /* `state` is spread wholesale into the parsed ProjectState, and a spread
+       gets no excess-property check, so without the explicit delete the old
+       key would ride along in memory and be written straight back out by
+       serializeProject — putting a dead 1.4 into a v26 file and leaving the
+       next reader to work out which number won. */
+    const result = parseProjectFile(JSON.stringify(makeV25PricingFile()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("priceModifier" in result.state).toBe(false);
+    const resaved = serializeProject(result.state);
+    expect("priceModifier" in resaved.state).toBe(false);
+    expect(resaved.schemaVersion).toBe(26);
+  });
+
+  it("drops nothing else: every other v25 value comes back as it was saved", () => {
+    const v25 = makeV25PricingFile({
+      projectName: "Rogers-Sehorn ADU",
       floorsEnabled: true,
-      floorSystemId: "bale-foundation",
-      perpendicular2x4Enabled: true,
-      floorBottomSkinEnabled: true,
-      baleFoundationTopDepthIn: 7.25,
-      baleFoundationBottomDepthIn: 5.5,
-      baleFoundationGapIn: 2,
-      baleFoundationFieldSpacingIn: 24,
+      foundationEnabled: true,
       foundationTypeId: "concrete-pier",
       pierSpacingFt: 6,
+      zipCode: "82801",
+      unitSystem: "metric",
     });
-    expect("foundationEnabled" in v24.state).toBe(false);
-
-    const result = parseProjectFile(JSON.stringify(v24));
+    const result = parseProjectFile(JSON.stringify(v25));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-
-    // Enabled, not defaulted off.
-    expect(result.state.foundationEnabled).toBe(true);
+    expect(result.state.projectName).toBe("Rogers-Sehorn ADU");
     expect(result.state.floorsEnabled).toBe(true);
-    // And every piece of foundation/floor DATA is exactly what was saved —
-    // a scope flag gates rendering, it never deletes.
+    expect(result.state.foundationEnabled).toBe(true);
     expect(result.state.foundationTypeId).toBe("concrete-pier");
     expect(result.state.pierSpacingFt).toBe(6);
-    expect(result.state.floorSystemId).toBe("bale-foundation");
-    expect(result.state.perpendicular2x4Enabled).toBe(true);
-    expect(result.state.floorBottomSkinEnabled).toBe(true);
-    expect(result.state.baleFoundationTopDepthIn).toBe(7.25);
-    expect(result.state.baleFoundationBottomDepthIn).toBe(5.5);
-    expect(result.state.baleFoundationGapIn).toBe(2);
-    expect(result.state.baleFoundationFieldSpacingIn).toBe(24);
+    expect(result.state.zipCode).toBe("82801");
+    expect(result.state.unitSystem).toBe("metric");
   });
 
-  it("drops nothing else at all: every v24 key comes back with the value it was saved with", () => {
-    const v24 = makeV24File({ floorsEnabled: true, roofEnabled: true, foundationTypeId: "slab", pierSpacingFt: 7 });
-    const result = parseProjectFile(JSON.stringify(v24));
+  it("a v26 file keeps its own rate, adjusted or not", () => {
+    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ pricePerSqFt: 20 }))));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Compared against the v24 document itself rather than against makeState,
-    // so a key silently dropped by the migration shows up here as undefined.
-    const loaded = serializeProject(result.state).state as Record<string, unknown>;
-    for (const [key, saved] of Object.entries(v24.state as Record<string, unknown>)) {
-      expect({ key, value: loaded[key] }).toEqual({ key, value: saved });
-    }
-  });
-
-  it("gives a v24 file an empty run-stop record — no wall stops short, which is what a v24 file meant", () => {
-    const result = parseProjectFile(JSON.stringify(makeV24File()));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.wallRunStopsByWallId).toEqual({});
-  });
-
-  it("keeps a v25 project's own unchecked Foundation unchecked (false, not re-defaulted to true)", () => {
-    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ foundationEnabled: false }))));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.foundationEnabled).toBe(false);
-  });
-
-  it("round-trips a Stage 3 run-stop record untouched, though nothing reads it yet", () => {
-    const stops = { AB: { startStopIn: 24, endStopIn: 0 } };
-    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ wallRunStopsByWallId: stops }))));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.wallRunStopsByWallId).toEqual(stops);
-  });
-
-  it("still refuses a CURRENT-version file that is missing foundationEnabled — the skip is for v24 only", () => {
-    const file = serializeProject(makeState());
-    const { foundationEnabled: _dropped, ...state } = file.state;
-    const result = parseProjectFile(JSON.stringify({ ...file, state }));
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toMatch(/foundationEnabled/);
+    expect(result.state.pricePerSqFt).toBe(20);
   });
 });
+
 
 describe("savedAt -> title-block date", () => {
   afterEach(() => vi.useRealTimers());
@@ -961,13 +977,13 @@ describe("parseProjectFile rejecting malformed input", () => {
  */
 function redactedFile(overrides: Partial<ProjectState> = {}) {
   const file = serializeProject(makeState(overrides));
-  const { priceModifier: _removed, ...state } = file.state;
+  const { pricePerSqFt: _removed, ...state } = file.state;
   return {
     ...file,
     state,
     redaction: {
       schemaVersion: file.schemaVersion,
-      removedPaths: ["state.priceModifier"],
+      removedPaths: ["state.pricePerSqFt"],
       reason: "another company's cost information",
     },
   };
@@ -977,18 +993,18 @@ describe("parseRedactedProjectFile", () => {
   it("opens a stripped document that parseProjectFile refuses as corrupt", () => {
     const raw = JSON.stringify(redactedFile());
 
-    // THE WHOLE REASON THIS FUNCTION EXISTS. priceModifier is in
+    // THE WHOLE REASON THIS FUNCTION EXISTS. pricePerSqFt is in
     // REQUIRED_STATE_KEYS, so the ordinary parser reads a redacted document as
     // a broken file — which would be the message on EVERY browsed project.
     const refused = parseProjectFile(raw);
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error).toMatch(/priceModifier/);
+    if (!refused.ok) expect(refused.error).toMatch(/pricePerSqFt/);
 
     const parsed = parseRedactedProjectFile(raw);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.costsRedacted).toBe(true);
-    expect(parsed.removedPaths).toEqual(["state.priceModifier"]);
+    expect(parsed.removedPaths).toEqual(["state.pricePerSqFt"]);
     expect(parsed.reason).toBe("another company's cost information");
   });
 
@@ -996,14 +1012,14 @@ describe("parseRedactedProjectFile", () => {
     const parsed = parseRedactedProjectFile(JSON.stringify(redactedFile()));
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(Number.isNaN(parsed.state.priceModifier)).toBe(true);
+    expect(Number.isNaN(parsed.state.pricePerSqFt)).toBe(true);
     // Said as its own assertion because the point is what it is NOT: a missed
     // display gate must print $NaN, not a plausible figure.
-    expect(parsed.state.priceModifier).not.toBe(1);
-    expect(parsed.state.priceModifier).not.toBe(0);
-    expect(parsed.state.priceModifier).not.toBe(1.3);
+    expect(parsed.state.pricePerSqFt).not.toBe(1);
+    expect(parsed.state.pricePerSqFt).not.toBe(0);
+    expect(parsed.state.pricePerSqFt).not.toBe(1.3);
     // Any arithmetic on it stays NaN, so no downstream total can launder it.
-    expect(Number.isNaN(parsed.state.priceModifier * 48210)).toBe(true);
+    expect(Number.isNaN(parsed.state.pricePerSqFt * 48210)).toBe(true);
   });
 
   it("brings the whole design through — money no, design yes (decision 20)", () => {
@@ -1022,7 +1038,7 @@ describe("parseRedactedProjectFile", () => {
 
   it("refuses a document with NO marker, rather than treating it as a full one", () => {
     const file = serializeProject(makeState());
-    const { priceModifier: _removed, ...state } = file.state;
+    const { pricePerSqFt: _removed, ...state } = file.state;
     const parsed = parseRedactedProjectFile(JSON.stringify({ ...file, state }));
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
@@ -1052,12 +1068,12 @@ describe("parseRedactedProjectFile", () => {
     // with a hole in the DESIGN. `standardWidthIn` is required and is not
     // money, so naming it excuses nothing.
     const file = serializeProject(makeState());
-    const { priceModifier: _money, standardWidthIn: _design, ...state } = file.state;
+    const { pricePerSqFt: _money, standardWidthIn: _design, ...state } = file.state;
     const parsed = parseRedactedProjectFile(
       JSON.stringify({
         ...file,
         state,
-        redaction: { schemaVersion: file.schemaVersion, removedPaths: ["state.priceModifier", "state.standardWidthIn"], reason: "x" },
+        redaction: { schemaVersion: file.schemaVersion, removedPaths: ["state.pricePerSqFt", "state.standardWidthIn"], reason: "x" },
       }),
     );
     expect(parsed.ok).toBe(false);
@@ -1069,7 +1085,7 @@ describe("parseRedactedProjectFile", () => {
     // The server's account of what it sent is wrong. Refuse rather than show
     // another company's markup under a banner saying costs are not shown.
     const doc = redactedFile();
-    const parsed = parseRedactedProjectFile(JSON.stringify({ ...doc, state: { ...doc.state, priceModifier: 1.3777 } }));
+    const parsed = parseRedactedProjectFile(JSON.stringify({ ...doc, state: { ...doc.state, pricePerSqFt: 25.4321 } }));
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.error).toBe(REDACTED_FIELD_SURVIVED_MESSAGE);
@@ -1078,7 +1094,7 @@ describe("parseRedactedProjectFile", () => {
   it("refuses a money field that survived WITHOUT being named — the other side of the same fault", () => {
     const doc = redactedFile();
     const parsed = parseRedactedProjectFile(
-      JSON.stringify({ ...doc, state: { ...doc.state, priceModifier: 1.3777 }, redaction: { ...doc.redaction, removedPaths: [] } }),
+      JSON.stringify({ ...doc, state: { ...doc.state, pricePerSqFt: 25.4321 }, redaction: { ...doc.redaction, removedPaths: [] } }),
     );
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
@@ -1100,14 +1116,14 @@ describe("parseRedactedProjectFile", () => {
 
   it("does not loosen parseProjectFile: an ordinary file still needs every required key", () => {
     const file = serializeProject(makeState());
-    const { priceModifier: _drop, ...state } = file.state;
+    const { pricePerSqFt: _drop, ...state } = file.state;
     // Even WITH a marker attached, the ordinary parser is unchanged: it does
     // not read the marker, so the key is still required.
-    const withMarker = { ...file, state, redaction: { schemaVersion: file.schemaVersion, removedPaths: ["state.priceModifier"], reason: "x" } };
+    const withMarker = { ...file, state, redaction: { schemaVersion: file.schemaVersion, removedPaths: ["state.pricePerSqFt"], reason: "x" } };
     const result = parseProjectFile(JSON.stringify(withMarker));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatch(/priceModifier/);
+    expect(result.error).toMatch(/pricePerSqFt/);
   });
 
   it("no PROJECT_FILE_VERSION bump of its own: a redacted document is still the current version", () => {
