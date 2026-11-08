@@ -101,6 +101,8 @@ import { computeOpeningGeometry } from "./openingGeometry";
 import { useBrowsing } from "./BrowseModeContext";
 import ScalePropsGroup from "./ScalePropsGroup";
 import SiteGroup from "./SiteGroup";
+import DimensionHandlesGroup from "./DimensionHandlesGroup";
+import type { DimensionHandle, DimensionHandleId } from "./dimensionHandles";
 import { scalePropsPlanBounds, type PlanBoundsFt } from "./scaleProps";
 import {
   SITE_SUN_DIRECTION,
@@ -1105,6 +1107,25 @@ interface Building3DViewProps {
    * scenery. That is this item's own rule applied to itself.
    */
   showSite?: boolean;
+  /**
+   * ⚠ **U6 — dimension handles, floating on the model.** His ask,
+   * 2026-11-05: *"height ... width, depth of building, as well as the roof
+   * slider (slides the peak position), and I guess roof height too."*
+   *
+   * ⚠ **This view draws them and owns none of them.** The handles are
+   * computed in `page.tsx`, which holds every number they read, and every
+   * commit goes back out through `onCommitDimension` to the same functions the
+   * typed sidebar fields call. That is U6 stride 1's whole point: one resize
+   * seam, so a handle cannot become a second way to change a building's size.
+   *
+   * ⚠ **Not forwarded to `captureMode`**, like the straw, the props and the
+   * site — a printed drawing does not gain live controls.
+   */
+  dimensionHandles?: DimensionHandle[];
+  onCommitDimension?: (id: DimensionHandleId, valueFt: number) => void;
+  /** The length of the wall a POSITION handle runs along, feet, so a thrown
+   * drag can be held on it. */
+  dimensionWallLengthFt?: (handle: DimensionHandle) => number;
   simplified?: boolean;
   /** 3D Wraps view (Tommy: "3d model selected after box mode and is
    * everything box mode is with a few changes: panels not labeled, and
@@ -1378,6 +1399,9 @@ export default function Building3DView({
   strawTextured = false,
   showScaleProps = false,
   showSite = false,
+  dimensionHandles,
+  onCommitDimension,
+  dimensionWallLengthFt,
   checkedInteriorIds = EMPTY_ID_SET,
   checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
@@ -3006,6 +3030,18 @@ export default function Building3DView({
               building because the camera pulls back with it — at a fixed
               size, 6'-0" is unreadable on the Cindy. */}
           {showScaleProps && <ScalePropsGroup bounds={bounds.box} labelScaleFt={Math.max(0.6, bounds.maxDim * 0.04)} />}
+          {/* ⚠ **U6's handles.** Outside `StrawFillProvider` for the same
+              reason as the props and the site: they are not panels. They are
+              DOM, floated at a scene point by drei's `Html`, so the number is
+              a real text field that takes an eighth and feet-inches rather
+              than a 3D widget that cannot. */}
+          {dimensionHandles && dimensionHandles.length > 0 && onCommitDimension && (
+            <DimensionHandlesGroup
+              handles={dimensionHandles}
+              onCommit={onCommitDimension}
+              wallLengthFtFor={dimensionWallLengthFt ?? (() => 0)}
+            />
+          )}
           {/* ⚠ One provider for the whole scene rather than a prop on each of
               the eleven `PanelMembersGroup`s below — wall slots, gable tiles,
               opening assemblies, both decks, the bale foundation. A prop would

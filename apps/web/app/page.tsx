@@ -351,6 +351,17 @@ import {
   type WallAssemblyLayer,
 } from "@building-integrity/panel-catalog";
 import { SCALE_PX_PER_FT, formatFeetInches } from "./canvasGeometry";
+import {
+  boxAxisForWall,
+  boxChanged,
+  boxRefusalReason,
+  boxWithAxis,
+  buildingBoxFt,
+  buildingShapeKind,
+  footprintForBox,
+  snapToEighthFt,
+  type BuildingBoxFt,
+} from "./buildingResize";
 import LengthInput from "./LengthInput";
 import SlotIndexInput from "./SlotIndexInput";
 import ConcreteBlockStemWallDiagram from "./ConcreteBlockStemWallDiagram";
@@ -483,6 +494,7 @@ import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
 import { SCALE_PROP_PROVENANCE } from "./scaleProps";
 import { SITE_PROVENANCE } from "./site";
+import { dimensionHandles, wallFrame, type DimensionHandle, type DimensionHandleId } from "./dimensionHandles";
 import CompassWidget from "./CompassWidget";
 import PageFeaturesButton from "./PageFeaturesButton";
 import {
@@ -1035,6 +1047,16 @@ export default function LayoutEditor() {
    * effect.
    */
   const [showSiteOverride, setShowSiteOverride] = useState<boolean | null>(null);
+  /**
+   * ⚠ **U6 — dimension handles, 2026-11-07.** The same TRI-STATE as the two
+   * above, but the role answers the other way round: handles are CONTROLS, not
+   * scenery, so they are on for Fabricator, Admin and Engineer and off for
+   * **Public**. A client looking at a proposal should not be offered five ways
+   * to resize the building, and five badges floating over the model is the
+   * opposite of what a client-facing view is for. `null` = follow the role; a
+   * user's own tick sticks.
+   */
+  const [showDimensionHandlesOverride, setShowDimensionHandlesOverride] = useState<boolean | null>(null);
   const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
   const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
   /* ⚠ Half the roof is see-through by default, so a new project shows the
@@ -1252,6 +1274,8 @@ export default function LayoutEditor() {
   const showScaleProps3D = showScalePropsOverride ?? role === "public";
   /** U5's effective answer — the same derivation, for the same reason. */
   const showSite3D = showSiteOverride ?? role === "public";
+  /** U6's, inverted: the client gets the scenery, the builder gets the tools. */
+  const showDimensionHandles3D = showDimensionHandlesOverride ?? role !== "public";
   // Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
   // mockup: a free-text note signed "- Eng. Smith") — see
   // wallReviewNotes.ts's own doc comment for why this is separate from
@@ -3770,6 +3794,46 @@ export default function LayoutEditor() {
     return slotsByWallId;
   };
 
+  /**
+   * ⚠ **U6 stride 1 — THE ROOF SEAM FOR A PATH THAT RE-TILES, and it closes
+   * four bypasses rather than the two that were written down.**
+   *
+   * `applyShapeChange` (below) already refreshes the roof for every path that
+   * RESIZES a building. Four paths do not go through it, because they re-tile
+   * instead — they renumber or add walls, so there is no prior panel array to
+   * resize. Every one of them replaced the footprint and left the roof alone:
+   *
+   *  - `handleAddBumpOut` — `insertBumpOut` renumbers every wall.
+   *  - `handleDragWall`'s COLLAPSE branch — a wall is removed and the
+   *    survivors are renumbered.
+   *  - `handleKeepSplitRegion` — a drawn wall cuts the plan and the kept half
+   *    has new ids and a span that can differ by any amount.
+   *  - `commitFootprintShapeChange` — a courtyard flips whether gable ends are
+   *    allowed at all (`ringRoofGableBlockReason`).
+   *
+   * ⚠ **These RE-DERIVE unconditionally rather than asking
+   * `roofShapeChangeVerdict`, and that is deliberate.** The verdict decides by
+   * comparing gable-end wall IDs before and after. All four of these paths
+   * RENUMBER walls, so an id that matches across one of them is not the same
+   * wall — a second bump-out on an already-numeric plan can hand back `"0"`
+   * and `"4"` for two walls that have nothing to do with the two that carried
+   * those names. The verdict is unsafe here by construction. A stored gable
+   * profile keyed to a wall id that no longer means the same wall is not a
+   * roofline anybody shaped; it is stale state, and keeping it is how one wall
+   * stays a shed while its opposite becomes a gable.
+   *
+   * Takes and returns the retile RESULT rather than setting anything, so the
+   * caller still owns when the slots are written — same reason
+   * `applyRoofDefaultsForFootprint` returns its slots instead of setting them.
+   */
+  const withRederivedRoof = (
+    newFp: Footprint,
+    result: RetileWithRunStopMemoryResult,
+  ): RetileWithRunStopMemoryResult => ({
+    ...result,
+    slotsByWallId: applyRoofDefaultsForFootprint(newFp, result.slotsByWallId),
+  });
+
   const applyShapeChange = (oldFp: Footprint, newFp: Footprint, primary: Set<string>): boolean => {
     const ground = resizeSlotsForShapeChange(oldFp, newFp, baseWallSlots, primary, wallRunStopsByWallId);
     if (!ground) return false;
@@ -6033,13 +6097,75 @@ export default function LayoutEditor() {
    * `buildOctagonFootprint` always emits the same `"0".."7"` ids, so every
    * wall keeps its own panel array by key.
    */
-  const handleResizeOctagon = (next: { widthFt: number; depthFt: number }) => {
-    if (!footprint) return;
-    const fp = buildOctagonFootprint(next.widthFt, next.depthFt);
+  /**
+   * ⚠ **U6 stride 1 — THE ONE WAY TO CHANGE THE BUILDING'S SIZE.**
+   *
+   * > *"width, depth of building ... (oh boy maybe we run into panel setting
+   * > tiling ordering issues here)"* — Tommy, 2026-11-05
+   *
+   * His parenthesis is why this exists before any handle does. Width and depth
+   * used to be reached through four handlers that each rebuilt the footprint
+   * their own way — the typed wall-length editor (twice, once per shape), the
+   * octagon size panel and the octagon wall drag. A dimension handle would
+   * have been a fifth copy, and the first place a difference between them
+   * could hide. Everything that changes the building's SIZE now comes here.
+   *
+   * What it guarantees, in order:
+   *
+   *  1. **A shape without a box refuses out loud.** A bumped-out, split or
+   *     courtyard plan has more than two degrees of freedom; regenerating it
+   *     from two numbers would silently flatten it back to a rectangle. It is
+   *     resized wall by wall instead, and the notice says so.
+   *  2. **The eighth is the grid.** A pointer gives a continuous number and
+   *     every length this app fabricates from lives on an eighth of an inch,
+   *     so the value is snapped before anything is built from it — B29/B30's
+   *     rule for the panel editor's drag, applied to the building: *the
+   *     gesture proposes, the arithmetic disposes.*
+   *  3. **A no-op costs nothing.** A drag fires many times a second; a move
+   *     under a sixteenth of an inch does not re-run the resize.
+   *  4. **Panels are RESIZED, not re-tiled**, and **the roof follows the
+   *     shape** — both through `applyShapeChange`, which is the one path that
+   *     does those two things together.
+   *  5. **A refusal is reported.** `resizeSlotsForShapeChange` returns null
+   *     when a wall cannot shrink any further, and every caller used to
+   *     swallow that silently. On a typed field that reads as the number
+   *     snapping back for no reason; on a drag handle it would read as the
+   *     handle sticking.
+   *
+   * Returns whether the building actually changed size, so a caller can tell a
+   * refusal from a no-op.
+   */
+  const resizeBuildingBoxFt = (next: BuildingBoxFt): boolean => {
+    if (!footprint) return false;
+    const kind = buildingShapeKind(footprint, isBumpedOut);
+    const refusal = boxRefusalReason(kind);
+    if (refusal !== null) {
+      setPanelPlacementNotice(refusal);
+      return false;
+    }
+    const current = buildingBoxFt(footprint, isBumpedOut);
+    if (!current) return false;
+    const snapped = { widthFt: snapToEighthFt(next.widthFt), depthFt: snapToEighthFt(next.depthFt) };
+    /* Not a failure: the caller asked for the size it already is. */
+    if (!boxChanged(current, snapped)) return false;
+    const fp = footprintForBox(kind, snapped);
+    if (!fp) return false;
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
-    if (!applyShapeChange(footprint, fp, nextPrimary)) return;
+    if (!applyShapeChange(footprint, fp, nextPrimary)) {
+      setPanelPlacementNotice(
+        `A wall cannot shrink that far — its panels have nothing left to give. The building is still ${formatFeetInches(current.widthFt)} x ${formatFeetInches(current.depthFt)}.`,
+      );
+      return false;
+    }
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
+    return true;
+  };
+
+  /** The octagon size panel commits a whole box; it goes through the one
+   * seam like everything else that changes the size. */
+  const handleResizeOctagon = (next: BuildingBoxFt) => {
+    resizeBuildingBoxFt(next);
   };
 
   // Editing one wall's length resizes the whole shape so the parallel wall
@@ -6063,52 +6189,35 @@ export default function LayoutEditor() {
       setFootprint(fp);
       return;
     }
-    if (footprint.corners.length === 4) {
-      const isWidthWall = wallId === "AB" || wallId === "CD";
-      const currentWidthFt = footprint.walls.find((w) => w.id === "AB")!.lengthFt;
-      const currentDepthFt = footprint.walls.find((w) => w.id === "BC")!.lengthFt;
-      const fp = buildRectangleFootprint(
-        isWidthWall ? newLengthFt : currentWidthFt,
-        isWidthWall ? currentDepthFt : newLengthFt,
+    const kind = buildingShapeKind(footprint, isBumpedOut);
+    const box = buildingBoxFt(footprint, isBumpedOut);
+    const axis = boxAxisForWall(kind, wallId);
+    if (box && axis) {
+      /* ⚠ U6 stride 1: one seam. This branch used to rebuild the rectangle
+         here and the octagon fifty lines down, each committing its own way.
+         Typing a length into a wall is a BOX edit — which axis the wall drives
+         is `boxAxisForWall`'s answer — and every box edit goes one place. */
+      resizeBuildingBoxFt(
+        kind === "octagon"
+          ? /* ⚠ SOLVED, NOT APPROXIMATED — an octagon's `clip` falls out of
+               `min(W, D)`, so a typed straight-wall length is not the box
+               dimension. `setStraightWall` solves for the box in both
+               branches; adding a stale clip to the typed number is what made
+               typing 16 into a 40x24 octagon give back 12.458 and quietly
+               move the untouched wall (Tommy, 2026-10-20: "they start to get
+               really weird numbers and splitting the difference between
+               panels that shoundnt be changing values"). The coupling itself
+               is REAL — one shape, two degrees of freedom — and
+               `OctagonSizePanel` is where it is said out loud. */
+            setStraightWall(box, axis === "width" ? "straightWidth" : "straightDepth", newLengthFt).box
+          : boxWithAxis(box, axis, newLengthFt),
       );
-      const nextPrimary = new Set(fp.corners.map((c) => c.id));
-      // buildRectangleFootprint always uses the same fixed "AB"/"BC"/"CD"/
-      // "DA" wall ids regardless of dimensions, so baseWallSlots' keys stay
-      // valid here too.
-      if (!applyShapeChange(footprint, fp, nextPrimary)) return;
-      setFootprint(fp);
-      setPrimaryCornerIds(nextPrimary);
       return;
     }
 
-    const isWidthWall = wallId === "01" || wallId === "45";
-    const isDepthWall = wallId === "23" || wallId === "67";
-    if (!isWidthWall && !isDepthWall) return; // diagonal walls: not editable yet
-    /* ⚠ SOLVED, NOT APPROXIMATED — this line used to read
-       `newLengthFt + 2 * clipFt` with `clipFt` taken off the OLD shape,
-       while `buildOctagonFootprint` recomputes `clip` from `min(W, D)` of
-       the NEW box. Editing the longer axis left `min` alone and worked;
-       editing the SHORTER axis moved `clip` under the arithmetic, so the
-       number typed was not the number you got and the opposite wall
-       quietly resized. Measured on 2026-10-20: typing 16 into a 40x24
-       octagon's side wall returned 12.458 and moved the untouched wall
-       from 25.938 to 22.396. Tommy, same day: "they start to get really
-       weird numbers and splitting the difference between panels that
-       shoundnt be changing values."
-
-       `setStraightWall` solves for the box in both branches, so a typed
-       length lands within an eighth either side of the crossover. The
-       coupling itself is REAL and remains — one shape, two degrees of
-       freedom — and `OctagonSizePanel` is where it is said out loud. */
-    const box = octagonBoxOf(footprint);
-    if (!box) return;
-    const resized = setStraightWall(box, isWidthWall ? "straightWidth" : "straightDepth", newLengthFt);
-    const fp = buildOctagonFootprint(resized.box.widthFt, resized.box.depthFt);
-    const nextPrimary = new Set(fp.corners.map((c) => c.id));
-    // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
-    if (!applyShapeChange(footprint, fp, nextPrimary)) return;
-    setFootprint(fp);
-    setPrimaryCornerIds(nextPrimary);
+    /* Anything left is a wall that drives no axis of the box — an octagon's
+       four mitered walls, which ARE the clip and are not independently
+       editable. */
   };
 
   const isWallLengthEditable = (wallId: string): boolean => {
@@ -6283,7 +6392,12 @@ export default function LayoutEditor() {
     setWallRunStopsByWallId(nextRunStops);
     applyRetiledStory(
       "ground",
-      retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+      /* ⚠ U6 stride 1: the roof follows the shape here too — see
+         `withRederivedRoof` for why these four paths re-derive unconditionally. */
+      withRederivedRoof(
+        fp,
+        retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+      ),
       nextLeastAccessible,
     );
     setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, second: nextRememberedSecond }));
@@ -6331,14 +6445,19 @@ export default function LayoutEditor() {
     setLeastAccessibleCorner(nextLeastAccessible);
     applyRetiledStory(
       "ground",
-      retilePreservingOpenings(
+      /* ⚠ U6 stride 1: the roof follows the shape here too — see
+         `withRederivedRoof` for why these four paths re-derive unconditionally. */
+      withRederivedRoof(
         fp,
-        nextLeastAccessible,
-        nextPrimary,
-        oldSlotsByNewWallId,
-        wallRunStopsByWallId,
-        "ground",
-        unbuiltOpeningsByStoryAndWallId.ground,
+        retilePreservingOpenings(
+          fp,
+          nextLeastAccessible,
+          nextPrimary,
+          oldSlotsByNewWallId,
+          wallRunStopsByWallId,
+          "ground",
+          unbuiltOpeningsByStoryAndWallId.ground,
+        ),
       ),
       nextLeastAccessible,
     );
@@ -6430,7 +6549,12 @@ export default function LayoutEditor() {
     setWallRunStopsByWallId(nextRunStops);
     applyRetiledStory(
       "ground",
-      retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+      /* ⚠ U6 stride 1: the roof follows the shape here too — see
+         `withRederivedRoof` for why these four paths re-derive unconditionally. */
+      withRederivedRoof(
+        fp,
+        retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+      ),
       nextLeastAccessible,
     );
     // `applyRetiledStory` writes the GROUND half; the second story is not
@@ -6548,14 +6672,19 @@ export default function LayoutEditor() {
 
         applyRetiledStory(
           "ground",
-          retilePreservingOpenings(
+          /* ⚠ U6 stride 1: a collapse renumbers every surviving wall, so the
+             roof is re-derived with them — see `withRederivedRoof`. */
+          withRederivedRoof(
             fp,
-            nextLeastAccessible,
-            nextPrimary,
-            oldSlotsByNewWallId,
-            nextRunStops,
-            "ground",
-            nextRemembered,
+            retilePreservingOpenings(
+              fp,
+              nextLeastAccessible,
+              nextPrimary,
+              oldSlotsByNewWallId,
+              nextRunStops,
+              "ground",
+              nextRemembered,
+            ),
           ),
           nextLeastAccessible,
         );
@@ -6574,28 +6703,22 @@ export default function LayoutEditor() {
     // typed-length editor's octagon branch. A single wall's perpendicular
     // move is half of the whole shape's width/depth delta, since
     // buildOctagonFootprint grows/shrinks symmetrically about the center.
-    const isWidthWall = wallId === "01" || wallId === "45";
-    const isDepthWall = wallId === "23" || wallId === "67";
-    if (!isWidthWall && !isDepthWall) return; // diagonal walls: not draggable
-    /* The same reader the typed editor and the size panel use. A drag has
-       no typed number to honour, so applying an OFFSET to the box is correct
-       here — but the coupling still shows: dragging the shorter axis moves
-       `clip`, and the perpendicular walls with it. That is the shape, not a
-       bug, and `OctagonSizePanel` is where it is explained. */
-    const dragBox = octagonBoxOf(footprint);
-    if (!dragBox) return;
-    const { widthFt, depthFt } = dragBox;
-    const fp = buildOctagonFootprint(
-      isWidthWall ? widthFt + 2 * offsetFt : widthFt,
-      isDepthWall ? depthFt + 2 * offsetFt : depthFt,
+    const dragKind = buildingShapeKind(footprint, isBumpedOut);
+    const dragBox = buildingBoxFt(footprint, isBumpedOut);
+    const dragAxis = boxAxisForWall(dragKind, wallId);
+    if (!dragBox || !dragAxis) return; // diagonal walls: not draggable
+    /* A drag has no typed number to honour, so applying an OFFSET to the box
+       is correct here — but the coupling still shows: dragging the shorter
+       axis moves `clip`, and the perpendicular walls with it. That is the
+       shape, not a bug, and `OctagonSizePanel` is where it is explained.
+
+       ⚠ A single wall's perpendicular move is HALF the box's delta, because
+       `buildOctagonFootprint` grows and shrinks symmetrically about the
+       centre. ⚠ U6 stride 1: through the one seam, which also snaps the
+       dragged number to the eighth every cut lives on. */
+    resizeBuildingBoxFt(
+      boxWithAxis(dragBox, dragAxis, (dragAxis === "width" ? dragBox.widthFt : dragBox.depthFt) + 2 * offsetFt),
     );
-    const nextPrimary = new Set(fp.corners.map((c) => c.id));
-    // Same treatment as the typed-length editor's octagon branch: the shape
-    // regenerates symmetrically, every wall id survives, and each wall's
-    // panels are resized at the end that moved.
-    if (!applyShapeChange(footprint, fp, nextPrimary)) return;
-    setFootprint(fp);
-    setPrimaryCornerIds(nextPrimary);
   };
 
   // For rendering: butting walls' content starts inset from the actual
@@ -6984,6 +7107,82 @@ export default function LayoutEditor() {
    * read — and adding the SAME number to both of a tile's edges leaves its
    * own rake untouched.
    */
+  /**
+   * ⚠ **U6 — the five handles the model is wearing right now.**
+   *
+   * Built here rather than in `Building3DView` because every number they read
+   * lives in this component, and every number they WRITE goes back to a
+   * handler in it. The view draws them and decides nothing.
+   *
+   * ⚠ **The two roof handles only appear on a SINGLE-POINT roofline.** With
+   * two or three profile points the roof has been shaped by hand and "the
+   * ridge" is not point zero any more — a badge claiming to be the ridge would
+   * be moving whichever point happens to be first. The gable profile editor is
+   * the right surface for a hand-shaped roofline, and it already exists.
+   *
+   * ⚠ **FOUR of the five ship.** The peak slider is built and held back — see
+   * `PEAK_HANDLE_ENABLED` for the pre-existing crash that holds it, and the
+   * measurements behind that decision.
+   */
+  const dimensionHandleList: DimensionHandle[] =
+    footprint && showDimensionHandles3D
+      ? dimensionHandles({
+          footprint,
+          shapeKind: buildingShapeKind(footprint, isBumpedOut),
+          wallHeightFt,
+          eaveHeightFt: gableEaveHeightIn / 12,
+          roofRiseFt:
+            roofEnabled && gableEndWallIds.size > 0 && roofProfilePointHeightsFt.length === 1
+              ? (roofProfilePointHeightsFt[0] ?? 0)
+              : null,
+          gableWallId: [...gableEndWallIds][0] ?? null,
+          peakPositionFt: (() => {
+            const wallId = [...gableEndWallIds][0];
+            if (!wallId) return null;
+            const stored = gableProfilePositionsInByWallId[wallId]?.[0];
+            return stored === null || stored === undefined ? null : stored / 12;
+          })(),
+        })
+      : [];
+
+  /** The wall a POSITION handle runs along, so a thrown drag can be held on
+   * it rather than sliding off the end of the building. */
+  const dimensionWallLengthFt = (handle: DimensionHandle): number =>
+    (handle.wallId && footprint ? wallFrame(footprint, handle.wallId)?.lengthFt : undefined) ?? 0;
+
+  /**
+   * ⚠ **Every handle commits through the seam the typed field already uses.**
+   *
+   * Width and depth go to `handleEditWallLength`, which routes a box shape to
+   * `resizeBuildingBoxFt` — so a dragged octagon still has its box SOLVED by
+   * `setStraightWall` rather than taking the dragged length literally, and a
+   * refusal is still reported. The height goes to the same handler the
+   * sidebar's height field calls, so the wall-zone reconciliation happens
+   * either way. The peak goes to `handleChangeGableProfilePositionIn`, which
+   * already mirrors onto the paired gable wall and snaps to a shed at the ends
+   * — behaviour a handle must not reimplement.
+   */
+  const handleCommitDimension = (id: DimensionHandleId, valueFt: number) => {
+    const handle = dimensionHandleList.find((h) => h.id === id);
+    switch (id) {
+      case "width":
+      case "depth":
+        if (handle?.wallId) handleEditWallLength(handle.wallId, valueFt);
+        return;
+      case "wallHeight":
+        handleSetWallHeightFt(valueFt);
+        return;
+      case "roofHeight":
+        /* The ridge's RISE above the eave — see `roofProfilePointHeightsFt`'s
+           own doc comment for why it is a rise and not an absolute height. */
+        setRoofProfilePointHeightsFt((was) => (was.length === 1 ? [valueFt] : was));
+        return;
+      case "roofPeak":
+        if (handle?.wallId) handleChangeGableProfilePositionIn(handle.wallId, 0, valueFt * 12);
+        return;
+    }
+  };
+
   const gableTileRoofTopOffsetIn = (leftHeightIn: number, rightHeightIn: number, widthIn: number) => {
     if (!gableEndsFullHeight || !(widthIn > 0)) return gableEndsFullHeight ? thicknessIn : 0;
     return thicknessIn * Math.hypot(1, Math.abs(rightHeightIn - leftHeightIn) / widthIn);
@@ -13367,6 +13566,34 @@ export default function LayoutEditor() {
             stay visible with the grass on. Default follows the role, exactly like the props above.
           </p>
         )}
+        <label style={{ display: "block" }}>
+          <input
+            type="checkbox"
+            checked={showDimensionHandles3D}
+            onChange={(e) => setShowDimensionHandlesOverride(e.target.checked)}
+          />{" "}
+          Dimension handles
+        </label>
+        {showDimensionHandles3D && (
+          <p className={styles.note}>
+            Width, depth, wall height and ridge rise — floating on the model, each one draggable, steppable and
+            typeable. ⚠ The typed number is the master: a drag proposes a length and the commit snaps it to an
+            eighth, and on an octagon it solves for the box rather than taking the dragged figure literally. They
+            commit through the same code the sidebar’s own fields do, so the two cannot disagree. A bumped-out,
+            split or courtyard plan shows no width or depth handle — it has more than two dimensions and is resized
+            a wall at a time. ⚠ The fifth handle, the slider for where the ridge sits along the gable wall, is built
+            but held back: a peak stored near a wall’s end makes the gable row throw rather than refuse, which takes
+            the page down. That fault is older than this control and the elevation editor’s own Position slider still
+            reaches it.
+          </p>
+        )}
+        {showDimensionHandlesOverride === null && (
+          <p className={styles.note}>
+            On by default for <strong>Fabricator</strong>, Admin and Engineer and off in the Public view — these are
+            controls, not scenery, and the opposite way round from the two above. Tick or untick it and your answer
+            sticks whatever the role.
+          </p>
+        )}
         {floorsEnabled && (
           <label style={{ display: "block" }}>
             <input type="checkbox" checked={showFloorDeck3D} onChange={(e) => setShowFloorDeck3D(e.target.checked)} />{" "}
@@ -15089,6 +15316,9 @@ export default function LayoutEditor() {
                   strawTextured={strawTextured3D}
                   showScaleProps={showScaleProps3D}
                   showSite={showSite3D}
+                  dimensionHandles={dimensionHandleList}
+                  onCommitDimension={handleCommitDimension}
+                  dimensionWallLengthFt={dimensionWallLengthFt}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
                   showRoofPanels={roofEnabled && showRoofDeck3D}
                   /* ⚠ Straight out of `deckPanelTakeoffInput`, not

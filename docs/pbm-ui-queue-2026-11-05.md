@@ -37,7 +37,7 @@ thumbnails are one piece of work.
 | **U3** | Starter templates + rendered thumbnails | *"brilliant"*, *"absolutely totally awesome"* | **STRIDE 1 BUILT 2026-11-07** — eight tiles, real buildings, real plan previews. The 3D render thumbnails are stride 2. |
 | **U4** | Props for scale | yes | **BUILT 2026-11-07** — a 6-foot person, a car and a tree; default ON for Public, OFF for everyone else |
 | **U5** | Site toggle | yes | **BUILT 2026-11-07** — sky, lawn, horizon and a real sun shadow; the ground plane is back as a switch and sits under the floor deck |
-| **U6** | Dimension handles | *"genius move"* — 5 handles named | **specced, one risk to settle first** |
+| **U6** | Dimension handles | *"genius move"* — 5 handles named | **BUILT 2026-11-07** — the resize seam, four roof bypasses closed, and FOUR of the five handles; the peak slider is built and held back behind a pre-existing crash |
 | **U7** | Per-tool tutorial | yes — *"how would the remembering work?"* | **answered below; follows U2** |
 | **U8** | Share by link | yes | **ready, but it is a sharing decision** |
 
@@ -58,7 +58,12 @@ is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06
   also has to answer, in a shape U5 can copy.
 - ~~**U5**~~ **DONE 2026-11-07.** It copied U4's tri-state unchanged, and U4's
   props gained shadows out of it.
-- **U6** is front-loaded into a seam, not a UI — see its entry.
+- ~~**U6**~~ **DONE 2026-11-07**, seam first as planned. The seam found two more
+  roof bypasses than the notes recorded, and the handles found a pre-existing
+  crash that holds the fifth one back.
+- ~~**U6** is front-loaded into a seam, not a UI — see its entry.~~ **It was,
+  and it paid: the badges took a fraction of the seam's effort because every
+  one of them commits through it.**
 - **U7** once the names and the tools have stopped moving.
 - **U8** last, because it is a sharing decision and not a UI one.
 
@@ -230,7 +235,7 @@ panels are exactly why it must stay a switch.
 
 ---
 
-## U6 — Dimension handles on the model
+## U6 — ~~Dimension handles on the model~~ **BUILT 2026-11-07** — see the record at the end
 
 > *"Nothing crazy, but height (oh boy maybe we run into panel setting tiling
 > ordering issues here), width, depth of building, as well as the roof slider
@@ -954,4 +959,154 @@ an inch above it.
 - No console errors, no shadow acne, no peter-panning.
 
 Gates: 3928 tests / 207 files, typecheck clean in all four projects, lint
+169 / 119 / 50 — every rule byte-identical to the baseline.
+
+---
+
+## U6 — BUILT 2026-11-07: the seam first, then four of the five handles
+
+> *"Nothing crazy, but height (oh boy maybe we run into panel setting tiling
+> ordering issues here), width, depth of building, as well as the roof slider
+> (slides the peak position), and I guess roof height too."*
+
+⚠ **His parenthesis was the item.** The handles are a thin layer; the question
+underneath them is what a width or depth change does to the panels and to the
+roof. So stride 1 was the seam and stride 2 was the badges, in that order, and
+the badges turned out to be about a day's less work because of it.
+
+### Stride 1a — one way to change a building's size
+
+Width and depth were reached through **four** handlers that each rebuilt the
+footprint their own way: the typed wall-length editor (twice, once per shape),
+the octagon size panel and the octagon wall drag. A dimension handle would have
+been a fifth copy, and the first place a difference between them could hide.
+
+`resizeBuildingBoxFt` is now the only one, and everything above goes through it.
+In order, it:
+
+1. **Refuses a shape without a box, out loud.** A bumped-out, split or
+   courtyard plan has more than two degrees of freedom; regenerating it from two
+   numbers would silently flatten it back to a rectangle.
+2. **Snaps to the eighth** before anything is built from the number — B29/B30's
+   rule applied to the building: *the gesture proposes, the arithmetic
+   disposes.*
+3. **Ignores a no-op.** A drag fires many times a second; under a sixteenth of
+   an inch is not a move.
+4. **Resizes panels rather than re-tiling them, and re-derives the roof** —
+   both through `applyShapeChange`, the one path that does those together.
+5. ⚠ **Reports a refusal.** `resizeSlotsForShapeChange` returns null when a
+   wall cannot shrink any further and **every caller used to swallow it
+   silently.** On a typed field that reads as the number snapping back for no
+   reason; on a drag handle it would read as the handle sticking.
+
+⚠ The octagon still SOLVES rather than approximates: a typed or dragged
+straight-wall length goes through `setStraightWall`, because an octagon's clip
+falls out of `min(W, D)` and taking the dragged figure literally is the
+2026-10-20 "weird numbers" bug.
+
+### Stride 1b — the roof bypasses, and there were twice as many as the notes said
+
+`roof_follows_the_shape` recorded **two** paths that replaced the footprint and
+left the roof alone. Counting them found **four**:
+
+| path | why it must re-derive | was it on the list? |
+| --- | --- | --- |
+| `handleKeepSplitRegion` | a drawn wall cuts the plan; the kept half renumbers every corner | yes |
+| `commitFootprintShapeChange` | a courtyard flips whether gable ends are allowed at all | yes |
+| **`handleAddBumpOut`** | `insertBumpOut` renumbers every wall | ⚠ **no** |
+| **`handleDragWall`'s collapse branch** | a wall is removed and every survivor renumbered | ⚠ **no** |
+
+All four go through `withRederivedRoof` now, which re-derives
+**unconditionally** rather than asking `roofShapeChangeVerdict`. ⚠ That is
+deliberate and worth keeping: **the verdict decides by comparing gable-end wall
+IDS, and all four of these paths renumber walls.** An id that matches across a
+renumber is not the same wall — a second bump-out on an already-numeric plan can
+hand back `"0"` and `"4"` for two walls that have nothing to do with the two
+that carried those names. A gable profile keyed to such an id is not a roofline
+anybody shaped; it is stale state, and keeping it is how one wall stays a shed
+while its opposite becomes a gable.
+
+⚠ **`footprintChangeSeam.test.ts` is the guard that keeps it closed.** Every
+`setFootprint` in `page.tsx` is attributed to its handler and must be classified
+— `SEAM`, `REDERIVES`, `DRAW` or `LOADS` — and the test checks the handler's body
+really contains the call its class claims. A new one fails until it is named.
+That is what stops U6's own handles, or the next gesture after them, becoming
+bypass number five. The count went **down**, twelve sites to nine, because the
+three box-resize paths collapsed into one.
+
+⚠ `applyProjectState` is the one site that must NOT re-derive, and there is a
+test saying so: a saved file carries its own roof, and re-deriving would
+overwrite a roofline the user shaped — silently, on open.
+
+### Stride 2 — four badges on the model
+
+Each floats at its own point and offers the same number three ways: **chevrons**
+for a step, a **pointer drag** for a sweep, and a **typed field** for the truth.
+The typed field is the master; a drag never writes a number of its own.
+
+⚠ **The drag projects per gesture, not at a fixed sensitivity.** The same world
+foot is a different number of pixels depending on where the camera is, and the
+user can orbit between drags — so pointer-down takes the handle's own axis,
+projects it to screen, and the drag is a dot product along it. An axis pointing
+nearly at the camera is refused rather than running away with the building.
+Measured: dragging Depth 38px gave 16'-0" → **13'-0¾"**, a clean eighth.
+
+⚠ **The handles own no resize logic.** Width and depth go to
+`handleEditWallLength`, which routes to the stride-1 seam; the height goes to
+the same handler the sidebar's height field calls; the ridge rise goes to
+`roofProfilePointHeightsFt`. They cannot drift from the typed path because they
+ARE the typed path.
+
+⚠ **The roof handles only appear on a single-point roofline.** With two or three
+profile points the roof has been shaped by hand and "the ridge" is not point
+zero — a badge claiming otherwise would move whichever point happens to be
+first.
+
+Default **on for Fabricator, Admin and Engineer and off for Public** — the same
+tri-state U4 and U5 use, inverted, because these are controls rather than
+scenery and a client should not be offered five ways to resize the building.
+
+### ⚠ The fifth handle is built, tested and HELD BACK
+
+The peak slider — *"the roof slider (slides the peak position)"* — is finished
+and is not shipped. A gable peak stored too close to a wall's end produces a
+gable row containing a **zero-height tile**, and `buildGablePanelMembers`
+**throws** on it during render rather than refusing. That takes the **whole
+page** down, not just the 3D stop, because `BuildingSummaryRender` keeps a
+`Building3DView` mounted off-screen at all times.
+
+Measured on a 24 × 16 Tiny House: **0in fine, 12in crash, 24in crash, 36in
+crash, 48in fine.**
+
+⚠ **The fault is older than this control and nothing here caused it.** The
+elevation editor's own Position slider has shipped for weeks with `step={1}` and
+reaches every one of those values; that is how it was confirmed pre-existing,
+with the 3D view never opened.
+
+⚠ **And the first fix attempt was wrong, which is why the handle is out rather
+than fenced.** It snapped the peak clear of the 24in shed-snap threshold — a
+defensible rule on its own terms, since inside that band the roof IS a shed at
+the end and a badge reading `0'-1"` is lying about the model. But the 36in crash
+was already measured and on the page, and 24in is not clear of 36in. Picking a
+different number would have been guessing at a building value. So the control
+waits for the defect, behind `PEAK_HANDLE_ENABLED`, with its geometry still
+under test so it comes back working rather than rotting. The defect is written
+up as its own task with the reproduction, the measurements and the two candidate
+fix sites.
+
+### Verified in the running app
+
+- Four badges on a Tiny House: Width 24'-0", Depth 16'-0", Wall height 10'-0",
+  Ridge rise 5'-4" — the rise being exactly 16ft × 4/12.
+- Chevron: Width 24'-0" → 25'-0", through the whole seam.
+- Drag: Width 25'-0" → 33'-2" and Depth 16'-0" → 13'-0¾", both snapped.
+- Ridge rise and Wall height stepped cleanly, the model grew, no console error
+  after a deliberate marker.
+- ⚠ A collision the unit test missed: the height badge first hung off the depth
+  wall's top plate, which on a one-storey building is within inches of the eave,
+  so it landed under the peak slider. The fixture had the eave a foot above the
+  wall and showed nothing. The height badge now avoids the gable's wall, and the
+  overlap test runs over seven layouts including eave-at-top-plate.
+
+Gates: 3994 tests / 210 files, typecheck clean in all four projects, lint
 169 / 119 / 50 — every rule byte-identical to the baseline.

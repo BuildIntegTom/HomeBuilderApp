@@ -28,14 +28,22 @@ import { gableEndWallIdsFor, ringRoofGableBlockReason, type Footprint } from "@b
  *     snaps to a shed. One wall stays a shed and its opposite becomes a
  *     gable, which is exactly what he saw.
  *
- * ⚠ **Two footprint paths still bypass this**, and they are named rather
- * than quietly left: `commitFootprintShapeChange` (adding or removing a
- * COURTYARD, which flips whether gable ends are allowed at all — see
- * `ringRoofGableBlockReason`) and `handleKeepSplitRegion` (splitting a
- * building and keeping one half, which can change the span by any amount).
- * Both re-tile their own slots through a different route, so threading the
- * ridge-column placement through them is its own piece of work. Neither is
- * the resize he reported.
+ * ⚠ **Nothing bypasses this any more — U6 stride 1, 2026-11-07.** This note
+ * used to name TWO paths that re-tiled their own slots through a different
+ * route and left the roof alone: `commitFootprintShapeChange` (a COURTYARD,
+ * which flips whether gable ends are allowed at all — see
+ * `ringRoofGableBlockReason`) and `handleKeepSplitRegion` (splitting a plan
+ * and keeping one half). When U6 came to count them there were **four**:
+ * `handleAddBumpOut` and `handleDragWall`'s COLLAPSE branch had never been on
+ * the list, and both renumber every wall.
+ *
+ * All four go through `withRederivedRoof` now, which re-derives
+ * UNCONDITIONALLY rather than asking the verdict below. ⚠ That is deliberate:
+ * the verdict decides by comparing gable-end wall IDS, and all four of those
+ * paths renumber walls, so an id that matches across one of them is not the
+ * same wall. `footprintChangeSeam.test.ts` is the guard that keeps every
+ * footprint-replacing path classified, so U6's own dimension handles could not
+ * become a fifth.
  */
 
 /** The span a roof has to cross: the length of a gable end wall. */
