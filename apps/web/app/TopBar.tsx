@@ -47,6 +47,17 @@ export interface TopBarProps {
   onLoadProjectClick: () => void;
   siteContent: ReactNode;
   panelizerContent: ReactNode;
+  /**
+   * ⚠ **U7.** Fired when the Settings menu is OPENED, so page.tsx can offer
+   * the Panelizer's first-use tutorial. The Panelizer is a section inside this
+   * menu rather than a destination of its own, so "opening the tool" is this
+   * event and there is nowhere else to hang it.
+   *
+   * ⚠ An event, deliberately, rather than page.tsx watching a flag: a tutorial
+   * raised from an effect would be `set-state-in-effect`, which this repo's
+   * lint gate forbids from rising at all.
+   */
+  onSettingsOpened?: () => void;
   /** `page.tsx`'s one `editorTab` state. Since the tab dial was removed
    * (2026-09-29) the Design menu is its ONLY presentation — one source of
    * truth, one control — and `onEditorTabChange` is still `setEditorTab`, its
@@ -276,6 +287,7 @@ export default function TopBar({
   onLoadProjectClick,
   siteContent,
   panelizerContent,
+  onSettingsOpened,
   editorTab,
   onEditorTabChange,
   editorSurface,
@@ -347,6 +359,9 @@ export default function TopBar({
       setFullscreenMenu(null);
     } else {
       openMenuUnder(which, button);
+      /* ⚠ U7: opening Settings IS opening the Panelizer, which lives inside
+         it. Only on the way open — a toggle shut is not a first use. */
+      if (which === "settings") onSettingsOpened?.();
     }
   };
 

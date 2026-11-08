@@ -38,7 +38,7 @@ thumbnails are one piece of work.
 | **U4** | Props for scale | yes | **BUILT 2026-11-07** — a 6-foot person, a car and a tree; default ON for Public, OFF for everyone else |
 | **U5** | Site toggle | yes | **BUILT 2026-11-07** — sky, lawn, horizon and a real sun shadow; the ground plane is back as a switch and sits under the floor deck |
 | **U6** | Dimension handles | *"genius move"* — 5 handles named | **BUILT 2026-11-07** — the resize seam, four roof bypasses closed, and FOUR of the five handles; the peak slider is built and held back behind a pre-existing crash |
-| **U7** | Per-tool tutorial | yes — *"how would the remembering work?"* | **answered below; follows U2** |
+| **U7** | Per-tool tutorial | yes — *"how would the remembering work?"* | **BUILT 2026-11-07** — three cards each for the panel menu, the panel editor and the Panelizer, remembered per tool and per VERSION; the signed-in half is a backend stride |
 | **U8** | Share by link | yes | **ready, but it is a sharing decision** |
 
 Nothing here is blocked by anything in the B-queue, and nothing in the B-queue
@@ -61,10 +61,14 @@ is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06
 - ~~**U6**~~ **DONE 2026-11-07**, seam first as planned. The seam found two more
   roof bypasses than the notes recorded, and the handles found a pre-existing
   crash that holds the fifth one back.
+- ~~**U7**~~ **DONE 2026-11-07.** It needed U2's names to have stopped moving,
+  and it found that the `?` the cards are reopened from was painting behind the
+  sidebar.
 - ~~**U6** is front-loaded into a seam, not a UI — see its entry.~~ **It was,
   and it paid: the badges took a fraction of the seam's effort because every
   one of them commits through it.**
-- **U7** once the names and the tools have stopped moving.
+- ~~**U7** once the names and the tools have stopped moving.~~ **Done, and
+  the names held: not one card had to be rewritten for a button that moved.**
 - **U8** last, because it is a sharing decision and not a UI one.
 
 ---
@@ -276,7 +280,7 @@ quietly drop a panel.
 
 ---
 
-## U7 — A per-tool first-use tutorial
+## U7 — ~~A per-tool first-use tutorial~~ **BUILT 2026-11-07** — see the record at the end
 
 ⚠ **Follows U2**, which renames two buttons. Write the cards after the names
 have stopped moving.
@@ -1110,3 +1114,140 @@ fix sites.
 
 Gates: 3994 tests / 210 files, typecheck clean in all four projects, lint
 169 / 119 / 50 — every rule byte-identical to the baseline.
+
+---
+
+## U7 — BUILT 2026-11-07: three cards, the first time you touch a tool
+
+> *"I think this is a great idea, especially if it's remembered in their cache
+> or something and that's easy. How would the remembering part work?"*
+
+Three illustrated cards per tool, the first time it opens, with Done and a link
+to general help. The three tools are the ones the teardown named — the ones
+only discoverable if somebody tells you:
+
+| tool | the moment it fires |
+| --- | --- |
+| **The panel menu** | the first right-click on a panel, anywhere |
+| **The panel editor** | the first time it opens |
+| **The Panelizer** | the first time Settings opens |
+
+### The remembering, and its limit
+
+`bi.tutorialsSeen`, one key, **the tool's id against the VERSION of its
+tutorial that was seen** — exactly the shape in the spec, and verified in the
+browser as `{"panelizer":1,"panel-menu":1,"panel-editor":1}`.
+
+⚠ **Versioned rather than boolean, and that is the whole point.** When a tool
+genuinely changes, bumping its number shows the cards once more to somebody who
+has used the app for months. A `true` loses the one fact the feature needs.
+
+⚠ **The limit is printed on the last card** rather than left to be discovered
+on a second device: it survives a reload and closing the browser, and it does
+**not** survive another browser, another machine, a private window or clearing
+site data. Carrying it across devices means the same object stored against the
+signed-in user — a `jsonb` column, a policy, and a merge on sign-in. That is a
+backend stride and it is not this one. ⚠ `mergeTutorialsSeen` is written and
+tested anyway, because "take the higher version per tool" is the part that is
+easy to get wrong later: it makes a dismissal survive signing in, stops a
+dismissal on another machine coming back here, and is commutative and
+idempotent so the order of two loads cannot matter.
+
+⚠ **Reading never throws and never trusts what it finds.** `localStorage` is
+shared with the whole origin and editable by hand in two clicks of a devtools
+pane. Malformed JSON, an array, a string, a negative version — every one of
+them means "seen nothing", because the cost of being wrong is one extra
+tutorial and the cost of trusting it is a crash on load. Safari's private mode
+throws on `setItem`; that is caught and ignored, and the worst case is the
+behaviour the app had yesterday.
+
+⚠ **This is the app's FIRST `localStorage`**, and the asymmetry is worth
+knowing: the app now remembers which tutorials you have seen, and still does
+not remember your DESIGN — leaving the editor without saving still loses it.
+The Settings menu's own note already says so.
+
+### Two things that are architecture rather than decoration
+
+⚠ **Raised from EVENT HANDLERS, never from an effect.** "Show the cards when
+this tool opens" is the shape of a `useEffect` and must not be one:
+`react-hooks/set-state-in-effect` is a rule this repo's gate forbids from
+rising at all. Each tool's own opening handler asks instead — which is also
+more honest, because a tutorial is a response to an action and not to a state.
+The Panelizer is a SECTION of the Settings menu rather than a destination, so
+`TopBar` gained one `onSettingsOpened` callback; it fires on the way open only,
+because a toggle shut is not a first use.
+
+⚠ **The cards do not block the tool they teach.** A panel in the corner, not a
+modal: a card you must dismiss before you can look at the thing it describes
+teaches nothing. Verified with the panel menu open and the tour beside it, both
+fully usable. They are rendered at the page root, because two of the three
+tools are themselves transient — a context menu and a settings popover — and a
+tour mounted inside one would be unmounted by the first click it is teaching.
+
+### ⚠ The reopen route did not actually paint, and that had to be fixed
+
+> *"Always reachable afterwards: the `?` on the tool reopens its cards. A
+> tutorial you cannot get back is a tutorial you resent dismissing."*
+
+The `?` at the bottom of the left bar is the app's one help button and is in
+the same place on every editor tab, so it is where a dismissed tutorial comes
+back from — better than a per-tool `?`, because two of the three tools have no
+chrome of their own to hang one on.
+
+⚠ **Except it was painting behind the sidebar.** Measured 2026-11-07 with the
+panel editor open: the popup's rect was real, `aria-expanded` was `true`, and
+`elementFromPoint` at the popup's own centre returned
+`ElevationControls.structuralSection`. `zIndex: 100` could not win, because the
+competition is inside a stacking context an absolutely-positioned child does
+not escape. **That is a pre-existing fault in `PageFeaturesButton`** — the
+"Features of this page" list has presumably been invisible on this tab for as
+long as the sidebar has been this tall — and it had to be fixed here rather
+than noted, because a reopen route that does not paint is not a reopen route.
+
+It is portalled to the body with `position: fixed` now, anchored from the
+click's own `currentTarget` rect. ⚠ Not from a ref read during render: that is
+the trap U1 hit, where a ref read in a render-time helper pushed
+`react-hooks/refs` up by one in a gate that forbids it rising.
+
+### The writing is the work, and the tests treat it that way
+
+The teardown says the writing is the work rather than the code, so the content
+is asserted like anything else: three cards each, no card body under 80
+characters or over 420 (*"not a manual"* — a card nobody finishes teaches
+nothing), nine cards and nine DIFFERENT schematics, no repeated title, and a
+memory note that names every limit it has rather than only the promise.
+
+⚠ **Every claim on a card is a thing the app actually does**, checked against
+the code rather than written from memory — the greyed-out types with their
+reasons, the ⅛in snap after a face snap, the diagonal that becomes a nailer and
+says so, the pending marker that Repanelize applies. A tutorial describing a
+tool that has moved on is worse than none, because the reader believes it. That
+is what `version` is for when it happens.
+
+The illustrations are inline SVG schematics, not clip art: a cursor on a panel,
+a board caught against a face, a greyed row, the pending chip. ⚠ No asset — a
+file is a thing that can 404 or be served from a path that moves.
+
+### Verified in the running app
+
+- Settings opened → the Panelizer cards; Next, Next, Done through all three;
+  `localStorage` read back as `{"panelizer":1}`.
+- Reopening Settings → nothing. The remembering works.
+- First right-click on a panel → the panel-menu cards BESIDE a fully usable
+  menu, with the greyed types and their reasons visible behind it.
+- Opening the panel editor → its own cards, editor usable beside them.
+- The `×` records as seen too, not just Done.
+- The `?` → "Show me a tool again" → the panel editor's cards come back.
+- "Open the Read Me" closes the card and opens the Read Me.
+- No console errors.
+
+Gates: 4021 tests / 211 files, typecheck clean in all four projects, lint
+169 / 119 / 50 — every rule byte-identical to the baseline.
+
+### What is left
+
+**The signed-in half.** One `jsonb` column on the account, a policy, a read in
+the session the client already loads, a write on dismissal, and
+`mergeTutorialsSeen` — which is already written and tested — called once on
+sign-in. Worth doing when the first real users arrive, because until then there
+is nothing to carry between devices.

@@ -497,6 +497,17 @@ import { SITE_PROVENANCE } from "./site";
 import { dimensionHandles, wallFrame, type DimensionHandle, type DimensionHandleId } from "./dimensionHandles";
 import CompassWidget from "./CompassWidget";
 import PageFeaturesButton from "./PageFeaturesButton";
+import TutorialCards from "./TutorialCards";
+import {
+  TUTORIALS,
+  TUTORIAL_TOOL_IDS,
+  markTutorialSeen,
+  readTutorialsSeen,
+  shouldShowTutorial,
+  writeTutorialsSeen,
+  type TutorialToolId,
+  type TutorialsSeen,
+} from "./tutorials";
 import {
   BugIcon,
   ReadMeIcon,
@@ -5660,6 +5671,47 @@ export default function LayoutEditor() {
      and a menu opened on one must not act on the other. */
   const [panelMenu, setPanelMenu] = useState<(PanelContextMenuTarget & { story: "ground" | "second" }) | null>(null);
 
+  /**
+   * ⚠ **U7 — the per-tool first-use tutorial.** His question, 2026-11-05:
+   * *"especially if it's remembered in their cache or something and that's
+   * easy. How would the remembering part work?"*
+   *
+   * ⚠ **Read once, lazily, and never again.** `localStorage` is synchronous
+   * and this is one small object, so there is no loading state and no flash of
+   * a card that has already been dismissed. ⚠ It is also safe to read during a
+   * server render: `readTutorialsSeen` answers `{}` where there is no `window`,
+   * and nothing is RENDERED from this value until the user opens a tool — so
+   * the server and the client agree on the first paint either way.
+   *
+   * ⚠ **Raised from EVENT HANDLERS, never from an effect.** "Show the cards
+   * when this tool opens" is the shape of a `useEffect` and must not be one:
+   * `react-hooks/set-state-in-effect` is a rule this repo's gate forbids from
+   * rising at all. Each tool's own opening handler asks instead, which is also
+   * more honest — a tutorial is a response to an action, not to a state.
+   */
+  const [tutorialsSeen, setTutorialsSeen] = useState<TutorialsSeen>(() => readTutorialsSeen());
+  const [activeTutorial, setActiveTutorial] = useState<TutorialToolId | null>(null);
+
+  /** Offers a tool's cards if this browser has not seen them at this version.
+   * Silent otherwise, and silent while another tutorial is already up — two
+   * tours at once would be worse than none. */
+  const requestTutorial = (id: TutorialToolId) => {
+    if (activeTutorial !== null) return;
+    if (!shouldShowTutorial(tutorialsSeen, id)) return;
+    setActiveTutorial(id);
+  };
+
+  /** ⚠ Dismissal IS the answer to "have you read this" — Done, Escape and the
+   * × all record it, because a user who closed the cards does not want them
+   * back every time they open the tool. The `?` is how they come back. */
+  const dismissTutorial = () => {
+    if (activeTutorial === null) return;
+    const next = markTutorialSeen(tutorialsSeen, activeTutorial);
+    setTutorialsSeen(next);
+    writeTutorialsSeen(next);
+    setActiveTutorial(null);
+  };
+
   const handlePanelContextMenu = (
     story: "ground" | "second",
     wallId: string,
@@ -5674,6 +5726,9 @@ export default function LayoutEditor() {
        Selected Panel note showing the one you are acting on, the same as a
        left click used to. */
     setSelectedSlot({ wallId, slotIndex, story });
+    /* ⚠ U7: the first right-click a user ever makes is the moment to say what
+       this menu is — it is the least discoverable control in the app. */
+    requestTutorial("panel-menu");
     setPanelMenu({
       story,
       wallId,
@@ -11734,7 +11789,14 @@ export default function LayoutEditor() {
    */
   const safetyIconCluster = (
     <SidebarIconCluster>
-      <PageFeaturesButton features={pageFeatures[editorTab]} />
+      <PageFeaturesButton
+        features={pageFeatures[editorTab]}
+        /* ⚠ U7: every tutorial is reachable here forever, dismissed or not.
+           Offered as "show me again" rather than only when unseen, because the
+           reader who wants it is the one who dismissed it too fast. */
+        tutorials={TUTORIAL_TOOL_IDS.map((id) => ({ id, tool: TUTORIALS[id].tool }))}
+        onShowTutorial={(id) => setActiveTutorial(id as TutorialToolId)}
+      />
       <SidebarIconButton
         label="Review Log — Items for Engineer/Contractor Review"
         active={openNoteIds.has("review-log")}
@@ -14487,6 +14549,10 @@ export default function LayoutEditor() {
           onLoadProjectClick={() => loadInputRef.current?.click()}
           siteContent={siteContent}
           panelizerContent={panelizerContent}
+          /* ⚠ U7: the Panelizer is a SECTION of this menu, not a destination,
+             so opening Settings is the only moment that means "opened the
+             Panelizer". */
+          onSettingsOpened={() => requestTutorial("panelizer")}
           editorTab={editorTab}
           onEditorTabChange={handleEditorTabChange}
           editorSurface={editorSurface}
@@ -15878,13 +15944,33 @@ export default function LayoutEditor() {
             menu, so its behaviour cannot differ by surface. It portals to
             `document.body`, so nothing inside a canvas, a note or a scroll
             container can clip it. */}
+        {/* ⚠ **U7's cards, rendered at the page root on purpose.** Two of the
+            three tools they teach are themselves transient — a context menu
+            and a settings popover — so a tour mounted inside one would be
+            unmounted by the first click it is teaching. Here it outlives the
+            thing it describes. It does not block the app: see
+            `TutorialCards`. */}
+        {activeTutorial !== null && (
+          <TutorialCards
+            tutorial={TUTORIALS[activeTutorial]}
+            onDone={dismissTutorial}
+            onOpenReadMe={() => {
+              dismissTutorial();
+              if (!openNoteIds.has("read-me")) handleToggleNote("read-me");
+            }}
+          />
+        )}
         <PanelContextMenu
           target={panelMenu}
           onClose={() => setPanelMenu(null)}
           onDeleteMerge={(wallId, slotIndex) => handleDeletePanel(panelMenu!.story, wallId, slotIndex)}
           onDeleteNoPanel={(wallId, slotIndex) => handleDeleteNoPanel(panelMenu!.story, wallId, slotIndex)}
           onChangeType={(wallId, slotIndex, type) => handleChangePanelType(panelMenu!.story, wallId, slotIndex, type)}
-          onOpenEditor={(wallId, slotIndex) => setPanelEditor({ story: panelMenu!.story, wallId, slotIndex })}
+          onOpenEditor={(wallId, slotIndex) => {
+            /* ⚠ U7: and the editor it opens into is the second. */
+            requestTutorial("panel-editor");
+            setPanelEditor({ story: panelMenu!.story, wallId, slotIndex });
+          }}
         />
 
         {/* ⚠ **B19's last stride — the panel editor.** Its own note, opened

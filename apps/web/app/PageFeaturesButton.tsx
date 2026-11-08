@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Tommy: "on some of the editor pages a user on a web browser cant really
@@ -22,10 +23,25 @@ import { useState } from "react";
  */
 export interface PageFeaturesButtonProps {
   features: string[];
+  /**
+   * ⚠ **U7 — where a dismissed tutorial comes back from.**
+   *
+   * > *"Always reachable afterwards: the `?` on the tool reopens its cards. A
+   * > tutorial you cannot get back is a tutorial you resent dismissing."*
+   *
+   * This `?` is the app's one help button and is in the same place on every
+   * editor tab, so it is the honest answer to "where did that go" — better
+   * than a per-tool `?`, because two of the three tools (a context menu and a
+   * settings section) have no chrome of their own to hang one on.
+   */
+  tutorials?: { id: string; tool: string }[];
+  onShowTutorial?: (id: string) => void;
 }
 
-export default function PageFeaturesButton({ features }: PageFeaturesButtonProps) {
+export default function PageFeaturesButton({ features, tutorials, onShowTutorial }: PageFeaturesButtonProps) {
   const [open, setOpen] = useState(false);
+  /** Where the popup floats, in viewport coordinates — see the portal below. */
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);
 
   return (
     <div style={{ position: "relative", lineHeight: 0 }}>
@@ -34,7 +50,19 @@ export default function PageFeaturesButton({ features }: PageFeaturesButtonProps
         aria-expanded={open}
         aria-label="Features of this page"
         title="Features of this page"
-        onClick={() => setOpen((was) => !was)}
+        /* ⚠ The anchor is measured from the EVENT's own target, never from a
+           ref read during render — that is the trap U1 hit, where a ref read
+           inside a render-time helper pushed `react-hooks/refs` up by one in a
+           gate that forbids it rising. */
+        onClick={(e) => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          const rect = e.currentTarget.getBoundingClientRect();
+          setAnchor({ left: rect.left, bottom: window.innerHeight - rect.top + 6 });
+          setOpen(true);
+        }}
         style={{
           width: 26,
           height: 26,
@@ -50,27 +78,42 @@ export default function PageFeaturesButton({ features }: PageFeaturesButtonProps
       >
         ?
       </button>
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Features of this page"
-          style={{
-            position: "absolute",
-            bottom: "100%",
-            left: 0,
-            zIndex: 100,
-            marginBottom: 6,
-            background: "#fff",
-            border: "1px solid #ccc",
-            borderRadius: 6,
-            padding: "10px 12px",
-            width: 260,
-            maxHeight: 320,
-            overflowY: "auto",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            fontSize: 12,
-          }}
-        >
+      {/* ⚠ **PORTALLED TO THE BODY, and that is a fix rather than a flourish.**
+          This popup used to be `position: absolute` inside the sidebar, where
+          it was painted BEHIND the sidebar's own later content: measured
+          2026-11-07 with the panel editor open, `elementFromPoint` at the
+          popup's own centre returned `ElevationControls.structuralSection`, so
+          the `?` opened something nobody could read. `zIndex: 100` could not
+          win, because the competition is inside a stacking context the popup
+          does not escape.
+
+          ⚠ U7 is why it had to be fixed now rather than noted: this popup is
+          where a dismissed tutorial comes back from, and *"a tutorial you
+          cannot get back is a tutorial you resent dismissing"*. A reopen route
+          that does not paint is not a reopen route. */}
+      {open &&
+        anchor !== null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-label="Features of this page"
+            style={{
+              position: "fixed",
+              left: anchor.left,
+              bottom: anchor.bottom,
+              zIndex: 300,
+              background: "#fff",
+              border: "1px solid #ccc",
+              borderRadius: 6,
+              padding: "10px 12px",
+              width: 260,
+              maxHeight: 320,
+              overflowY: "auto",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+              fontSize: 12,
+            }}
+          >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <strong>Features of this page</strong>
             <button
@@ -89,8 +132,37 @@ export default function PageFeaturesButton({ features }: PageFeaturesButtonProps
               </li>
             ))}
           </ul>
-        </div>
-      )}
+          {tutorials && tutorials.length > 0 && onShowTutorial && (
+            <div style={{ marginTop: 10, borderTop: "1px solid #e4e9ee", paddingTop: 8 }}>
+              <strong style={{ display: "block", marginBottom: 5 }}>Show me a tool again</strong>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3 }}>
+                {tutorials.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onShowTutorial(t.id);
+                    }}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      padding: 0,
+                      font: "inherit",
+                      color: "#3a5a8a",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t.tool}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
