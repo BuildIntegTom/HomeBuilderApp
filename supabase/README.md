@@ -19,6 +19,8 @@ than re-derived in every route that touches a project.
 | `migrations/0008_stage3_collaboration.sql` | Stage 3: `collaborators`, `share_notice_state`, the share functions, the creator-grant trigger, and the six Stage 2 objects that had to change. |
 | `migrations/0009_stage4_browsing.sql` | Stage 4: the cost redactor (`browse_schema_redaction`, `browse_redact`), the browse functions, `collab_requests` and its two functions, and `shareable_companies` tightened. |
 | `migrations/0010_smearforn_v25_redaction_seed.sql` | One row: the redaction classification for **file format 25**, which Smearforn Stage 0 bumped the app to. Until it is applied, a project saved since that bump cannot be browsed across a company line. Creates nothing and alters nothing. |
+| `migrations/0011_stage6_share_links.sql` | Stage 6: `share_links`, the five share-link functions, view-only grants (`collaborators.can_write`, `via_link_id`), and the four Stage 2/3 objects that had to change. **Applied 2026-11-08.** |
+| `migrations/0012_pricing_v26_and_company_rate.sql` | The redaction row for **file format 26** (the money key was RENAMED `priceModifier` -> `pricePerSqFt`), `companies.price_per_sq_ft`, and `browse_redact`'s belt widened to both key names. **Applied 2026-11-08.** |
 | `seed.sql` | The four real companies. |
 | `tests/stage1_rls.test.sql` | The Stage 1 verification script. |
 | `tests/stage2_rls.test.sql` | The Stage 2 verification script. Local or staging only. |
@@ -26,6 +28,7 @@ than re-derived in every route that touches a project.
 | `tests/stage3_rls.test.sql` | The Stage 3 verification script. Local or staging only. |
 | `tests/stage3_concurrency.test.sh` | Two connections sharing the same project with the same grantee at once. Local throwaway database only. |
 | `tests/stage4_rls.test.sql` | The Stage 4 verification script, the redactor above all. Local or staging only. |
+| `tests/stage6_rls.test.sql` | The Stage 6 verification script — share links and view-only grants, all five write paths. Local or staging only. |
 | `tests/local_shim.sql` | Local-only stand-in for Supabase's `auth` schema and default privileges. Never run on the project. |
 
 ## Running it, first time
@@ -2772,3 +2775,62 @@ display name, so their snapshots fall back to the email — which is the rule
   now".
 - **It is not the app.** The routes, the landing page, the Copy-link UI and the
   token generation are app-side work and are not in this file.
+
+---
+
+# 0012 — one price, and the first RENAMED key
+
+**Applied 2026-11-08.** Post-flight answered
+`1 | [["state","pricePerSqFt"]] | 2 | 1 | YES | true | 0 | 1`, matching the
+PGlite prediction value for value.
+
+Three things, all small, one of them easy to get wrong:
+
+1. **The redaction row for file format 26.** The app's money key was RENAMED
+   (`state.priceModifier` -> `state.pricePerSqFt`) when the 1.3x markup became
+   a flat $25/sq ft. Until this row exists, a project saved since that change
+   **cannot be browsed across a company line** — `browse_redact` refuses a
+   format it has no classification for, which is the right failure but still a
+   failure.
+
+   ⚠ **The v24 and v25 rows stay, and must.** A saved version is never
+   migrated in place, so a v25 document in `project_versions` is still browsed
+   by v25's rules forever. `older_rows_kept` in the post-flight is that
+   assertion. This is the first rename in the table's history — every earlier
+   format ADDED a key — so it is the first time two rows name different keys.
+
+2. **`companies.price_per_sq_ft`**, nullable, **no default**. Tommy's answer
+   when asked where an adjusted rate should live was *"the company, with a
+   per-project override"*. The column is live and **nothing reads it yet**;
+   the override half (a per-project rate) already ships.
+
+   ⚠ **The missing default is deliberate, not an omission.** $25 exists in
+   exactly one place, `priceRates.coveragePerSqFt` in the catalog. A column
+   default would be a second copy of that number which silently stops agreeing
+   the day the catalog changes. A company with no rate set falls back to the
+   catalog; `rate_has_no_default` in the post-flight asserts it.
+
+3. **`browse_redact`'s belt-and-braces check widened.** The function's
+   guarantee is the loop that declares and removes each classified path and
+   raises if one survives; underneath it there was a `jsonb_path_exists`
+   sweep for a money key at **any** depth, written naming `priceModifier`
+   literally. The rename meant that sweep silently stopped covering the live
+   format.
+
+   This was not a hole — the loop still held — but a safety net that quietly
+   stops covering the case it was written for is worse than no net, because
+   the next reader counts on it. It now names both keys, and
+   `redaction.test.ts` compares this file's seeded rows against the app's own
+   classification so a future rename cannot forget either half.
+
+## What 0012 does NOT do
+
+- **It does not read the company rate.** The column is inert. Wiring it up,
+  and deciding who may set it, is app-side work.
+- **It does not change any stored document.** No version is rewritten; the
+  rename is handled by the app's v25 -> v26 parser, which drops the old key and
+  opens the file at the catalog rate (there was no correct prior price to
+  preserve — the multiplier was double-counting).
+- **It does not price anything.** The $25 lives in the catalog, not the
+  database.
+
