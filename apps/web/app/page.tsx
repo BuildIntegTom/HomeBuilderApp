@@ -156,6 +156,7 @@ import {
   computePlasterLaborCost,
   computePlasterLaborHours,
   computeCoveragePrice,
+  billableAreaSqFt,
   PUBLIC_COVERAGE_RATE_PER_SQ_FT,
   type PriceablePanel,
   computeSillTapeLengthFt,
@@ -10896,7 +10897,12 @@ export default function LayoutEditor() {
         { type: "roof-panel", areaSqFt: deckPanelTakeoff.coverageSqFt.roof },
       ];
     return {
-      areaSqFt: priceable.reduce((sum, entry) => sum + entry.areaSqFt, 0),
+      /* ⚠ The BILLABLE area — whole square feet, floored — not the raw sum.
+         It has to be the same integer `computeCoveragePrice` multiplied, or
+         the printed arithmetic stops reconciling, which is the one thing it
+         exists to do. Reading it from the engine rather than flooring here
+         keeps a single definition of what a square foot of this building is. */
+      areaSqFt: billableAreaSqFt(priceable),
       total: computeCoveragePrice(priceable, effectivePricePerSqFt),
       /* What the same building costs at the catalog's list rate. Equal to
          `total` unless somebody has adjusted the rate, which is exactly the
@@ -15619,7 +15625,7 @@ export default function LayoutEditor() {
              compared to a competitor's number, which is the whole reason he
              wanted the method stated. The list-rate line appears only when
              the project has been quoted away from list. */
-          priceNote={`${price.areaSqFt.toFixed(2)} sq ft of coverage × $${effectivePricePerSqFt.toFixed(2)}/sq ft — one flat rate across every panel, beam and truss plate. Wall panels and the gable row by their standing face, floor and roof panels by what they cover (a roof up its real slope).${
+          priceNote={`${price.areaSqFt.toLocaleString()} sq ft of coverage × $${effectivePricePerSqFt.toFixed(2)}/sq ft — one flat rate across every panel, beam and truss plate. Wall panels and the gable row by their standing face, floor and roof panels by what they cover (a roof up its real slope).${
             Math.abs(price.total - price.listTotal) >= 0.01
               ? ` List rate $${PUBLIC_COVERAGE_RATE_PER_SQ_FT.toFixed(2)}/sq ft would be $${price.listTotal.toFixed(2)}.`
               : ""
@@ -15750,7 +15756,8 @@ export default function LayoutEditor() {
                           beam and truss plate. */}
                       <span className={styles.note}>
                         {" "}
-                        — {price.areaSqFt.toFixed(2)} sq ft of coverage × ${effectivePricePerSqFt.toFixed(2)}/sq ft.
+                        — {price.areaSqFt.toLocaleString()} sq ft of coverage × $
+                        {effectivePricePerSqFt.toFixed(2)}/sq ft.
                         Wall panels and the gable row by their standing face, floor and roof panels by what they
                         cover (a roof up its real slope). See Review Log
                       </span>
