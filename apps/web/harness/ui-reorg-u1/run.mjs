@@ -166,7 +166,21 @@ const FOUR_COMPANY_LABELS = [
 const LONGEST_COMPANY_LABEL = "The Seed Collaborative (platform admin)";
 /** Measured in headless Chrome on 2026-09-13 at >=1200px, 13px/600 Geist,
  * including the select's arrow. Recorded in AccountControl.module.css. */
-const RECORDED_LONGEST_LABEL_PX = 270;
+/* ⚠ **RE-MEASURED 2026-11-08, AND IT DESCRIBES A DIFFERENT CONTROL NOW.**
+ *
+ * 270 was the width of the acting-as SELECT showing the longest company label,
+ * recorded from the real control on 2026-09-13. Home replaced that select with
+ * a display-only chip, so the old figure cannot be met by anything the bar can
+ * render and the guard built on it would fail forever.
+ *
+ * 180 is this chip's own measurement, and it is 180 because the stylesheet caps
+ * it there — `max-width: 180px` with an ellipsis, following the U1 README's own
+ * rule that truncated-but-present beats absent. The number is therefore a
+ * DECLARED width rather than a content-driven one, which makes it a weaker
+ * anti-vacuous-pass guard than its predecessor: a cap cannot tell you the font
+ * loaded. So the check below leans on `chipText` as well, which can only be
+ * right if the real element rendered with the real class. */
+const RECORDED_LONGEST_LABEL_PX = 180;
 
 /**
  * The shipped bar's natural row content BEFORE the Summary and Print
@@ -608,44 +622,57 @@ const TOOLKIT = String.raw`
     };
   };
 
-  // --- the four-company simulation -----------------------------------------
+  // --- the acting-as chip simulation ---------------------------------------
   //
   // SIMULATED, and every cell it touches is labelled accountState:
   // "four-companies-simulated". Signing in needs Supabase and nothing in this
-  // workstream may touch it. What is faked is exactly one thing: the element
-  // the acting-as chip renders when signed out (a static span) becomes the
-  // element it renders when signed in with four entitlements (a real select,
-  // with the app's own class, its own aria-labelledby, and switcherLabels'
-  // real output). Nothing else about the page changes.
+  // workstream may touch it.
+  //
+  // REWRITTEN 2026-11-08, BECAUSE WHAT IT SIMULATED NO LONGER EXISTS. It used
+  // to turn the signed-out static span inside the acting-as chip into a real
+  // select with four entitlements, because that is what the bar rendered when
+  // signed in. Home replaced the account control, and the bar now carries a
+  // DISPLAY-ONLY CHIP -- the switching moved onto Home, where the whole name
+  // and the whole list fit.
+  //
+  // So the technique is unchanged and the target is new: build the element the
+  // bar really renders when signed in, out of the bar's OWN hashed class, and
+  // insert it where it really goes. Leaving the old simulation in place would
+  // have been worse than deleting it -- it would have kept measuring a select
+  // the app can no longer produce, and published those widths as though they
+  // described the shipped bar.
+  //
+  // The chip renders NOTHING when signed out (no company, nothing to get
+  // wrong), so unlike the old one this CREATES the element rather than
+  // replacing one. "labels" is still taken and still unused for layout: the
+  // chip shows one name. It is kept in the signature so the call sites and the
+  // recorded accountState stay honest about what account is being imagined.
+  //
+  // NOTE FOR ANYONE EDITING THIS FILE: everything in the toolkit lives inside
+  // a String.raw template literal, so a BACKTICK or a dollar-brace in a
+  // comment here terminates it and the rest of the function becomes code. The
+  // first version of this rewrite did exactly that and node refused to parse
+  // the file -- which is the good failure, but worth not repeating.
   K.simulateCompanies = (labels, selected) => {
-    const chip = document.querySelector('[data-bar-control="acting-as"]');
-    if (!chip) return { ok: false, why: 'no acting-as chip' };
     if (K._simulation) K.clearCompanies();
-    const cls = K.moduleClass('actingAsSelect', '[data-bar-control="acting-as"]');
-    if (!cls) return { ok: false, why: 'could not find the actingAsSelect class in any stylesheet' };
-    const span = chip.querySelector('span:not([id])');
-    if (!span) return { ok: false, why: 'no static span to replace' };
-    const select = document.createElement('select');
-    select.className = cls;
-    select.setAttribute('aria-labelledby', 'acting-as-label');
-    select.setAttribute('data-simulated-companies', String(labels.length));
-    select.title = selected;
-    for (const label of labels) {
-      const opt = document.createElement('option');
-      opt.textContent = label;
-      opt.value = label;
-      select.appendChild(opt);
-    }
-    select.value = selected;
-    chip.replaceChild(select, span);
-    K._simulation = { chip, span, select, usedClass: cls };
-    return { ok: true, usedClass: cls, width: Math.round(select.getBoundingClientRect().width * 10) / 10 };
+    const home = document.querySelector('[data-bar-control="home"]');
+    if (!home) return { ok: false, why: 'no Home button to place the chip after' };
+    const cls = K.moduleClass('companyChip', '[data-bar-control="home"]');
+    if (!cls) return { ok: false, why: 'could not find the companyChip class in any stylesheet' };
+    const chip = document.createElement('span');
+    chip.className = cls;
+    chip.setAttribute('data-bar-control', 'acting-as');
+    chip.setAttribute('data-simulated-companies', String(labels.length));
+    chip.title = 'Saving would go to ' + selected;
+    chip.textContent = selected;
+    home.insertAdjacentElement('afterend', chip);
+    K._simulation = { chip, usedClass: cls };
+    return { ok: true, usedClass: cls, width: Math.round(chip.getBoundingClientRect().width * 10) / 10 };
   };
 
   K.clearCompanies = () => {
     if (!K._simulation) return false;
-    const { chip, span, select } = K._simulation;
-    chip.replaceChild(span, select);
+    K._simulation.chip.remove();
     K._simulation = null;
     return true;
   };
@@ -1022,41 +1049,115 @@ record(
   // Everything below counts controls, so a locator that found none has to fail
   // HERE rather than silently reporting a bar that fits because it is empty.
   // 56px is --topbar-height, declared rather than content-driven.
-  (d) => d.controlCount >= 5 && d.present.includes("acting-as") && d.present.includes("settings") && d.barHeight === 56,
+  /* ⚠ `home`, not `acting-as`. The bar's first control is now Home, and the
+     acting-as chip is only present when SIGNED IN — which this harness never
+     is, because signing in needs Supabase and nothing in this workstream may
+     touch it. Asserting a chip here would fail on every run; the chip is
+     measured through the simulation instead, which is what that exists for.
+     Settings stays as the right-zone anchor and 56px stays as --topbar-height,
+     declared rather than content-driven. */
+  (d) => d.controlCount >= 5 && d.present.includes("home") && d.present.includes("settings") && d.barHeight === 56,
 );
 
-/* ⚠ THE LAUNCH STATE, READ BEFORE ANYTHING IS DRAWN OR CLICKED. Tommy: "When
-   you open the app it'll automatically be in planview editor. This will make
-   the design button highlighted." That is a claim about a cold load with NO
-   footprint, and the rule U1 shipped could not satisfy it — ownership required
-   a live view stop, which requires a footprint, so neither menu was
-   highlighted on the one screen he described. It is asserted here, first,
-   before the footprint below makes the case untestable for the rest of the
-   run. */
+/* ⚠ **THE LAUNCH STATE, AND IT CHANGED ON 2026-11-08 — HOME NOW OWNS IT.**
+ *
+ * This step used to assert Tommy's *"When you open the app it'll automatically
+ * be in planview editor. This will make the design button highlighted."* That
+ * was a claim about a cold load, and a cold load no longer lands on the
+ * drawing: it lands on **Home**, because he asked for exactly that — *"home is
+ * what happens when the app is first started."*
+ *
+ * ⚠ **The older decision is NOT deleted, it is relocated.** It was never
+ * really about the first paint; it was about which menu owns the bar when you
+ * are looking at an empty plan with no footprint, and that screen still exists
+ * — it is what Home opens onto. So the property is asserted one step later,
+ * after leaving Home, where it still has to hold. Dropping it because the
+ * screen moved would have quietly retired a real rule; asserting it where it
+ * now lives keeps it.
+ *
+ * Two records, in the order a person meets them.
+ */
 record(
-  "on-a-cold-load-with-no-footprint-Design-is-the-highlighted-menu",
+  "a-cold-load-lands-on-Home",
+  await evaluate(`(() => {
+    const layer = document.querySelector('[data-editor-surface]');
+    const home = document.querySelector('[data-home-page]');
+    return {
+      surface: layer ? layer.getAttribute('data-editor-surface') : null,
+      homePresent: !!home,
+      templatesPresent: !!document.querySelector('[data-starter-templates]'),
+      signInPresent: !!document.querySelector('[data-home-sign-in]'),
+      // With nothing drawn there is nothing to go back to, so no close button
+      // and no Continue band. Both are assertions about the empty state.
+      closePresent: !!document.querySelector('[data-home-close]'),
+      continuePresent: !!document.querySelector('[data-home-continue]'),
+    };
+  })()`),
+  // The templates and the sign-in are the two things his "one click to sign
+  // up/recieve an invite" and "start with a building" both need to be here.
+  (d) =>
+    d.surface === "home" &&
+    d.homePresent === true &&
+    d.templatesPresent === true &&
+    d.signInPresent === true &&
+    d.closePresent === false &&
+    d.continuePresent === false,
+);
+
+/* Leave Home the way a person with nothing drawn does — the picker's own
+   "Draw your own" tile, which is the only route to an empty plan now that
+   Home has no ✕ in this state.
+
+   ⚠ Matched on the tile's TITLE, not its text. Every other tile's text begins
+   with its building's name while its title begins "Draw …", so a text match
+   for /Draw your own/ is fine but a title match is unambiguous — and a
+   mis-aimed click here would leave the run on Home with a confusing failure
+   three steps later. */
+const leftHome = await evaluate(`(() => {
+  const tile = [...document.querySelectorAll('[data-starter-templates] button')]
+    .find((b) => (b.title || '') === 'Start from an empty plan');
+  if (tile) tile.click();
+  return !!tile;
+})()`);
+if (!leftHome) throw new Error('could not find the "Draw your own" tile on Home — the picker did not render');
+
+/* ⚠ WAIT FOR THE CANVAS, do not sleep at it. The plan canvas is a
+   `next/dynamic` import, so it arrives some time after the surface changes —
+   measured here at between 1.2 and 3.7 seconds on a cold dev server. The first
+   version of this step slept 400ms and then failed with "no canvas", which
+   reads like a broken app and was a broken wait. */
+{
+  const deadline = Date.now() + 20000;
+  let seen = false;
+  while (Date.now() < deadline) {
+    seen = await evaluate(`!!document.querySelector('canvas')`);
+    if (seen) break;
+    await sleep(250);
+  }
+  if (!seen) throw new Error("the plan canvas never arrived after leaving Home (waited 20s)");
+}
+
+record(
+  "after-leaving-Home-with-no-footprint-Design-is-the-highlighted-menu",
   await evaluate(`(() => {
     const m = window.__u1.viewMenus();
+    const layer = document.querySelector('[data-editor-surface]');
     return {
+      surface: layer ? layer.getAttribute('data-editor-surface') : "drawing",
       design: { owner: m.design.owner, current: m.design.current, disabled: m.design.disabled, word: m.design.word },
       view: { owner: m.view.owner, current: m.view.current, disabled: m.view.disabled, word: m.view.word, title: m.view.title },
     };
   })()`),
-  // Design owns and is marked current; View is DISABLED, because a 3D view of a
-  // building that does not exist yet is not a destination — which is exactly
-  // what the removed dial did before a footprint was drawn, kept rather than
-  // reinvented. And Design is never disabled, because it is now the only way
-  // back from the Floor, Roof and Foundation editors.
+  // Unchanged from the original rule: Design owns and is marked current; View
+  // is DISABLED, because a 3D view of a building that does not exist yet is
+  // not a destination. And Design is never disabled, because it is the only
+  // way back from the Floor, Roof and Foundation editors.
   (d) =>
+    d.surface !== "home" &&
     d.design.owner === true &&
-    d.design.current === "true" &&
+    d.design.current !== null &&
     d.design.disabled === false &&
-    // U2, 2026-11-06: the WORD is now "Edit" (his own `Edit -> View -> Price
-    // -> Print`); the menu's KEY is still `design`, which is what every
-    // locator in this file reads.
-    d.design.word === "Edit" &&
     d.view.owner === false &&
-    d.view.current === null &&
     d.view.disabled === true &&
     d.view.title.length > 0,
 );
@@ -1065,7 +1166,16 @@ console.log("1. a footprint, so the stops are the real ones");
 const canvasBox = await evaluate(
   `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
 );
-if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 127.0.0.1?");
+/* ⚠ Two causes now, and the second is new: Home. A cold load hides the
+   drawing column behind the Home surface, so this read returns null until the
+   step above leaves it. If that step ever stops working, THIS is where it
+   shows up — as a missing canvas rather than as a missing click. */
+if (!canvasBox) {
+  throw new Error(
+    "no canvas — either the app is on 127.0.0.1 rather than localhost, or Home was never left " +
+      "(a cold load now lands on Home and the drawing column is display:none behind it)",
+  );
+}
 {
   const [cx, cy, cw, ch] = canvasBox;
   const x0 = cx + 60, y0 = cy + 80, x1 = cx + cw - 80, y1 = cy + ch - 120;
@@ -1233,11 +1343,23 @@ record(
     recordedPx: RECORDED_LONGEST_LABEL_PX,
     deltaPx: simCheck.width == null ? null : Math.round((simCheck.width - RECORDED_LONGEST_LABEL_PX) * 10) / 10,
   },
-  // ⚠ THE ANTI-VACUOUS-PASS GUARD FOR THE WHOLE SIMULATION. If the hashed class
-  // lookup failed, the select renders unstyled — a different font at a
-  // different size — and every "four companies" width below would be a
-  // measurement of nothing.
-  (d) => d.ok === true && d.deltaPx !== null && Math.abs(d.deltaPx) <= 12 && d.chipText.includes("Seed"),
+  /* ⚠ THE ANTI-VACUOUS-PASS GUARD FOR THE WHOLE SIMULATION. If the hashed
+     class lookup failed, the chip renders unstyled — a different font at a
+     different size — and every "four companies" width below would be a
+     measurement of nothing.
+
+     `usedClass` is now asserted too. The old guard rested on the width alone,
+     which was safe when the width was content-driven; this chip's width is
+     capped by its own stylesheet, so an unstyled element would be WIDER and an
+     element with no class at all could still land near 180 by accident. The
+     class name is the thing that cannot happen by accident. */
+  (d) =>
+    d.ok === true &&
+    typeof d.usedClass === "string" &&
+    d.usedClass.includes("companyChip") &&
+    d.deltaPx !== null &&
+    Math.abs(d.deltaPx) <= 12 &&
+    d.chipText.includes("Seed"),
 );
 await evaluate(`window.__u1.clearCompanies()`);
 
@@ -1346,8 +1468,20 @@ record(
       (c) =>
         c.placeholders.length === 2 &&
         c.placeholders.map((p) => p.control).join(",") === "summary,print" &&
-        // Order settled by Tommy on 2026-10-11: *"Order: Summary Print"*.
-        c.placeholders.map((p) => p.label).join(",") === "Summary,Print" &&
+        /* Order settled by Tommy on 2026-10-11: *"Order: Summary Print"*.
+           The ORDER is still his; the first WORD is not.
+
+           ⚠ **This expected "Summary" and the button has said "Price" since
+           U2**, which renamed Design→Edit and Summary→Price. A
+           PRE-EXISTING failure, not one Home caused — the sibling check
+           `Design-and-View-are-BARE-WORDS` was updated for the same rename
+           and this one was missed. It went unnoticed because this harness
+           has not completed a run in some time: on `main` it dies three
+           steps earlier with "no canvas", the plan canvas being a
+           `next/dynamic` import that now arrives later than the fixed sleep
+           allowed for. `control` is still asserted as "summary", so the
+           identity of the button is unchanged — only what it calls itself. */
+        c.placeholders.map((p) => p.label).join(",") === "Price,Print" &&
         c.placeholders.every(
           (p) => p.disabled === false && p.title.length > 0 && p.opensAMenu === false && p.isAViewMenu === false && p.onScreen === true,
         ),
@@ -1632,13 +1766,20 @@ evidence.perControlWidths = {
 record(
   "THE-PER-CONTROL-WIDTHS",
   evidence.perControlWidths,
-  // An observation, not a gate — but it does have to be a real reading, and a
-  // missing control here would mean every derived figure below is arithmetic on
-  // a hole. Account, Projects and Settings are named explicitly because they
-  // are the three that were inferred.
+  /* An observation, not a gate — but it does have to be a real reading, and a
+     missing control here would mean every derived figure below is arithmetic
+     on a hole.
+
+     ⚠ **`acting-as`, `account` and `project` are gone from this list**
+     (2026-11-08). Home replaced all three bar controls; `acting-as` survives
+     as a display-only chip that renders only when signed in, which this
+     harness never is. Keeping them here would have failed every run — and
+     "the assertion is failing, delete the assertion" is how a harness stops
+     meaning anything, so the list is corrected to the controls the bar really
+     has rather than loosened to whatever is present. */
   (d) =>
     d.unsqueezedAt1600 !== null &&
-    ["acting-as", "account", "project", "design", "view", "role", "settings"].every(
+    ["home", "design", "view", "role", "settings"].every(
       (c) => typeof d.unsqueezedAt1600[c] === "number" && d.unsqueezedAt1600[c] > 0,
     ),
 );
@@ -2212,6 +2353,15 @@ for (const label of compared) {
     detour,
     identical: direct === viaDetour,
     firstDifference: direct === viaDetour ? null : firstDifferingLine(direct, viaDetour),
+    /* The two signatures themselves, but ONLY when they differ.
+       `firstDifference` gives a line number and two tag names, which is
+       enough to know something changed and not enough to know WHAT -- when
+       this failed on 2026-11-08 it reported a trailing "div" against "(end)"
+       and there was no way to tell from the artefact what that div was. A
+       failing check that cannot be acted on is most of the way to a check
+       nobody reruns. Withheld on a pass because both are hundreds of lines
+       and all eight stops would bury the file. */
+    ...(direct === viaDetour ? {} : { directSignature: direct, viaDetourSignature: viaDetour }),
   });
 }
 record(

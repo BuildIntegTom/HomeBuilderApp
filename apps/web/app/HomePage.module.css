@@ -1,0 +1,269 @@
+/* Home — the one door. See HomePage.tsx for why it is a surface rather than
+   an overlay.
+
+   ⚠ It owns its own scroll, for the reason StarterTemplatePicker.module.css
+   records: `.editorCanvasLayer` centres its child and clips the overflow,
+   which put the picker's box at y = -128 and cut off its whole first row.
+   Home is taller than the picker was, so the same trap is waiting here and
+   `align-self: stretch` + `overflow-y: auto` is the same fix. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: stretch;
+  width: 100%;
+  max-width: 1040px;
+  padding: 16px 20px 28px;
+  overflow-y: auto;
+}
+
+/* --- identity -------------------------------------------------------- */
+
+.identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--bi-border, #d8d4cc);
+  border-radius: 10px;
+  background: var(--bi-surface-raised, #fbfaf7);
+}
+
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.whoName {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bi-on-surface, #222);
+}
+
+.companyPick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.companyPickLabel,
+.companyStatic {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--bi-on-surface-muted, #6a6459);
+}
+
+.identityActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.close {
+  border: 1px solid transparent;
+  background: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--bi-on-surface-muted, #6a6459);
+  cursor: pointer;
+}
+
+.close:hover {
+  border-color: var(--bi-border, #d8d4cc);
+  color: var(--bi-on-surface, #222);
+}
+
+/* --- continue -------------------------------------------------------- */
+
+/* ⚠ Visually the loudest thing on the page when it is present. Home opens
+   over live work; this band is the reassurance that the work is still
+   there, so it reads before the templates do. */
+.continueBand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--bi-accent-border, #b9c7a8);
+  border-left-width: 4px;
+  border-radius: 10px;
+  background: var(--bi-accent-surface, #f2f6ec);
+}
+
+.continueText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.continueLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bi-on-surface-muted, #6a6459);
+}
+
+.continueName {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bi-on-surface, #222);
+  overflow-wrap: anywhere;
+}
+
+.continueDetail {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--bi-on-surface-muted, #6a6459);
+}
+
+/* --- bands ----------------------------------------------------------- */
+
+.bands {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.band {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--bi-border, #d8d4cc);
+  border-radius: 10px;
+  background: var(--bi-surface-raised, #fbfaf7);
+}
+
+.bandHeading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--bi-on-surface, #222);
+}
+
+.bandNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--bi-on-surface-muted, #6a6459);
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* --- controls -------------------------------------------------------- */
+
+/* One metrics block for both, so a row never reflows when a button changes
+   emphasis — the same reasoning TopBar.module.css records for .tool. */
+.button,
+.primary {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 1px solid var(--bi-border, #d8d4cc);
+  background: var(--bi-surface, #fff);
+  color: var(--bi-on-surface, #222);
+}
+
+.primary {
+  border-color: var(--bi-accent-border, #8ea87a);
+  background: var(--bi-accent, #6f8c58);
+  color: #fff;
+  font-weight: 600;
+}
+
+.button:hover {
+  border-color: var(--bi-on-surface-muted, #6a6459);
+}
+
+.button:disabled,
+.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.select,
+.input {
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  border: 1px solid var(--bi-border, #d8d4cc);
+  border-radius: 6px;
+  background: var(--bi-surface, #fff);
+  color: var(--bi-on-surface, #222);
+}
+
+.pasteRow {
+  display: flex;
+  gap: 8px;
+}
+
+.pasteRow .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--bi-danger, #a4342a);
+}
+
+/* --- the template confirm -------------------------------------------- */
+
+/* Inline, not a floating dialog: it is a consequence of a click that just
+   happened a few hundred pixels above, and a centred modal would lose that
+   connection. */
+.confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--bi-danger-border, #d8b4ae);
+  border-radius: 10px;
+  background: var(--bi-danger-surface, #fdf3f1);
+}
+
+.confirmText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--bi-on-surface, #222);
+}
+
+.confirmActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Move to… — label above the select, because its heading is a sentence
+   ("the folders are Rare Forms'"), not a field name. */
+.refileRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}

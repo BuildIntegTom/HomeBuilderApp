@@ -508,3 +508,35 @@
    tab dial hides). Both are deliberately left alone — the cap is Tommy's
    2026-09-13 decision, and what remains of the tab dial now that the bar
    carries no tabs is a question reported back, not one answered here. */
+
+/* ⚠ The acting-as chip — DISPLAY ONLY, and a safety control rather than
+   decoration. `harness/ui-reorg-u1` exists to defend one property: the company
+   you would be saving into is permanently visible, because a wrong-company
+   save is silent. Home replaced the account control that used to carry it
+   (2026-11-08), so the name stays here and only the switching moved.
+
+   It shares `.tool`'s metrics block so the row's height cannot shift, but it
+   is deliberately NOT a button: no hover, no pointer, not focusable. It reads
+   as a fact about the bar, not as something to click — which is what stops
+   anyone hunting for a dropdown that now lives on Home.
+
+   `max-width` + ellipsis rather than `white-space: nowrap` alone: the U1
+   README's rule is truncated-but-present beats absent, and an untruncated
+   long name would push the path group off a narrow bar instead. */
+.companyChip {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  border-radius: 6px;
+  color: var(--bi-on-surface-muted, #6a6459);
+  background: var(--bi-surface-sunken, #f1efe9);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  cursor: default;
+  user-select: none;
+}

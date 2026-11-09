@@ -139,6 +139,19 @@ export interface StarterTemplatePickerProps {
    * signed-out stranger believing this app has no cloud at all.
    */
   canOpenFromCloud: boolean;
+  /**
+   * ⚠ **Set when the picker is inside another scrolling surface** — which,
+   * since 2026-11-08, is everywhere: Home is its only mount.
+   *
+   * Its `.root` was written to be the DIRECT child of `.editorCanvasLayer`,
+   * so it takes the layer's full height and scrolls inside itself. That was a
+   * recorded fix (centring something taller than its container put its box at
+   * y = -128 and cut off the whole first row of tiles). Nested inside Home's
+   * own scrolling column the same rule collapses it to nothing: measured in
+   * the browser, the heading rendered and every tile was squeezed out of
+   * sight. Embedded, it lets the parent do the scrolling.
+   */
+  embedded?: boolean;
 }
 
 export default function StarterTemplatePicker({
@@ -147,9 +160,10 @@ export default function StarterTemplatePicker({
   onOpenFromCloud,
   onSignIn,
   canOpenFromCloud,
+  embedded = false,
 }: StarterTemplatePickerProps) {
   return (
-    <div className={styles.root} data-starter-templates="">
+    <div className={embedded ? styles.rootEmbedded : styles.root} data-starter-templates="">
       <h2 className={styles.heading}>Start with a building</h2>
       <p className={styles.sub}>
         Every tile below is a real drawn design — footprint, panels, openings and roof already on it. Pick one and

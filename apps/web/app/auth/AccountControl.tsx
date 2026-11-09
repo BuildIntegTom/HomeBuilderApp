@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import StickyNote from "../StickyNote";
 import { clampMenuLeft } from "../topBarMenus";
 import { useCompanyBackup } from "../cloud/useCompanyBackup";
 import AccountPanel from "./AccountPanel";
 import SignInForm from "./SignInForm";
-import { switcherLabels } from "./switcherLabels";
 import { useOptionalAuth } from "./AuthProvider";
 import styles from "./AccountControl.module.css";
 
@@ -40,7 +39,6 @@ export default function AccountControl() {
   const [open, setOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
-  const [switchError, setSwitchError] = useState<string | null>(null);
   // Stage 2D. Held here, not in AccountPanel: the note unmounts the panel when
   // it closes, and closing it must not kill a backup in progress. Called before
   // the no-provider early return below, so the hook order never changes.
@@ -58,16 +56,22 @@ export default function AccountControl() {
     return () => window.removeEventListener("resize", onResize);
   }, [open]);
 
-  // The Project ▾ menu's "Sign in to save projects to the cloud" line opens this
-  // control rather than a second sign-in form. It gates nothing: local Save and
-  // Load work either way.
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  /* Home's *Sign in* and *Account & company…* both open this control rather
+     than a second sign-in form, through this event. It gates nothing: local
+     Save and Load work either way.
+
+     ⚠ **IT USED TO ANCHOR UNDER A BUTTON, AND THAT BUTTON NO LONGER EXISTS.**
+     The handler read `buttonRef.current` and returned early when it was null
+     — which, once Home replaced the bar controls, was EVERY time. The note
+     would never have opened, and the symptom would have been Home's *Sign in*
+     doing nothing at all, silently.
+
+     Nothing failed: not typecheck, not 4139 tests, not the page. The only
+     thing that noticed was lint, reporting `openPanel` as unused — which is
+     the whole argument for the unused-variable rule being a gate and not
+     noise. It opens unanchored now, at StickyNote's own spawn position. */
   useEffect(() => {
     const onOpenRequest = () => {
-      const button = buttonRef.current;
-      if (!button) return;
-      const rect = button.getBoundingClientRect();
-      setPosition({ top: rect.bottom + 8, left: clampMenuLeft(rect.left, window.innerWidth) });
       setOpen(true);
     };
     window.addEventListener(OPEN_ACCOUNT_CONTROL_EVENT, onOpenRequest);
@@ -78,95 +82,49 @@ export default function AccountControl() {
   // No provider means no accounts, which reads the same as signed out.
   if (!auth) return null;
 
-  const { session, loading, setActingAs } = auth;
+  /* ⚠ `loading` and `setActingAs` are no longer read here. Both belonged to
+     the acting-as select, which moved onto Home when the bar controls went
+     (2026-11-08) — Home reads them from the same `useOptionalAuth`. */
+  const { session } = auth;
   const signedIn = Boolean(session.user);
-  const entitlements = session.entitlements;
 
-  const openPanel = (button: HTMLButtonElement) => {
+  /* ⚠ **NO ANCHOR ARGUMENT ANY MORE.** `openPanel` used to take the bar
+     button it hung under and position the note beneath it. The button is gone
+     (Home replaced it, 2026-11-08), so the note opens unanchored at
+     StickyNote's own default spawn position — which is right: there is
+     nothing left on the bar for it to point at, and an anchor computed from a
+     button that does not exist would have put it at 0,0. */
+  const openPanel = () => {
     setOpen((was) => {
-      const next = !was;
-      if (next) {
-        const rect = button.getBoundingClientRect();
-        setPosition({ top: rect.bottom + 8, left: clampMenuLeft(rect.left, window.innerWidth) });
-      } else {
-        setFullscreen(false);
-      }
-      return next;
+      if (was) setFullscreen(false);
+      return !was;
     });
-  };
-
-  // One label per entry; a company listed more than once has every entry tagged
-  // (switcherLabels.ts). Options are selected by company id, so such entries
-  // would all act the same: the title shows the first one's label.
-  const labels = switcherLabels(entitlements);
-  const label = (companyId: string) => {
-    const index = entitlements.findIndex((e) => e.companyId === companyId);
-    return index === -1 ? companyId : labels[index];
   };
 
   return (
     <div className={styles.group}>
-      {/* data-bar-control: the U1 width harness enumerates the bar's controls
-          and their rendered widths by these names (TopBar.tsx carries the
-          rest). The acting-as chip is the one the 2026-09-13 bug is about, so
-          it is the one every width assertion checks is still on screen. */}
-      <div className={styles.actingAs} data-bar-control="acting-as">
-        <span className={styles.actingAsLabel} id="acting-as-label">
-          Acting as
-        </span>
-        {!signedIn || entitlements.length === 0 ? (
-          <span
-            className={styles.actingAsStatic}
-            title={loading ? undefined : signedIn ? "No company" : "Not signed in"}
-          >
-            {loading ? "…" : signedIn ? "No company" : "Not signed in"}
-          </span>
-        ) : (
-          <select
-            className={styles.actingAsSelect}
-            aria-labelledby="acting-as-label"
-            // The name may be truncated on a narrow bar; the full name is
-            // always one hover away. Truncated-with-a-title beats absent.
-            title={session.actingAsCompanyId ? label(session.actingAsCompanyId) : undefined}
-            value={session.actingAsCompanyId ?? ""}
-            // A single entitlement still renders its company name at full
-            // contrast — legible, not hidden, not greyed into furniture.
-            disabled={entitlements.length === 1}
-            onChange={async (event) => {
-              setSwitchError(null);
-              try {
-                await setActingAs(event.target.value);
-              } catch (err) {
-                setSwitchError(err instanceof Error ? err.message : "Couldn't switch company");
-              }
-            }}
-          >
-            {entitlements.map((entitlement, index) => (
-              <option key={`${entitlement.companyId}:${entitlement.source}:${index}`} value={entitlement.companyId}>
-                {labels[index]}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      {/* ⚠ **THE BAR CONTROLS ARE GONE FROM HERE** (2026-11-08), and this
+          component is deliberately still mounted anyway.
 
-      <button
-        ref={buttonRef}
-        type="button"
-        className={open ? styles.buttonActive : styles.button}
-        data-bar-control="account"
-        aria-expanded={open}
-        onClick={(event) => openPanel(event.currentTarget)}
-      >
-        {signedIn ? "Account" : "Sign in"}
-        {/* Decorative (aria-expanded carries open/closed); dropped on a narrow
-            top bar so the width goes to the company name instead. */}
-        <span className={styles.caret} aria-hidden="true">
-          {" "}
-          {open ? "▲" : "▼"}
-        </span>
-      </button>
+          Home replaced the acting-as chip and the Account button on the bar
+          — Tommy: *"replace them, home should be the one door"*. What it did
+          NOT replace is everything this component still owns: the account
+          NOTE itself (two-factor, members, invites, company backup, Start a
+          new company), the `OPEN_ACCOUNT_CONTROL_EVENT` listener that three
+          callers use to open it, and `useCompanyBackup`, which is hoisted to
+          this level precisely so closing the note cannot kill a running
+          backup.
 
+          Unmounting it to remove two buttons would have taken all of that
+          with them, and the first symptom would have been Home's *Sign in*
+          doing nothing. So the buttons go and the component stays, rendering
+          only its note.
+
+          The acting-as name is NOT lost: the bar keeps a display-only chip
+          (see TopBar.tsx), which is the safety property
+          `harness/ui-reorg-u1` exists to defend — a wrong-company save is
+          silent. Switching company moved onto Home, where the full name and
+          the whole list fit. */}
       <StickyNote
         id="account-note"
         label={signedIn ? "Account" : "Sign in"}
@@ -188,7 +146,6 @@ export default function AccountControl() {
             {session.actingAsCompanyName ? `, so you are acting as ${session.actingAsCompanyName}` : ""}.
           </p>
         )}
-        {switchError && <p className={styles.error}>{switchError}</p>}
         {signedIn ? <AccountPanel backup={backup} /> :<SignInForm onDone={() => setOpen(false)} />}
       </StickyNote>
     </div>

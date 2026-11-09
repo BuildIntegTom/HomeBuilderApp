@@ -38,7 +38,24 @@ export const SUMMARY_SECTION_IDS: readonly string[] = ["detail-summary", "projec
  */
 export const ICON_REACHABLE_SECTION_IDS: readonly string[] = ["review-log"];
 
-export type EditorSurface = "drawing" | "summary" | "print";
+/**
+ * The four surfaces the editor column can be showing.
+ *
+ * ⚠ **`"home"` hosts no note sections**, and that is a deliberate difference
+ * from the other two. Summary and Print are *places the app's own notes move
+ * to*; Home is a destination with its own content — templates, identity, the
+ * cloud buttons, the paste box — and nothing from `allNoteSections` belongs on
+ * it. `hostSurfaceForSection` therefore answers `null` for it, which keeps
+ * every note where it already was rather than quietly emptying the drawing
+ * surface when somebody goes Home.
+ *
+ * It exists as a surface rather than as an overlay for the reason
+ * `editorSurface` exists at all (see its declaration in `page.tsx`): the
+ * drawing subtree stays MOUNTED behind it, so travelling Home cannot lose
+ * work — Tommy's *"just because you travel back to home doesnt reset the
+ * drawing youre currently on"*.
+ */
+export type EditorSurface = "drawing" | "home" | "summary" | "print";
 
 /**
  * Where a section renders, or `null` if no page claims it.

@@ -6,7 +6,9 @@ import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
+import { useOptionalAuth } from "./auth/AuthProvider";
 import { EDITOR_TAB_LABEL, type EditorTab } from "./editorTabs";
+import type { EditorSurface } from "./sectionSurfaces";
 import { destinationLabel, isViewStopLive, viewerStopLabel } from "./viewLabels";
 import {
   VIEWER_MENU_LABEL,
@@ -29,22 +31,22 @@ import {
   settingsMenuSections,
   type SettingsSectionId,
 } from "./topBarMenus";
-import type { CloudMenuModel } from "./cloud/useCloudProjects";
-import { CLOUD_FOLDERS, FOLDER_LABEL, isCloudFolder } from "./cloud/cloudTypes";
 import styles from "./TopBar.module.css";
 
 export interface TopBarProps {
-  /** Stage 2B: the Project ▾ status line and cloud group. Absent (undefined)
-   * renders the menu exactly as before. Nothing new goes on the bar itself. */
-  cloud?: CloudMenuModel;
+  /* ⚠ **`cloud` IS GONE FROM THIS COMPONENT** (2026-11-08). It fed the
+     Project ▾ note's status line, its cloud group and its Move to… picker,
+     and all three moved onto Home with the note. Nothing in the bar reads a
+     cloud model any more, so the prop is removed rather than left declared
+     and unread — an optional prop nothing consumes is a standing invitation
+     to pass it and wonder why nothing happens. `page.tsx` still owns the
+     model; it hands it to Home. */
   role: ViewerRole;
   onRoleChange: (role: ViewerRole) => void;
   showAllDetailPages: boolean;
   onShowAllDetailPagesChange: (value: boolean) => void;
   unitSystem: "imperial" | "metric";
   onUnitSystemChange: (value: "imperial" | "metric") => void;
-  onSaveProject: () => void;
-  onLoadProjectClick: () => void;
   siteContent: ReactNode;
   panelizerContent: ReactNode;
   /**
@@ -72,7 +74,13 @@ export interface TopBarProps {
    * never undo *which page you are looking at* — keeping it out of the
    * document means undo cannot see it at all, which is a stronger guarantee
    * than classifying it `transient` and trusting the classification. */
-  editorSurface: "drawing" | "summary" | "print";
+  /** ⚠ The shared type, not a copy of its members. The inline union here
+   * silently went stale when Home was added as a fourth surface; importing
+   * `EditorSurface` means the next one cannot. */
+  editorSurface: EditorSurface;
+  /** Home's click. A surface change, not a menu toggle. */
+  onGoHome: () => void;
+
   onEditorSurfaceChange: (surface: "drawing" | "summary" | "print") => void;
   /** Panelizer's keyhole — `page.tsx`'s `enabledEditorTabs`, which is derived
    * from the scope-of-work checkboxes. Read here, never duplicated: it decides
@@ -276,21 +284,19 @@ function GearIcon() {
  * under whichever control opened it, clamped to stay on screen.
  */
 export default function TopBar({
-  cloud,
   role,
   onRoleChange,
   showAllDetailPages,
   onShowAllDetailPagesChange,
   unitSystem,
   onUnitSystemChange,
-  onSaveProject,
-  onLoadProjectClick,
   siteContent,
   panelizerContent,
   onSettingsOpened,
   editorTab,
   onEditorTabChange,
   editorSurface,
+  onGoHome,
   onEditorSurfaceChange,
   enabledTabs,
   viewerStops,
@@ -334,6 +340,17 @@ export default function TopBar({
      the places that read it — there is one owner because there is one
      derivation. */
   const owningMenu = editorSurface === "drawing" ? viewerMenuOwner({ editorTab, currentStop: currentViewerStop }) : null;
+
+  /**
+   * ⚠ The acting-as company, read HERE rather than passed in — the same hook
+   * `AccountControl` has always used, and for the same reason: `page.tsx` has
+   * no session of its own, and inventing a prop chain to carry one fact across
+   * a 17,000-line file is how a second source of truth starts.
+   *
+   * `useOptionalAuth`, so a deployment with no accounts backend renders a bar
+   * with no chip instead of throwing.
+   */
+  const actingAsCompanyName = useOptionalAuth()?.session.actingAsCompanyName ?? null;
   /** What each menu offers, grouped by subject, out of the ONE list of stops and
    * the ONE enabled-tabs array the caller passed. Computed here rather than in
    * the render of each button so the bar's `disabled` state and the note's
@@ -523,20 +540,60 @@ export default function TopBar({
               still prints on every sheet — SheetTitleBlock renders its own
               wordmark and is untouched. */}
 
-          {/* Returns null with no AuthProvider (tests mount the editor that
-              way); it is a direct child so a null leaves no gap behind. */}
+          {/* ⚠ **RENDERS NO BAR CONTROL, AND IS MOUNTED ANYWAY.** It is now a
+              note and nothing else: the account panel (two-factor, members,
+              invites, company backup, Start a new company), the
+              `OPEN_ACCOUNT_CONTROL_EVENT` listener three callers use to open
+              it, and `useCompanyBackup`, hoisted to that level so closing the
+              note cannot kill a running backup.
+
+              ⚠ I deleted this line once while removing the bar buttons, and
+              nothing caught it but lint's unused-import warning — typecheck,
+              every test and the page itself were all happy, and the only
+              symptom would have been Home's *Sign in* doing nothing at all. */}
           <AccountControl />
 
+          {/* ⚠ **HOME REPLACED TWO CONTROLS HERE** (2026-11-08). `AccountControl`
+              and `Project ▾` both stood on this spot; Tommy: *"replace them,
+              home should be the one door ... most of the settings from some of
+              those buttons can be on the home page in bubbles and buttons."*
+
+              It is a BUTTON, not a menu — no caret, no `openMenu`, no anchored
+              note. Home is a surface, so clicking it navigates rather than
+              opening something over the bar, and a caret would promise a
+              dropdown that is not coming. */}
           <button
             type="button"
-            title="Save and load — the file. Site Properties and the Panelizer moved into ⚙ Settings."
-            className={openMenu === "project" ? styles.toolActive : styles.tool}
-            data-bar-control="project"
-            aria-expanded={openMenu === "project"}
-            onClick={(e) => toggleMenu("project", e.currentTarget)}
+            title="Start a building, open a saved design, sign in, or paste a link you were sent"
+            className={editorSurface === "home" ? styles.toolActive : styles.tool}
+            data-bar-control="home"
+            aria-current={editorSurface === "home" ? "page" : undefined}
+            onClick={onGoHome}
           >
-            Project{caret("project")}
+            ⌂ Home
           </button>
+
+          {/* ⚠ **A SAFETY CONTROL, NOT DECORATION, AND IT IS WHY THIS IS NOT
+              JUST ONE BUTTON.** `harness/ui-reorg-u1` exists to defend one
+              property: the acting-as company being permanently visible,
+              because **a wrong-company save is silent**. Removing
+              `AccountControl` deleted it, and Tommy chose to keep it rather
+              than take the cleaner bar.
+
+              DISPLAY ONLY — no select, no caret, not focusable. Switching
+              company moved to Home, where there is room for the whole name
+              and for the list. What stays here is the one fact you need while
+              you are drawing: whose project this would become.
+
+              It renders nothing at all when signed out or when there is no
+              company, rather than a placeholder: "" is a quieter lie than
+              "No company", and the signed-out case is already unmistakable
+              from Home reading *Sign in*. */}
+          {actingAsCompanyName ? (
+            <span className={styles.companyChip} data-bar-control="acting-as" title={`Saving would go to ${actingAsCompanyName}`}>
+              {actingAsCompanyName}
+            </span>
+          ) : null}
 
           {/* Design ▾ and View ▾ — THE app's view control since `ViewerDial`
               was removed (2026-09-28).
@@ -837,187 +894,17 @@ export default function TopBar({
         </div>
       </div>
 
-      <StickyNote id="project-note" label="Project" {...noteProps("project")}>
-        {/* Stage 2B. Only while a cloud project is open: what it is, and (if the
-            switcher points elsewhere) that saves still go to it. */}
-        {cloud && cloud.statusLines.length > 0 && (
-          <div className={styles.cloudStatus} data-cloud-status="">
-            {cloud.statusLines.map((line, i) => (
-              <p key={i} className={i === 0 ? styles.cloudStatusLine : styles.dropdownNote}>
-                {line}
-              </p>
-            ))}
-            {/* Stage 3B: Move to… on the status line. The folders are the
-                OWNER's, and the picker says so (spec, "Folder moves by a
-                collaborator"). Inside this note, not on the bar. */}
-            {cloud.refile && (
-              <select
-                className={styles.cloudRefile}
-                aria-label={cloud.refile.heading}
-                value=""
-                disabled={cloud.refile.busy}
-                onChange={(e) => {
-                  const folder = e.target.value;
-                  if (cloud.refile && isCloudFolder(folder)) cloud.refile.onMove(folder);
-                }}
-              >
-                <option value="">Move to…</option>
-                <optgroup label={cloud.refile.heading}>
-                  {CLOUD_FOLDERS.map((f) => (
-                    <option key={f} value={f} disabled={f === cloud.refile?.folder}>
-                      {FOLDER_LABEL[f]}
-                      {f === cloud.refile?.folder ? " (here now)" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            )}
-          </div>
-        )}
-        {cloud && cloud.menu.kind !== "absent" && <h3 className={styles.menuSectionTitle}>This computer</h3>}
-        {/* Save Project and Load Project: unchanged, and never sign-in-gated
-            (decision 14). Guests stay download-only.
+      {/* ⚠ **THE PROJECT NOTE IS GONE** (2026-11-08), not merely unreachable.
+          Home replaced its button, which would have left ~180 lines of markup
+          that nothing could open — and the harness found it still in the DOM,
+          counted as a note left open over the editor.
 
-            STAGE 4B: Save Project is NOT RENDERED while a browsed design is on
-            screen — it would hand over an editable copy of another company's
-            project as one JSON file. Load Project stays: it replaces the
-            browsed design with your own work, which is the way OUT of browsing,
-            not a way around it. */}
-        <div className={styles.menuList}>
-          {!cloud?.browsing && (
-            <button
-              type="button"
-              title="Download every input on this page as one JSON file"
-              className={styles.menuItem}
-              onClick={() => {
-                closeMenu();
-                onSaveProject();
-              }}
-            >
-              Save Project
-            </button>
-          )}
-          <button
-            type="button"
-            title="Load a previously saved project JSON file"
-            className={styles.menuItem}
-            onClick={() => {
-              closeMenu();
-              onLoadProjectClick();
-            }}
-          >
-            Load Project
-          </button>
-        </div>
-        {cloud && cloud.menu.kind === "sign-in-prompt" && (
-          <div className={styles.menuSection}>
-            <button
-              type="button"
-              title="Opens the account control. Save Project and Load Project work without signing in."
-              className={styles.menuItem}
-              onClick={() => {
-                closeMenu();
-                cloud.onSignIn();
-              }}
-            >
-              {cloud.menu.text}
-            </button>
-          </div>
-        )}
-        {cloud && cloud.menu.kind === "signed-in" && (
-          <div className={styles.menuSection} role="group" aria-label={cloud.menu.heading}>
-            <h3 className={styles.menuSectionTitle}>{cloud.menu.heading}</h3>
-            {cloud.menu.message && <p className={styles.dropdownNote}>{cloud.menu.message}</p>}
-            {(cloud.menu.saveToCloud || cloud.menu.saveAsNew || cloud.menu.openFromCloud || cloud.menu.versionHistory || cloud.menu.sharing) && (
-              <div className={styles.menuList}>
-                {cloud.menu.saveToCloud && (
-                  <button
-                    type="button"
-                    title={
-                      cloud.statusLines.length > 0
-                        ? "Save a new version of the cloud project that is open"
-                        : "Save this design as a new project in the company you are acting as"
-                    }
-                    className={styles.menuItem}
-                    disabled={cloud.busy}
-                    onClick={() => {
-                      closeMenu();
-                      cloud.onSaveToCloud();
-                    }}
-                  >
-                    {cloud.busy ? "Saving to cloud…" : "Save to cloud"}
-                  </button>
-                )}
-                {cloud.menu.saveAsNew && (
-                  <button
-                    type="button"
-                    title="Save a copy as a separate new project in the company you are acting as"
-                    className={styles.menuItem}
-                    disabled={cloud.busy}
-                    onClick={() => {
-                      closeMenu();
-                      cloud.onSaveAsNew();
-                    }}
-                  >
-                    Save as new cloud project…
-                  </button>
-                )}
-                {cloud.menu.openFromCloud && (
-                  <button
-                    type="button"
-                    title="Open a project saved in the cloud, or any of its earlier versions"
-                    className={styles.menuItem}
-                    onClick={() => {
-                      closeMenu();
-                      cloud.onOpenFromCloud();
-                    }}
-                  >
-                    Open from cloud…
-                  </button>
-                )}
-                {/* Stage 2C. Inside this note, not on the bar. */}
-                {cloud.menu.versionHistory && (
-                  <button
-                    type="button"
-                    title="Every saved version of the cloud project that is open: who saved it and when. Any of them can be opened."
-                    className={styles.menuItem}
-                    onClick={() => {
-                      closeMenu();
-                      cloud.onVersionHistory();
-                    }}
-                  >
-                    Version history
-                  </button>
-                )}
-                {/* Stage 3B. Inside this note, not on the bar. */}
-                {cloud.menu.sharing && (
-                  <button
-                    type="button"
-                    title="Who has access to the cloud project that is open, and share it with a person or a company"
-                    className={styles.menuItem}
-                    onClick={() => {
-                      closeMenu();
-                      cloud.onSharing();
-                    }}
-                  >
-                    Sharing…
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        {/* ⚠ SITE PROPERTIES AND PANELIZER USED TO BE TWO ITEMS HERE, each
-            opening a note of its own. U3 moved both into ⚙ Settings, which is
-            Tommy's own instruction of 2026-09-26: "speaking of which where is
-            it? We should move the content of the panelizer into the settings in
-            the top right" — and, for the scope checkboxes specifically, "all
-            floor, foundation, and roof options should be a checkbox toggle
-            under settings". They were two clicks deep behind a button whose
-            name (Project) did not say they were there; they are one click deep
-            now, behind the icon he named. Nothing left the bar: neither was
-            ever a bar control, so this move costs and buys zero bar width. */}
-      </StickyNote>
+          Everything in it moved to Home's "Your designs" band: Save/Open a
+          file, Save to cloud, Save as new, Version history, Sharing, and the
+          Move to… folder picker with the owner-named optgroup its own comment
+          insisted on. The one thing that did NOT survive as-is is the cloud
+          status line; Home's Continue band carries its first line instead,
+          which is where somebody now looks to see which project is open. */}
 
       {/* One note per view menu. Each lists ITS OWN stops and only its own,
           with the current one marked — which is the usable reading of Tommy's

@@ -166,3 +166,25 @@
     display: none;
   }
 }
+
+/* ⚠ The picker inside ANOTHER scrolling surface — i.e. Home, which since
+   2026-11-08 is its only mount.
+
+   `.root` above takes its container's full height and scrolls inside itself,
+   which is right when it IS the canvas layer's child and wrong when it is one
+   band among several in a column that already scrolls. Measured in the
+   browser before this existed: the heading rendered and every tile was
+   squeezed out of sight, because a flex child with `overflow-y: auto` will
+   happily shrink to nothing.
+
+   `flex: none` + `height: auto` is the whole difference: it takes the height
+   its tiles need and lets Home scroll. */
+.rootEmbedded {
+  composes: root;
+  align-self: auto;
+  overflow-y: visible;
+  flex: none;
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}

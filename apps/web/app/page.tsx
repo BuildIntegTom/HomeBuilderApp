@@ -447,7 +447,7 @@ import {
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 import { applyDrawTimeBracing } from "./drawTimeBracing";
 import { standardPanelMembersFor } from "./standardPanelMembers";
-import StarterTemplatePicker from "./StarterTemplatePicker";
+import HomePage from "./HomePage";
 import { footprintForPlan, type StarterPlan } from "./starterTemplates";
 import { bigHeaderFaceAreaSqFt } from "./bigHeaderTakeoff";
 import { toExportableAssemblies } from "./projectExportAssemblies";
@@ -537,7 +537,8 @@ import { NAMED_PANEL_TYPE_COLORS, PANEL_TYPE_LABELS } from "./panelColors";
 import { comparePanelSheets, distinctPanelName, panelSheetAccentColor, type PanelSheetIdentity } from "./panelSheetIdentity";
 import ProjectSummaryPage from "./ProjectSummaryPage";
 import { SectionSurfaceProvider, type SectionSurfaceValue } from "./SectionSurfaceContext";
-import { hostSurfaceForSection, unreachableSections } from "./sectionSurfaces";
+import { hostSurfaceForSection, unreachableSections, type EditorSurface } from "./sectionSurfaces";
+import { CLOUD_FOLDERS, FOLDER_LABEL, UNTITLED_LABEL, isCloudFolder } from "./cloud/cloudTypes";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
@@ -960,7 +961,23 @@ export default function LayoutEditor() {
    * must never undo *which page you are looking at*. Keeping it out of the
    * document means `undoHistory` cannot see it at all, which beats
    * classifying it `transient` and trusting the classification to hold. */
-  const [editorSurface, setEditorSurface] = useState<"drawing" | "summary" | "print">("drawing");
+  /* ⚠ FOUR values since Home (2026-11-08). `"home"` joins for exactly the
+     reasons this comment already gives: Tommy's *"just because you travel
+     back to home doesnt reset the drawing youre currently on"* is satisfied
+     for free by the mechanism, because the drawing column is hidden and
+     STILL MOUNTED behind every non-drawing surface. Home as an overlay would
+     have had to re-earn that; Home as a surface inherits it. */
+  /* ⚠ **STARTS AT HOME, and it needs no effect and no localStorage to do it.**
+     Tommy: *"home is what happens when the app is first started."*
+
+     The app has no project autosave — nothing restores a drawing on boot — so
+     `footprint` is ALWAYS null on the first render, and "first start" and
+     "every start" are the same state. A plain initial value is therefore the
+     whole feature. The alternative I was about to reach for, an effect that
+     notices `showStarterTemplates` and navigates, would have been a
+     `set-state-in-effect` (a rule `apps/web/AGENTS.md` forbids from rising)
+     bought for nothing. */
+  const [editorSurface, setEditorSurface] = useState<EditorSurface>("home");
 
   /**
    * U1 — whether the left bar is folded away.
@@ -2951,6 +2968,61 @@ export default function LayoutEditor() {
     [footprint, foundationType, pierSpacingFt],
   );
 
+  /* ---------------------------------------------------------------------
+     HOME (2026-11-08). Two derivations, both deliberately thin.
+     --------------------------------------------------------------------- */
+
+  /** What the Continue band says, or `null` when there is nothing to go back
+   * to. ⚠ Keyed on `footprint`, not on "has the user touched anything":
+   * a building that exists is a building you can lose, and that is the only
+   * question this band answers. */
+  const homeCurrent = useMemo(() => {
+    if (!footprint) return null;
+    const bits: string[] = [];
+    if (cloud.menuModel.statusLines.length > 0) bits.push(cloud.menuModel.statusLines[0]);
+    /* ⚠ Walls, not panels. `panelCounts` is derived hundreds of lines below
+       this point and reaching for it here is a use-before-declaration — which
+       the compiler caught. Wall count comes straight off the footprint, says
+       the same thing to a person ("this is the octagon, not the shed"), and
+       keeps this memo's dependencies to things that already exist. */
+    bits.push(footprint.walls.length === 1 ? "1 wall" : `${footprint.walls.length} walls`);
+    return { name: projectName.trim() || UNTITLED_LABEL, detail: bits.join(" · ") };
+  }, [footprint, cloud.menuModel.statusLines, projectName]);
+
+  /** ⚠ Every gate comes from `buildCloudMenu`'s own discriminated union, never
+   * from a bare `signedIn`. Home asking that question a second way is exactly
+   * what the starter tile's comment warns against, and Home has five more
+   * buttons to get wrong than the tile did. */
+  const homeCloudActions = useMemo(() => {
+    const menu = cloud.menuModel.menu;
+    const signedIn = menu.kind === "signed-in";
+    return {
+      canSaveToCloud: signedIn && menu.saveToCloud,
+      canSaveAsNew: signedIn && menu.saveAsNew,
+      canOpenFromCloud: signedIn && menu.openFromCloud,
+      /* Version history and Sharing both need a cloud project, which the
+         status lines are the app's existing evidence of. */
+      hasProjectOpen: cloud.menuModel.refile !== null,
+      onSaveToCloud: cloud.menuModel.onSaveToCloud,
+      onSaveAsNew: cloud.menuModel.onSaveAsNew,
+      onVersionHistory: cloud.menuModel.onVersionHistory,
+      onSharing: cloud.menuModel.onSharing,
+      /* Move to…, from the deleted Project note. The folder list is the
+         catalog's own, so Home cannot drift from the tree's labels. */
+      refile: cloud.menuModel.refile
+        ? {
+            heading: cloud.menuModel.refile.heading,
+            folder: cloud.menuModel.refile.folder as string,
+            busy: cloud.menuModel.refile.busy,
+            folders: CLOUD_FOLDERS.map((f) => ({ id: f as string, label: FOLDER_LABEL[f] })),
+            onMove: (folder: string) => {
+              if (isCloudFolder(folder)) cloud.menuModel.refile?.onMove(folder);
+            },
+          }
+        : null,
+    };
+  }, [cloud.menuModel]);
+
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
 
   /** U3 — see the picker's own render site for why all five terms are here. */
@@ -4229,6 +4301,13 @@ export default function LayoutEditor() {
       y: Math.max(20, Math.round((PLAN_CANVAS_HEIGHT_PX - depthFt * SCALE_PX_PER_FT) / 2)),
     });
     setStarterTemplatesDismissed(true);
+    /* ⚠ Picking a template is the one thing on Home that LEAVES Home. Tommy's
+       *"just because you travel back to home doesnt reset the drawing youre
+       currently on (unless you click a precon)"* — this is the precon, and
+       landing the person back on the drawing is what makes the parenthesis
+       visible rather than something they have to infer from a changed page
+       behind a surface they are still looking at. */
+    setEditorSurface("drawing");
     setViewMode("3d");
     /* ⚠ A refusal is REPORTED, never swallowed. `addCourtyard` refuses an
        inset that would self-intersect, and the tile would otherwise draw a
@@ -14614,15 +14693,13 @@ export default function LayoutEditor() {
     <div className={styles.page} ref={pageRef}>
       <div className="print-hidden-chrome">
         <TopBar
-          cloud={cloud.menuModel}
           role={role}
           onRoleChange={setRole}
           showAllDetailPages={showAllDetailPages}
           onShowAllDetailPagesChange={setShowAllDetailPages}
           unitSystem={unitSystem}
           onUnitSystemChange={setUnitSystem}
-          onSaveProject={handleSaveProject}
-          onLoadProjectClick={() => loadInputRef.current?.click()}
+          onGoHome={() => setEditorSurface("home")}
           siteContent={siteContent}
           panelizerContent={panelizerContent}
           /* ⚠ U7: the Panelizer is a SECTION of this menu, not a destination,
@@ -15283,24 +15360,16 @@ export default function LayoutEditor() {
                 and the picker comes back, which is right: with no footprint
                 there is nothing else for this surface to show, and an empty
                 stage with eight buildings on it beats an empty stage. */}
-            {showStarterTemplates && (
-              <StarterTemplatePicker
-                onPick={handlePickStarterTemplate}
-                onDrawYourOwn={() => setStarterTemplatesDismissed(true)}
-                onOpenFromCloud={cloud.menuModel.onOpenFromCloud}
-                onSignIn={cloud.menuModel.onSignIn}
-                canOpenFromCloud={
-                  /* ⚠ The Project menu's own answer, through its own
-                     discriminated union: `absent` (no backend, or the
-                     session still loading) and `sign-in-prompt` both
-                     mean no, and only a `signed-in` menu that offers
-                     the item means yes. Reading `signedIn` instead
-                     would make this tile and that menu disagree the
-                     moment MFA is pending. */
-                  cloud.menuModel.menu.kind === "signed-in" && cloud.menuModel.menu.openFromCloud
-                }
-              />
-            )}
+            {/* ⚠ THE PICKER NO LONGER RENDERS HERE. It moved onto Home
+                (2026-11-08), which is the one place templates live now —
+                Tommy: *"home should be the one door"*. `showStarterTemplates`
+                survives as the FIRST-RUN TRIGGER rather than as a render
+                gate: it still answers "is this an empty canvas nobody has
+                drawn on", and Home opens itself when it is true.
+
+                Leaving a second copy here would have been the easy change
+                and the wrong one — two surfaces offering the same nine tiles,
+                one of them reachable only until you drew something. */}
             {editorTab === "wall" && !showStarterTemplates &&
               (elevationWall ? (
                 <WallElevationDiagram
@@ -15594,6 +15663,56 @@ export default function LayoutEditor() {
             <div className={styles.editorPageLayer} data-editor-surface="summary">
               <div className={styles.editorPageIcons}>{safetyIconCluster}</div>
               <div ref={setSummaryHostEl} data-summary-page-host="" />
+            </div>
+          )}
+
+          {/* HOME — the one door (2026-11-08). Sits in the SAME slot as
+              Summary and Print, which is what gives it their one useful
+              property for free: the drawing column beside it is
+              `display: none` and still mounted, so going Home cannot lose a
+              building. */}
+          {editorSurface === "home" && (
+            <div className={styles.editorPageLayer} data-editor-surface="home">
+              <HomePage
+                templates={{
+                  onPick: handlePickStarterTemplate,
+                  onDrawYourOwn: () => {
+                    setStarterTemplatesDismissed(true);
+                    setEditorSurface("drawing");
+                  },
+                  onOpenFromCloud: cloud.menuModel.onOpenFromCloud,
+                  onSignIn: cloud.menuModel.onSignIn,
+                  /* ⚠ The Project menu's own answer, through its own
+                     discriminated union: `absent` (no backend, or the session
+                     still loading) and `sign-in-prompt` both mean no, and
+                     only a `signed-in` menu that offers the item means yes.
+                     Reading `signedIn` instead would make this tile and that
+                     menu disagree the moment MFA is pending. */
+                  canOpenFromCloud:
+                    cloud.menuModel.menu.kind === "signed-in" && cloud.menuModel.menu.openFromCloud,
+                }}
+                onSignIn={cloud.menuModel.onSignIn}
+                /* Both reach the account control, which still owns two-factor,
+                   the members list, invites, backup and Start a new company.
+                   Same destination, different words for why you are going. */
+                onAccountAndCompany={cloud.menuModel.onSignIn}
+                current={homeCurrent}
+                onBackToDrawing={() => setEditorSurface("drawing")}
+                onSaveFile={handleSaveProject}
+                onLoadFile={() => loadInputRef.current?.click()}
+                cloud={homeCloudActions}
+                onOpenShareToken={(token) => {
+                  window.location.href = `/share/${encodeURIComponent(token)}`;
+                }}
+                onOpenInviteToken={(token) => {
+                  window.location.href = `/invite/${encodeURIComponent(token)}`;
+                }}
+                /* ⚠ No way out when there is nothing behind Home. An ✕ that
+                   leads to a blank canvas is a trap dressed as an exit; the
+                   tiles' own "Draw your own" is the real route to an empty
+                   plan, and it says so. */
+                onClose={footprint !== null ? () => setEditorSurface("drawing") : null}
+              />
             </div>
           )}
 
