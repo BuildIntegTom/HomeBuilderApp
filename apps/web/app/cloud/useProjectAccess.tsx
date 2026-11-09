@@ -31,6 +31,7 @@ import {
   pendingRequestNoteLine,
   pendingRequestRowTitle,
 } from "./browseDisplay";
+import ShareLinkSection from "./ShareLinkSection";
 import styles from "./CloudProjects.module.css";
 
 /**
@@ -422,6 +423,17 @@ export function useProjectAccess({ onAuthProblem, onChanged }: UseProjectAccessO
                 </button>
               </div>
             </form>
+            {/* Stage 6. Share BY LINK, under the by-name share form, because
+                it answers the same question ("how does this person see it?")
+                with a different answer — a URL instead of an account that has
+                to exist already. Its own component and its own fetch: it
+                needs the project id and nothing else from this hook.
+
+                ⚠ Owner-side only in the UI; `create_share_link`,
+                `project_share_links` and `revoke_share_link` each check for
+                themselves in the database. This flag decides what is drawn,
+                never what is allowed. */}
+            <ShareLinkSection projectId={shown.projectId} viewerIsOwnerSide={shown.viewerIsOwnerSide} />
           </>
         ) : null}
         <div className={styles.actions}>

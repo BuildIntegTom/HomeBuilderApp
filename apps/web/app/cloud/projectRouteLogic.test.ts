@@ -771,7 +771,7 @@ describe("the project routes", () => {
       return statSync(path).isDirectory() ? files(path) : [path];
     });
 
-  it("exist for 2B, 2C (version list, rename), 3B (shared list, access list), 4C (asking for access) and Stage 5 (the delete preview), and not for 2D's backup", () => {
+  it("exist for 2B, 2C (version list, rename), 3B (shared list, access list), 4C (asking for access), Stage 5 (the delete preview) and Stage 6 (share links), and not for 2D's backup", () => {
     const routes = files(apiDir).map((p) => p.slice(apiDir.length).replace(/\\/g, "/"));
     expect(routes.sort()).toEqual([
       "/[id]/access-requests/route.ts",
@@ -780,6 +780,14 @@ describe("the project routes", () => {
       "/[id]/deletion/route.ts",
       "/[id]/rename/route.ts",
       "/[id]/route.ts",
+      /* Stage 6. Minting and listing live UNDER the project, because both are
+         questions about one project and both are answered by the owning
+         company. Revoking does NOT: a link is turned off by its id, at
+         /api/share-links/[id], so a caller cannot pass a project they can
+         read together with a link they cannot. Claiming and previewing are
+         not project routes either — the claimant has no project id and must
+         not be handed one. */
+      "/[id]/share-links/route.ts",
       "/[id]/versions/[versionId]/route.ts",
       "/[id]/versions/route.ts",
       "/route.ts",
