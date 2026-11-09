@@ -1294,3 +1294,34 @@ the drawing.** Only picking a template does. That is the opposite of how the
 picker behaves today (it IS the empty state), so it becomes a surface you can
 open over live work and close again — which makes it a modal over the editor,
 not a route.
+
+---
+
+## S2 shipped as stride A — Home, the one door (2026-11-08, `6819ce5`)
+
+The Home door described above is built. `editorSurface` gained a fourth value
+rather than growing an overlay, which is what makes his *"travelling home
+doesn't reset the drawing"* free rather than careful: the drawing column is
+`display: none` and still mounted, as it already was for Price and Print.
+
+**What is on Home:** identity (sign in / who you are / switch company / sign
+out), a Continue band when a drawing is open, the starter templates, the local
+and cloud document buttons including Move to…, and one paste box that takes
+both a `/share/` and an `/invite/` link — his *"one click to sign up/recieve an
+invite"*.
+
+**What is not, deliberately:** two-factor, members, invites, company backup and
+Start a new company stay in the account note behind one `Account & company…`
+button. He asked for *"most of the settings from some of those buttons"* —
+most of some. Flattening `AccountPanel`'s six sections onto the page is its own
+stride.
+
+### Still open
+
+- ⚠ **The 3D Layers panel is stuck in the sidebar after a 3D view** —
+  `task_c91a6fa6`, found by the harness once it could run that far. `viewMode`
+  and the reported stop appear to disagree, which may be bigger than the panel.
+- **Stride C, proposals**, is unbuilt: the anonymous designer sending a link a
+  company can adopt. See the plan at `.claude/plans/unified-snacking-swan.md`.
+- Home has no thumbnails on Continue or on the cloud list; U3 stride 2 (3D
+  template thumbnails) is also still open.
