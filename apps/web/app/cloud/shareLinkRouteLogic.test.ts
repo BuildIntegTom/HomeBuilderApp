@@ -552,6 +552,13 @@ describe("the routes themselves", () => {
     "share-links/claim/route.ts",
   ];
 
+  /**
+   * Every route that handles a share-link token, including the two that do NOT
+   * require a session — the preview, and `0013`'s sign-up. They are exempt from
+   * the session check and emphatically not from the token-hygiene checks below.
+   */
+  const ALL_TOKEN_ROUTES = [...GUARDED, "share-links/preview/route.ts", "auth/share-link/signup/route.ts"];
+
   /** ⚠ Matches the CALL, not the word.
    *
    * The first version of this test asserted the source merely *contained*
@@ -579,10 +586,45 @@ describe("the routes themselves", () => {
        `claim_share_link` are `security definer` precisely so that the caller
        does not need table rights, so an admin client would defeat the design
        rather than enable anything. */
-    for (const file of [...GUARDED, "share-links/preview/route.ts"]) {
+    for (const file of GUARDED) {
       expect(read(file), `${file} must not use the service role`).not.toContain("createSupabaseAdminClient");
       expect(read(file)).not.toContain("SERVICE_ROLE");
     }
+    expect(read("share-links/preview/route.ts")).not.toContain("createSupabaseAdminClient");
+  });
+
+  it("⚠ the SIGN-UP route is the one exception, and only for creating the user", () => {
+    /* It must hold the service key — nothing else can create an auth user. So
+       the rule it obeys instead is narrower and asserted here: the ADMIN
+       client is used ONLY for `createUser` and the matching `deleteUser`
+       rollback, never to read or write application tables. If it ever reaches
+       `.from(` or `.rpc(` on the admin client, the whole RLS argument that
+       every other route rests on is bypassed from inside the auth path. */
+    const signup = read("auth/share-link/signup/route.ts");
+    expect(signup).toContain("createSupabaseAdminClient");
+    /* ⚠ Asserted on how the admin client is USED, not on the text following
+       its construction. The first version of this test took a 40-character
+       window after `createSupabaseAdminClient()` and failed — the client is
+       assigned to a variable first, so the window ended at `admin.auth` and
+       never reached the method. Matching the variable's own property accesses
+       is both correct and stricter: it catches a use anywhere in the file,
+       not just one next to the constructor. */
+    /* ⚠ Two plain assertions, after three cleverer versions of this test each
+       failed on the shape of Supabase's own API (`admin.auth.admin.createUser`
+       contains both a variable named `admin` and a namespace called `admin`,
+       and every regex that tried to tell them apart tripped over one or the
+       other). The rule was always simple; the test now says it simply. */
+    const adminMethods = [...signup.matchAll(/auth\.admin\.(\w+)/g)].map((m) => m[1]);
+    expect(adminMethods.sort()).toEqual(["createUser", "deleteUser"]);
+    // Nothing in this file reads or writes an application table with it.
+    expect(signup).not.toMatch(/admin[\s\S]{0,20}\.from\(/);
+    /* And the RPCs go through the request's own client, so RLS still applies.
+       Asserted as the absence of the wrong thing rather than the presence of
+       the right one: `admin.rpc(` is the shape that would bypass every policy
+       this feature rests on, and it cannot be spelled accidentally. */
+    expect(signup).not.toMatch(/admin\s*\.\s*rpc\(/);
+    expect(signup).toContain('.rpc("share_link_permits_signup"');
+    expect(signup).toContain('.rpc("claim_share_link"');
   });
 
   it("⚠ the preview is the ONLY route without a session, and it is a POST", () => {
@@ -607,7 +649,7 @@ describe("the routes themselves", () => {
   });
 
   it("⚠ no route logs the token", () => {
-    for (const file of [...GUARDED, "share-links/preview/route.ts"]) {
+    for (const file of ALL_TOKEN_ROUTES) {
       const source = read(file);
       expect(source, `${file} must not log`).not.toMatch(/console\.(log|info|warn|error|debug)/);
     }

@@ -110,7 +110,12 @@ export default async function SharePage(props: { params: Promise<{ token: string
         {expiry ? <p>{expiry}</p> : null}
         {preview.lockedToEmail ? <p>{PREVIEW_LOCKED_LINE}</p> : null}
 
-        <ClaimShareLink token={token} signedInAs={signedInAs} projectName={preview.projectName} />
+        <ClaimShareLink
+          token={token}
+          signedInAs={signedInAs}
+          projectName={preview.projectName}
+          lockedToEmail={preview.lockedToEmail}
+        />
       </div>
 
       <Link className={pageStyles.back} href="/">

@@ -18,9 +18,26 @@ import {
 const MIN_PASSWORD_LENGTH = 8;
 
 /**
- * Accept an invite. This is the ONLY way an account comes into existence
- * (decision 3: invite-only, nobody self-registers). There is no sign-up route
- * anywhere else, and there must not be one.
+ * Accept an invite.
+ *
+ * ⚠ **This used to say it was the ONLY way an account comes into existence,
+ * and that "there must not be" another. That is no longer true**, and the
+ * sentence is replaced rather than left standing, because a comment forbidding
+ * something the codebase now does is worse than no comment — the next reader
+ * would take it as a rule and treat the other route as a bug.
+ *
+ * Tommy superseded it on 2026-11-08: *"the link is the invite to sign up
+ * too."* A live share link now also creates an account, at
+ * `app/api/auth/share-link/signup/route.ts`, which is built to this route's
+ * shape deliberately. The underlying rule is unchanged and both routes obey
+ * it: **nobody self-registers.** An account is created only by presenting a
+ * credential somebody else issued — an invite token or a share-link token,
+ * each 256 bits and each stored only as a SHA-256.
+ *
+ * The one thing that differs there, and the reason it could not simply reuse
+ * this route: an invite always names the mailbox it was sent to, so
+ * `email_confirm: true` below is honest. A share link usually does not, so
+ * that route decides per link. See `mayMarkEmailConfirmed`.
  *
  * Two cases, and both are normal:
  *
