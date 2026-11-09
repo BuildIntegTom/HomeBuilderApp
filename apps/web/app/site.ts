@@ -63,6 +63,44 @@ export interface SitePlanBoundsFt {
 export const SITE_GROUND_CLEARANCE_FT = 1 / IN_PER_FT;
 
 /**
+ * ⚠ **How much AIR a floor panel stands in, feet — two.**
+ *
+ * > *"separate the grass from floor panels by 2 ft — even if foundation is not
+ * > selected. we cant be having it look like these panels — when made of floor
+ * > panels — are touching the ground."* — Tommy, 2026-11-08
+ *
+ * This deliberately overturns the reasoning on `SITE_GROUND_CLEARANCE_FT`
+ * above, which says *"any larger and the building visibly floats"*. It turns
+ * out floating is the lesser evil: a straw floor panel bedded into grass reads
+ * as a slab-on-grade detail, and this system does not build one. A visible gap
+ * says "something holds this up" even when the thing holding it up has not
+ * been chosen yet, which is the honest picture.
+ *
+ * ⚠ **It applies only when NOTHING ELSE holds the building up**, and getting
+ * that wrong is a mistake I made and this module's own test caught.
+ *
+ * I first wrote it as `min(an inch under everything, two feet under the floor)`
+ * and claimed in this comment that a drawn foundation would therefore always
+ * win and meet grade. It does not. A bale foundation 3 ft deep sits under a
+ * floor deck whose own bottom is only ~1.3 ft down, so two feet under the deck
+ * is 3.29 ft — *lower than the foundation* — and the foundation came out
+ * floating two and a half inches above the grass. The very defect the shape
+ * was supposed to prevent.
+ *
+ * So the rule branches, and honestly: **a foundation defines grade when there
+ * is one**, and the two feet is the fallback for when there is not. That still
+ * satisfies his *"even if foundation is not selected"* — which is the case the
+ * fallback exists for — and it keeps the thing whose job is to touch the
+ * ground touching the ground.
+ *
+ * ⚠ **PRESENTATION ONLY.** Nothing that prices, weighs, exports or fabricates
+ * may read this. It is not a foundation height, and no real-world claim is
+ * made that a bale floor sits 24in clear of grade — that is a building
+ * question nobody has answered. It moves a grass plane in a 3D preview.
+ */
+export const SITE_FLOOR_PANEL_AIR_GAP_FT = 2;
+
+/**
  * ⚠ **The extra rotation `Building3DView` puts on a DECK group**, radians
  * about X — exported from here so there is exactly one expression of it and
  * the grass cannot be placed against a transform the renderer does not use.
@@ -185,9 +223,35 @@ export function lowestDrawnYFt(groups: readonly SitePlacedGroup[]): number {
   return lowest;
 }
 
-/** Where the grass goes: one inch under the lowest thing drawn. */
-export function siteGroundYFt(lowestDrawnY: number): number {
-  return Math.min(0, lowestDrawnY) - SITE_GROUND_CLEARANCE_FT;
+/**
+ * Where the grass goes.
+ *
+ * - **Something bears on the ground** (a bale foundation is drawn): an inch
+ *   under the lowest thing drawn, as it always was. The foundation meets grade,
+ *   which is its job, and whatever clearance that gives the floor deck above it
+ *   is the real answer rather than one this function invents.
+ * - **Nothing bears on the ground** and there are floor panels: two feet under
+ *   the lowest floor panel, so the deck plainly stands in air instead of
+ *   looking bedded into the grass.
+ * - **Nothing bears on the ground and no floor panels**: an inch under
+ *   everything, unchanged. There is nothing there that could look bedded in.
+ *
+ * ⚠ `floorOnlyLowestY` is `null` for BOTH of the first and third cases, and
+ * the caller decides which. It must not be `0` as a stand-in for "none": an
+ * empty group list makes `lowestDrawnYFt` return exactly `0` (its `min(0, …)`
+ * floor), so a `0` default would have computed `0 - 2` and dropped the grass
+ * two feet under every floorless building. A sentinel has to sit outside the
+ * range of real answers, and `0` is an ordinary answer here.
+ */
+export function siteGroundYFt(lowestDrawnY: number, floorOnlyLowestY: number | null = null): number {
+  const underEverything = Math.min(0, lowestDrawnY) - SITE_GROUND_CLEARANCE_FT;
+  if (floorOnlyLowestY === null) return underEverything;
+  /* ⚠ Not `Math.min` with `underEverything`. When this branch is taken the
+     floor deck IS the lowest thing drawn, so the two feet is always the lower
+     of the two anyway — and reaching for a min here is what hid the floating
+     foundation, by making the expression look safe for inputs it was never
+     given. See SITE_FLOOR_PANEL_AIR_GAP_FT. */
+  return Math.min(0, floorOnlyLowestY) - SITE_FLOOR_PANEL_AIR_GAP_FT;
 }
 
 /**
@@ -395,8 +459,10 @@ export const SITE_COLORS = {
 export const SITE_PROVENANCE =
   "Scenery, not a site. There is no survey here and no grade: no slope, no soil, no setbacks, " +
   "no orientation and no time of day — the sun is placed to light the model, not to match an hour. " +
-  "The lawn is drawn one inch below the lowest member of the building so it cannot hide a floor " +
-  "panel, which is a drawing decision and not a ground level: the building is not sited on anything. " +
+  "The lawn is drawn one inch below the lowest member so it cannot hide a floor panel — except where " +
+  "nothing bears on the ground, when a floor panel is given two feet of air so it does not read as a " +
+  "slab on grade. Both are drawing distances and neither is a ground level or a foundation height: " +
+  "the building is not sited on anything, and no claim is made about how high a real floor sits. " +
   "The shadow is thrown by a solid prism of the building's own footprint, not by its frame: a finished " +
   "panel building is solid walls, and a lattice of stud shadows would be neither true nor legible. " +
   "None of it is a part: no takeoff, price, weight, sheet or export reads anything here.";

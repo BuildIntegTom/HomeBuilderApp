@@ -1284,8 +1284,23 @@ export default function LayoutEditor() {
   /** U4's effective answer — see `showScalePropsOverride` for why this is
    * derived rather than stored. */
   const showScaleProps3D = showScalePropsOverride ?? role === "public";
-  /** U5's effective answer — the same derivation, for the same reason. */
-  const showSite3D = showSiteOverride ?? role === "public";
+  /**
+   * U5's effective answer — the same tri-state as the props above, but ⚠ its
+   * fallback is now **`true` for every role**, not `role === "public"`.
+   *
+   * > *"lets turn grass on default"* — Tommy, 2026-11-08
+   *
+   * The props' reasoning — *"a shop drawing does not gain scenery"* — does not
+   * carry over, and the request came with the reason it does not: without the
+   * ground the floor panels sit in a grey void, and the thing he wanted fixed
+   * in the same breath was panels looking like they **touch** the ground. You
+   * cannot see that they do not touch it unless the ground is there. So the
+   * grass is not scenery here, it is the datum you read the gap against.
+   *
+   * Still a tri-state, so `null` means "nobody has said" rather than "off":
+   * tick or untick and the answer sticks whatever the role.
+   */
+  const showSite3D = showSiteOverride ?? true;
   /** U6's, inverted: the client gets the scenery, the builder gets the tools. */
   const showDimensionHandles3D = showDimensionHandlesOverride ?? role !== "public";
   // Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
@@ -13673,9 +13688,20 @@ export default function LayoutEditor() {
         {showSite3D && (
           <p className={styles.note}>
             ⚠ The ground plane was turned off on 2026-10-29 because it hid the floor panels. It is back as this
-            switch rather than as a line of code, and it is drawn one inch under the lowest member in the model
-            instead of just under the datum — so a floor deck, a bale foundation and its clay/steel bottom skin all
-            stay visible with the grass on. Default follows the role, exactly like the props above.
+            switch rather than as a line of code, and it is drawn under the lowest member in the model instead of
+            just under the datum — so a floor deck, a bale foundation and its clay/steel bottom skin all stay
+            visible with the grass on. <strong>On by default for every role</strong>, unlike the props above: the
+            grass is what you read the floor&apos;s height against, not scenery.
+          </p>
+        )}
+        {showSite3D && (
+          <p className={styles.note}>
+            ⚠ A floor panel is drawn standing in <strong>2 ft of air</strong>, whether or not a foundation is
+            switched on — a straw deck bedded into grass reads as a slab-on-grade detail this system does not
+            build. Everything else clears the grass by an inch. With a bale foundation drawn, the foundation
+            reaches lower than that and meets grade itself, which is its job. The 2 ft is a drawing distance for
+            the look of it, <strong>not a foundation height</strong>: nothing that prices, weighs or exports reads
+            it, and no claim is made that a bale floor really sits 24in clear of grade.
           </p>
         )}
         <label style={{ display: "block" }}>

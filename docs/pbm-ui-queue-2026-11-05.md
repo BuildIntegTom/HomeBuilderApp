@@ -1251,3 +1251,46 @@ the session the client already loads, a write on dismissal, and
 `mergeTutorialsSeen` — which is already written and tested — called once on
 sign-in. Worth doing when the first real users arrive, because until then there
 is nothing to carry between devices.
+
+---
+
+## Side quests, given 2026-11-08 mid-stride
+
+Recorded verbatim-in-substance so they are not lost, and deliberately NOT
+built in the same stride as U8's share links.
+
+### S1 — grass on by default, and 2 ft of air under a floor panel
+
+> *"lets turn grass on default and separate the grass from floor panels by 2 ft
+> — even if foundation is not selected. we cant be having it look like these
+> panels — when made of floor panels — are touching the ground."*
+
+Two edits, one of them a correctness point disguised as a visual one: a floor
+panel resting ON the ground reads as a slab detail the system does not build.
+The gap has to hold **whether or not a foundation is selected**, which means it
+is a property of the site/ground plane, not of the foundation.
+
+⚠ Open: the 2 ft is HIS number for the look. Whether a real bale floor sits
+24 in clear of grade is a building question nobody has answered, so the ground
+offset is presentation and must not be read back as a foundation height by
+anything that prices, weighs or exports. See [[u5_site_toggle]] — the ground
+plane already moved once to sit under the floor deck.
+
+### S2 — a Home door, replacing the Account and Project buttons
+
+> *"how can i access that start with a building page... after it closes? im
+> thinking about somehow combining the account and project drop down access
+> points into that page and making that page (instead of account and project
+> buttons) a button called New or Home or something like that... it has home
+> page vibes to it. just because you travel back to home doesnt reset the
+> drawing youre currently on (unless you click a precon)."*
+
+The starter-template picker (U3) is currently a first-run screen with no way
+back. He wants it reachable, and wants it to absorb the Account and Project
+menus — one door called Home or New instead of two dropdowns.
+
+⚠ The load-bearing constraint, in his own words: **going Home must not reset
+the drawing.** Only picking a template does. That is the opposite of how the
+picker behaves today (it IS the empty state), so it becomes a surface you can
+open over live work and close again — which makes it a modal over the editor,
+not a route.

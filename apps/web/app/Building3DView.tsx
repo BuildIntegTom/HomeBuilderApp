@@ -2768,15 +2768,18 @@ export default function Building3DView({
      already covers, so walking their members would cost a pass over the whole
      building to learn a number that cannot change. Computed only when the
      site is ON: off, this is an empty array and costs nothing. */
+  const siteFloorGroups: SitePlacedGroup[] = showSite
+    ? deckRenderData
+        .filter((d) => d.kind === "floor")
+        .map((d) => ({
+          anchorYFt: d.anchorYFt,
+          frame: { kind: "deck" as const, tiltRad: d.tiltRad },
+          members: d.members,
+        }))
+    : [];
   const siteGroups: SitePlacedGroup[] = showSite
     ? [
-        ...deckRenderData
-          .filter((d) => d.kind === "floor")
-          .map((d) => ({
-            anchorYFt: d.anchorYFt,
-            frame: { kind: "deck" as const, tiltRad: d.tiltRad },
-            members: d.members,
-          })),
+        ...siteFloorGroups,
         ...baleFoundationRenderData.map((g) => ({
           anchorYFt: g.anchorYFt,
           frame: { kind: "upright" as const },
@@ -2805,7 +2808,25 @@ export default function Building3DView({
      render is fine: `casterGeometry`'s cache is keyed by the corners' VALUES,
      not by the array's identity. */
   const footprintCornersFt = footprint.corners.map((corner) => ({ x: corner.point.x, z: corner.point.y }));
-  const siteGroundY = siteGroundYFt(lowestDrawnYFt(siteGroups));
+  /* ⚠ **Two measurements, because a floor panel gets more air than anything
+     else.** Everything drawn sets the one-inch clearance; the floor decks on
+     their own set a two-foot minimum, per his 2026-11-08 *"we cant be having
+     it look like these panels — when made of floor panels — are touching the
+     ground."* `null` when there are no floor decks at all, NOT the `0` an
+     empty list would measure — see `siteGroundYFt`, where defaulting to `0`
+     dropped the grass two feet under every floorless building. */
+  /* ⚠ **The floor's two feet of air is a FALLBACK, not an override.** Passed
+     only when there are floor panels AND nothing bears on the ground — i.e.
+     no bale foundation is drawn. With a foundation, the foundation defines
+     grade and meets it, and the deck's clearance is whatever the foundation
+     gives it. Getting this wrong (taking a `min` of the two rules instead)
+     left a 3ft foundation floating two and a half inches above the grass; see
+     `SITE_FLOOR_PANEL_AIR_GAP_FT`. */
+  const somethingBearsOnGround = baleFoundationRenderData.length > 0;
+  const siteGroundY = siteGroundYFt(
+    lowestDrawnYFt(siteGroups),
+    siteFloorGroups.length > 0 && !somethingBearsOnGround ? lowestDrawnYFt(siteFloorGroups) : null,
+  );
   const siteCasterHeightFt = showSite ? Math.max(totalHeightFt, siteRoofHighFt) - siteGroundY : 0;
   const siteSunShadowCamera = siteSunShadow(bounds.maxDim, framedBox);
   /* ⚠ **The sun only moves when there is a site to see it in.** With the site

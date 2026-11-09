@@ -19,6 +19,7 @@ import { ASSEMBLY_COLORS, DECK_PANEL_COLORS, PANEL_TYPE_COLORS } from "./panelCo
 import {
   SITE_CAMERA_FAR_FT,
   SITE_COLORS,
+  SITE_FLOOR_PANEL_AIR_GAP_FT,
   SITE_GROUND_CLEARANCE_FT,
   SITE_PROVENANCE,
   SITE_OPENING_CAMERA_AZIMUTH_DEG,
@@ -407,5 +408,72 @@ describe("the site can never be mistaken for the building", () => {
        otherwise read as the frame's own. */
     expect(SITE_PROVENANCE.toLowerCase()).toContain("footprint");
     expect(SITE_PROVENANCE.toLowerCase()).toContain("not by its frame");
+  });
+});
+
+describe("the 2 ft of air under a floor panel", () => {
+  it("is 2 ft, his own number", () => {
+    expect(SITE_FLOOR_PANEL_AIR_GAP_FT).toBe(2);
+  });
+
+  it("⚠ null means NO fallback, and leaves the old one-inch behaviour alone", () => {
+    /* The bug this guards is one I wrote: defaulting the parameter to `0` —
+       which is what `lowestDrawnYFt` returns for an empty list — computed
+       `0 - 2` and dropped the grass two feet under every floorless building.
+       A sentinel has to sit outside the range of real answers. */
+    expect(siteGroundYFt(0, null)).toBeCloseTo(-SITE_GROUND_CLEARANCE_FT, 9);
+    expect(siteGroundYFt(0)).toBeCloseTo(-SITE_GROUND_CLEARANCE_FT, 9);
+    expect(siteGroundYFt(-0.5, null)).toBeCloseTo(-0.5 - SITE_GROUND_CLEARANCE_FT, 9);
+    expect(siteGroundYFt(0, null)).toBeGreaterThan(-0.5);
+  });
+
+  it("drops the grass 2 ft below a floor panel when nothing bears on the ground", () => {
+    /* The deck hangs its 15 1/2in depth below the datum, so the lowest drawn
+       point is about -1.29 ft; the old rule put grass an inch under that. */
+    const deckBottomFt = -15.5 / 12;
+    const ground = siteGroundYFt(deckBottomFt, deckBottomFt);
+    expect(ground).toBeCloseTo(deckBottomFt - SITE_FLOOR_PANEL_AIR_GAP_FT, 9);
+    expect(deckBottomFt - ground).toBeCloseTo(SITE_FLOOR_PANEL_AIR_GAP_FT, 9);
+  });
+
+  it("⚠ a FOUNDATION meets grade — it is not pushed down by the floor rule", () => {
+    /* The correction. I first wrote this as
+         min(an inch under everything, two feet under the floor)
+       and asserted a drawn foundation would always win. It does not: a 3 ft
+       foundation under a deck whose bottom is 1.3 ft down loses to
+       `-1.29 - 2 = -3.29`, and the foundation came out floating 2 1/2 inches
+       above the grass — the exact defect the shape was meant to prevent.
+       The caller now passes `null` whenever anything bears on the ground. */
+    const foundationBottomFt = -3;
+    const ground = siteGroundYFt(foundationBottomFt, null);
+    expect(ground).toBeCloseTo(foundationBottomFt - SITE_GROUND_CLEARANCE_FT, 9);
+    // One inch, not two feet: the foundation sits on the grass.
+    expect(foundationBottomFt - ground).toBeCloseTo(SITE_GROUND_CLEARANCE_FT, 9);
+  });
+
+  it("⚠ and the two rules are never combined, at any depth", () => {
+    /* Swept so that no future edit can reintroduce the min(): for a shallow
+       foundation the one-inch answer must hold even though two-feet-under-the
+       -deck would be lower. */
+    const deckBottomFt = -15.5 / 12;
+    for (const foundationBottomFt of [-0.5, -1.5, -2, -3, -3.28, -3.3, -6]) {
+      const ground = siteGroundYFt(Math.min(foundationBottomFt, deckBottomFt), null);
+      expect(ground, `foundation ${foundationBottomFt}`).toBeCloseTo(
+        Math.min(foundationBottomFt, deckBottomFt) - SITE_GROUND_CLEARANCE_FT,
+        9,
+      );
+    }
+  });
+
+  it("the floor gets exactly its 2 ft when the fallback is in play", () => {
+    for (const deck of [-0.1, -15.5 / 12, -2, -4]) {
+      expect(deck - siteGroundYFt(deck, deck), `deck ${deck}`).toBeCloseTo(SITE_FLOOR_PANEL_AIR_GAP_FT, 9);
+    }
+  });
+
+  it("never puts the grass above the datum", () => {
+    expect(siteGroundYFt(5, 5)).toBeLessThan(0);
+    expect(siteGroundYFt(5, null)).toBeLessThan(0);
+    expect(siteGroundYFt(0, 0)).toBeCloseTo(-SITE_FLOOR_PANEL_AIR_GAP_FT, 9);
   });
 });
