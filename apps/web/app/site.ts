@@ -255,6 +255,112 @@ export function siteGroundYFt(lowestDrawnY: number, floorOnlyLowestY: number | n
 }
 
 /**
+ * ⚠ **Where the SHADOW CASTER's underside goes, feet — the bottom of the
+ * building, not the bottom of the lawn.**
+ *
+ * Tommy, 2026-11-09: *"I cannot see the 2-ft spacing between the grass and the
+ * bottom of wooden floor panels. I can orbit down to exactly level and it
+ * looks like there is no space at all."* The two feet were there — measured in
+ * the browser the same day on the 16 x 24 Tiny House, floor deck bottom at
+ * −1.2917ft and grass at −3.2917ft, exactly 24in apart. **The gap was real and
+ * invisible**, and this function is why.
+ *
+ * Two things hid it, and only one of them is fixable here:
+ *
+ * 1. ⚠ **A deck cannot be seen under from above.** The camera orbits a target
+ *    at mid-wall height, so at every elevation above the deck's own underside
+ *    the deck itself occludes the gap — you see its edge meeting grass that is
+ *    simply further away. That is geometry, not a defect, and no number in
+ *    this file changes it.
+ * 2. **The building cast the shadow of a plinth it does not have.** The caster
+ *    is a solid prism of the footprint, and it was based at `groundYFt` — so
+ *    it filled the whole two feet of air and its shadow ran out from the
+ *    footprint edge with nothing between. A shadow welded to the base is the
+ *    single strongest "this is sitting on the ground" cue a render has, and it
+ *    was contradicting the geometry above it.
+ *
+ * So the caster now starts where the building starts. With the sun at
+ * `SITE_SUN_DIRECTION` (about 55° up) a two-foot lift slides the shadow about
+ * 1.4ft clear of the footprint, which shows as lit grass under the near edge —
+ * the ordinary way a picture says something is off the ground.
+ *
+ * ⚠ **Never below the grass**, hence the `max`: the prism is invisible in the
+ * beauty pass but it is still geometry, and one hanging through the lawn would
+ * shadow the underside of its own ground plane.
+ *
+ * ⚠ This is a DRAWING distance like everything else here. It is not a
+ * foundation, a pier, or a claim that a bale floor stands 24in clear of grade.
+ */
+export function siteCasterBaseYFt(groundYFt: number, lowestDrawnYFt: number): number {
+  return Math.max(groundYFt, Math.min(0, lowestDrawnYFt));
+}
+
+/**
+ * ⚠ **How close to the grass the eye may get, feet.**
+ *
+ * The orbit has never had a floor — `OrbitControls` is mounted with no
+ * `maxPolarAngle` — so swinging the view down does not stop at the horizon, it
+ * goes straight through the lawn and out the other side. The ground plane is
+ * single-sided, so from under it the world is a blank white page with the
+ * building hanging in it. Measured 2026-11-09; it is what U1's Reset view has
+ * been rescuing people from.
+ *
+ * Half a foot, so the lawn still reads as a plane rather than collapsing to
+ * the line it becomes at exactly eye height — and, with a floor deck's two
+ * feet of air, so the eye lands a clear foot and a half BELOW the deck, which
+ * is the only camera position from which that gap can be seen at all.
+ */
+export const SITE_MIN_EYE_ABOVE_GRASS_FT = 0.5;
+
+/**
+ * ⚠ **The orbit's floor: the camera moved back above the lawn, keeping its
+ * distance and its compass bearing.** Returns `null` when no clamp is needed,
+ * so the caller can leave a legal camera completely alone.
+ *
+ * ⚠ **It swings the camera UP rather than lifting it straight up**, and that
+ * matters: raising `y` alone shortens the orbit radius, so a view clamped at
+ * the ground would silently dolly in and the building would grow as you tried
+ * to look under it. This keeps `|camera − target|` and the azimuth exactly as
+ * they were and solves for the height — the same thing `maxPolarAngle` would
+ * do, except that a fixed maximum angle is wrong the moment the user zooms,
+ * because the legal angle depends on the radius.
+ *
+ * ⚠ **Only applied with the SITE ON**, by the caller. With the site off there
+ * is no lawn — the grey void has no floor, and reading a floor panel's
+ * underside is an ordinary thing a fabricator does. The lawn is the thing you
+ * cannot walk through; nothing else here is.
+ *
+ * Returns `null` too when the TARGET itself is at or below the floor, because
+ * then no point at this radius satisfies it and a best-effort clamp would
+ * teleport the view. That cannot happen with the targets `Building3DView`
+ * uses (mid-wall height, or a panel the user double-clicked) but it is cheaper
+ * to answer honestly than to assume.
+ */
+export function cameraClampedAboveGround(
+  camera: readonly [number, number, number],
+  target: readonly [number, number, number],
+  minEyeYFt: number,
+): [number, number, number] | null {
+  if (camera[1] >= minEyeYFt) return null;
+  const offsetX = camera[0] - target[0];
+  const offsetY = camera[1] - target[1];
+  const offsetZ = camera[2] - target[2];
+  const radius = Math.hypot(offsetX, offsetY, offsetZ);
+  if (radius === 0) return null;
+  const wantedOffsetY = minEyeYFt - target[1];
+  /* The target is already at or under the floor, or the radius is too short to
+     reach the floor from it: there is no position on this sphere to move to. */
+  if (Math.abs(wantedOffsetY) >= radius) return null;
+  const horizontalNow = Math.hypot(offsetX, offsetZ);
+  const horizontalWanted = Math.sqrt(radius * radius - wantedOffsetY * wantedOffsetY);
+  /* Straight above or below the target: no bearing to preserve, so put it
+     where it can see rather than dividing by zero. */
+  if (horizontalNow === 0) return [target[0] + horizontalWanted, minEyeYFt, target[2]];
+  const scale = horizontalWanted / horizontalNow;
+  return [target[0] + offsetX * scale, minEyeYFt, target[2] + offsetZ * scale];
+}
+
+/**
  * The lawn's half-size, feet — a square plane `2 × radius` on a side, centred
  * on the building.
  *

@@ -108,7 +108,10 @@ import {
   SITE_SUN_DIRECTION,
   VOID_SUN_DIRECTION,
   deckGroupRotationX,
+  SITE_MIN_EYE_ABOVE_GRASS_FT,
+  cameraClampedAboveGround,
   lowestDrawnYFt,
+  siteCasterBaseYFt,
   siteGroundYFt,
   siteSunShadow,
   type SitePlacedGroup,
@@ -2823,11 +2826,18 @@ export default function Building3DView({
      left a 3ft foundation floating two and a half inches above the grass; see
      `SITE_FLOOR_PANEL_AIR_GAP_FT`. */
   const somethingBearsOnGround = baleFoundationRenderData.length > 0;
+  const siteLowestDrawnY = lowestDrawnYFt(siteGroups);
   const siteGroundY = siteGroundYFt(
-    lowestDrawnYFt(siteGroups),
+    siteLowestDrawnY,
     siteFloorGroups.length > 0 && !somethingBearsOnGround ? lowestDrawnYFt(siteFloorGroups) : null,
   );
-  const siteCasterHeightFt = showSite ? Math.max(totalHeightFt, siteRoofHighFt) - siteGroundY : 0;
+  /* ⚠ **The caster stands on the BUILDING, not on the lawn**, which is what
+     makes the two feet of air readable at all — see `siteCasterBaseYFt`. Based
+     at the grass it filled the gap with invisible mass and welded the shadow
+     to the footprint, so a deck standing in air drew the picture of a deck
+     standing on the ground. */
+  const siteCasterBaseY = siteCasterBaseYFt(siteGroundY, siteLowestDrawnY);
+  const siteCasterHeightFt = showSite ? Math.max(totalHeightFt, siteRoofHighFt) - siteCasterBaseY : 0;
   const siteSunShadowCamera = siteSunShadow(bounds.maxDim, framedBox);
   /* ⚠ **The sun only moves when there is a site to see it in.** With the site
      off nothing casts and nothing is drawn in the sky, so the light's azimuth
@@ -2838,6 +2848,40 @@ export default function Building3DView({
   const cameraPosition = birdsEyeCameraPosition(bounds);
   const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
   const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
+
+  /**
+   * ⚠ **The orbit's floor — the lawn is the one thing the camera cannot go
+   * through.** Tommy, 2026-11-09, on the two feet of air under a floor panel:
+   * *"I cannot see the 2-ft spacing... I can orbit down to exactly level and
+   * it looks like there is no space at all."* The gap was real (measured that
+   * day: deck bottom −1.2917ft, grass −3.2917ft) and unreachable — a deck
+   * hides its own underside from every eye above it, and the only eye below it
+   * was one that had already fallen through the ground plane into the blank
+   * white page on its far side, because `OrbitControls` is mounted with no
+   * `maxPolarAngle`. Stopping at the grass lands the eye in that two-foot slot
+   * instead of past it.
+   *
+   * ⚠ **Only with the SITE ON.** The grey void has no floor, and reading a
+   * floor panel from underneath is an ordinary fabrication view — see
+   * `cameraClampedAboveGround`, which holds the arithmetic and the reasoning.
+   *
+   * It fires on OrbitControls' own `change`, so it corrects a camera the user
+   * has already moved rather than fighting the gesture; the next `update()`
+   * re-derives the orbit from wherever this left it.
+   */
+  const keepEyeAboveGrass = () => {
+    if (!showSite) return;
+    const controls = controlsRef.current;
+    if (!controls) return;
+    const camera = controls.object;
+    const next = cameraClampedAboveGround(
+      [camera.position.x, camera.position.y, camera.position.z],
+      [controls.target.x, controls.target.y, controls.target.z],
+      siteGroundY + SITE_MIN_EYE_ABOVE_GRASS_FT,
+    );
+    if (next === null) return;
+    camera.position.set(next[0], next[1], next[2]);
+  };
 
   /* ⚠ Clears the orbit-target OVERRIDE as well as moving the camera. A
      double-click on a panel promotes that panel's centre into
@@ -3041,6 +3085,7 @@ export default function Building3DView({
               centerXFt={bounds.centerX}
               centerZFt={bounds.centerZ}
               footprintCornersFt={footprintCornersFt}
+              casterBaseYFt={siteCasterBaseY}
               casterHeightFt={siteCasterHeightFt}
               sunDirection={sunDirection}
             />
@@ -3347,7 +3392,15 @@ export default function Building3DView({
             </group>
           ))}
           </StrawFillProvider>
-          {!captureMode && <OrbitControls ref={controlsRef} target={target} makeDefault enabled={!isDraggingHandle} />}
+          {!captureMode && (
+            <OrbitControls
+              ref={controlsRef}
+              target={target}
+              makeDefault
+              enabled={!isDraggingHandle}
+              onChange={keepEyeAboveGrass}
+            />
+          )}
           {!captureMode && compassRef && <CompassTracker compassRef={compassRef} target={target} />}
         </Canvas>
       </div>

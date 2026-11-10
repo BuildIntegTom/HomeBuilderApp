@@ -69,7 +69,14 @@ export interface SiteGroupProps {
    * real outline, so an octagon or a notched plan throws its own shadow rather
    * than a rectangle's. */
   footprintCornersFt: readonly { x: number; z: number }[];
-  /** How tall the caster stands above the grass, feet: the top of the roof
+  /** ⚠ **Where the caster's underside sits, feet — `siteCasterBaseYFt`, the
+   * bottom of the BUILDING rather than `groundYFt`.** Based at the grass it
+   * filled a floor panel's two feet of air with invisible mass and welded the
+   * shadow to the footprint, so a deck standing in air drew the picture of a
+   * deck standing on the ground. See `siteCasterBaseYFt` for the measurement
+   * that forced it. */
+  casterBaseYFt: number;
+  /** How tall the caster stands above its base, feet: the top of the roof
    * where there is one, the top of the walls where there is not. */
   casterHeightFt: number;
   /** The scene's own sun, so the disc drawn in the sky is the same one lighting
@@ -90,6 +97,7 @@ export default function SiteGroup({
   centerXFt,
   centerZFt,
   footprintCornersFt,
+  casterBaseYFt,
   casterHeightFt,
   sunDirection,
 }: SiteGroupProps) {
@@ -133,7 +141,7 @@ export default function SiteGroup({
       {footprintCornersFt.length >= 3 && casterHeightFt > 0 && (
         <mesh
           geometry={casterGeometry(footprintCornersFt, casterHeightFt)}
-          position={[0, groundYFt, 0]}
+          position={[0, casterBaseYFt, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
           castShadow
           raycast={NO_RAYCAST}

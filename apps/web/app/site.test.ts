@@ -21,13 +21,16 @@ import {
   SITE_COLORS,
   SITE_FLOOR_PANEL_AIR_GAP_FT,
   SITE_GROUND_CLEARANCE_FT,
+  SITE_MIN_EYE_ABOVE_GRASS_FT,
   SITE_PROVENANCE,
   SITE_OPENING_CAMERA_AZIMUTH_DEG,
   SITE_SUN_DIRECTION,
   VOID_SUN_DIRECTION,
   deckGroupRotationX,
   lowestDrawnYFt,
+  cameraClampedAboveGround,
   lowestMemberHeightIn,
+  siteCasterBaseYFt,
   siteFogRangeFt,
   siteGroundRadiusFt,
   siteGroundYFt,
@@ -475,5 +478,135 @@ describe("the 2 ft of air under a floor panel", () => {
     expect(siteGroundYFt(5, 5)).toBeLessThan(0);
     expect(siteGroundYFt(5, null)).toBeLessThan(0);
     expect(siteGroundYFt(0, 0)).toBeCloseTo(-SITE_FLOOR_PANEL_AIR_GAP_FT, 9);
+  });
+});
+
+
+describe("the shadow caster stands on the BUILDING, not on the lawn", () => {
+  /* ⚠ Tommy, 2026-11-09: *"I cannot see the 2-ft spacing between the grass and
+     the bottom of wooden floor panels."* The gap measured exactly 24in in the
+     browser that day — deck bottom -1.2917ft, grass -3.2917ft on the 16 x 24
+     Tiny House. What hid it was this prism: based at the grass it filled the
+     air with invisible mass and the building cast the shadow of a plinth it
+     does not have. See `siteCasterBaseYFt`. */
+
+  /** The browser's own numbers, 2026-11-09, so these are not invented. */
+  const MEASURED_DECK_BOTTOM_FT = -15.5 / 12;
+  const MEASURED_GROUND_FT = MEASURED_DECK_BOTTOM_FT - SITE_FLOOR_PANEL_AIR_GAP_FT;
+
+  it("leaves the whole air gap EMPTY under a floor deck with nothing bearing on the ground", () => {
+    const base = siteCasterBaseYFt(MEASURED_GROUND_FT, MEASURED_DECK_BOTTOM_FT);
+    expect(base).toBeCloseTo(MEASURED_DECK_BOTTOM_FT, 9);
+    // The whole point: the prism's underside is two feet clear of the grass.
+    expect(base - MEASURED_GROUND_FT).toBeCloseTo(SITE_FLOOR_PANEL_AIR_GAP_FT, 9);
+  });
+
+  it("MEETS the grass when something bears on it, so a foundation's shadow stays attached", () => {
+    // A bale foundation sets grade: `siteGroundYFt` puts the grass an inch under it.
+    for (const foundationBottomFt of [-0.5, -1, -2, -3, -4]) {
+      const ground = siteGroundYFt(foundationBottomFt, null);
+      const base = siteCasterBaseYFt(ground, foundationBottomFt);
+      expect(base - ground, `foundation ${foundationBottomFt}`).toBeCloseTo(SITE_GROUND_CLEARANCE_FT, 9);
+    }
+  });
+
+  it("never hangs through the lawn", () => {
+    for (const ground of [-0.1, -1, -3.2917, -10]) {
+      for (const lowest of [0, -1, -5, -20]) {
+        expect(siteCasterBaseYFt(ground, lowest), `ground ${ground} lowest ${lowest}`).toBeGreaterThanOrEqual(ground);
+      }
+    }
+  });
+
+  it("never rises above the datum, so a building with nothing below zero still casts from its own base", () => {
+    expect(siteCasterBaseYFt(-SITE_GROUND_CLEARANCE_FT, 0)).toBe(0);
+    // `lowestDrawnYFt` already floors at 0, but a positive input must not lift the prism off the walls.
+    expect(siteCasterBaseYFt(-SITE_GROUND_CLEARANCE_FT, 5)).toBe(0);
+  });
+
+  it("⚠ the lift actually MOVES the shadow — which is the only reason any of this is visible", () => {
+    /* The sun is a direction, so a caster lifted by h slides its shadow
+       h x horizontal/vertical across the ground. With the gap filled (base at
+       the grass) that offset is zero and the shadow is welded to the
+       footprint, which is what the picture was saying before this change. */
+    const [sx, sy, sz] = SITE_SUN_DIRECTION;
+    const horizontalOverVertical = Math.hypot(sx, sz) / sy;
+
+    const lifted = siteCasterBaseYFt(MEASURED_GROUND_FT, MEASURED_DECK_BOTTOM_FT) - MEASURED_GROUND_FT;
+    const shadowOffsetFt = lifted * horizontalOverVertical;
+
+    // About 1.4ft on this sun — enough lit grass under the near edge to read.
+    expect(shadowOffsetFt).toBeGreaterThan(1);
+    expect(shadowOffsetFt).toBeLessThan(2);
+  });
+
+  it("stays as tall as the building once it is based higher up", () => {
+    /* `Building3DView` computes the height as `top - base`, so moving the base
+       up must not shorten the prism below the roof — the top is an absolute
+       height above the datum either way. */
+    const topFt = 15.33;
+    const base = siteCasterBaseYFt(MEASURED_GROUND_FT, MEASURED_DECK_BOTTOM_FT);
+    expect(base + (topFt - base)).toBeCloseTo(topFt, 9);
+    expect(topFt - base).toBeGreaterThan(0);
+  });
+});
+
+
+describe("the orbit has a FLOOR, so the eye lands in the air gap instead of under the world", () => {
+  /* ⚠ The other half of 2026-11-09. The two feet were there and nothing could
+     look at them: a deck hides its own underside from every eye above it, and
+     the only eye below it had already fallen through the single-sided ground
+     plane into the blank page on the far side. */
+
+  const TARGET: [number, number, number] = [0, 5, 0];
+  const GROUND_FT = -15.5 / 12 - SITE_FLOOR_PANEL_AIR_GAP_FT;
+  const FLOOR_FT = GROUND_FT + SITE_MIN_EYE_ABOVE_GRASS_FT;
+
+  it("leaves a camera above the lawn completely alone", () => {
+    for (const y of [0, 5, 20, FLOOR_FT, FLOOR_FT + 0.001]) {
+      expect(cameraClampedAboveGround([30, y, 30], TARGET, FLOOR_FT), `y ${y}`).toBeNull();
+    }
+  });
+
+  it("⚠ keeps the DISTANCE, so looking under the building does not silently dolly in", () => {
+    const camera: [number, number, number] = [20, -30, 20];
+    const before = Math.hypot(camera[0] - TARGET[0], camera[1] - TARGET[1], camera[2] - TARGET[2]);
+    const after = cameraClampedAboveGround(camera, TARGET, FLOOR_FT);
+    expect(after).not.toBeNull();
+    const radius = Math.hypot(after![0] - TARGET[0], after![1] - TARGET[1], after![2] - TARGET[2]);
+    expect(radius).toBeCloseTo(before, 9);
+  });
+
+  it("keeps the compass bearing, so the clamp never spins the view round", () => {
+    const camera: [number, number, number] = [12, -40, -5];
+    const after = cameraClampedAboveGround(camera, TARGET, FLOOR_FT)!;
+    const bearingBefore = Math.atan2(camera[2] - TARGET[2], camera[0] - TARGET[0]);
+    const bearingAfter = Math.atan2(after[2] - TARGET[2], after[0] - TARGET[0]);
+    expect(bearingAfter).toBeCloseTo(bearingBefore, 9);
+  });
+
+  it("lands the eye exactly on the floor", () => {
+    expect(cameraClampedAboveGround([30, -100, 30], TARGET, FLOOR_FT)![1]).toBeCloseTo(FLOOR_FT, 9);
+  });
+
+  it("⚠ and that floor is BELOW the floor deck, which is the whole point", () => {
+    const deckBottomFt = -15.5 / 12;
+    // Clamped at the lawn, the eye still has a clear foot and a half of air
+    // over its head before the underside of the deck.
+    expect(deckBottomFt - FLOOR_FT).toBeGreaterThan(1);
+    expect(FLOOR_FT).toBeLessThan(deckBottomFt);
+  });
+
+  it("refuses rather than teleporting when the target is itself under the floor", () => {
+    // No point at this radius satisfies it; a best-effort answer would jump the view.
+    expect(cameraClampedAboveGround([1, -50, 0], [0, -60, 0], FLOOR_FT)).toBeNull();
+    expect(cameraClampedAboveGround([0.5, -4, 0], [0, -4.2, 0], FLOOR_FT)).toBeNull();
+  });
+
+  it("handles a camera straight under the target without dividing by zero", () => {
+    const after = cameraClampedAboveGround([0, -30, 0], TARGET, FLOOR_FT)!;
+    expect(after[1]).toBeCloseTo(FLOOR_FT, 9);
+    expect(Number.isFinite(after[0]) && Number.isFinite(after[2])).toBe(true);
+    expect(Math.hypot(after[0] - TARGET[0], after[2] - TARGET[2])).toBeGreaterThan(0);
   });
 });
