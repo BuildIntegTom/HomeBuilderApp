@@ -21,6 +21,7 @@ than re-derived in every route that touches a project.
 | `migrations/0010_smearforn_v25_redaction_seed.sql` | One row: the redaction classification for **file format 25**, which Smearforn Stage 0 bumped the app to. Until it is applied, a project saved since that bump cannot be browsed across a company line. Creates nothing and alters nothing. |
 | `migrations/0011_stage6_share_links.sql` | Stage 6: `share_links`, the five share-link functions, view-only grants (`collaborators.can_write`, `via_link_id`), and the four Stage 2/3 objects that had to change. **Applied 2026-11-08.** |
 | `migrations/0012_pricing_v26_and_company_rate.sql` | The redaction row for **file format 26** (the money key was RENAMED `priceModifier` -> `pricePerSqFt`), `companies.price_per_sq_ft`, and `browse_redact`'s belt widened to both key names. **Applied 2026-11-08.** |
+| `migrations/0013_share_link_signup.sql` | Stage 6B: one read-only function, `share_link_permits_signup`, so a live share link is also an invitation to sign up. ⚠ It returns `locked_email` IN FULL — the only place an address leaves the database — and is called from the signup route handler ONLY, never from a page. **Applied 2026-11-09.** |
 | `seed.sql` | The four real companies. |
 | `tests/stage1_rls.test.sql` | The Stage 1 verification script. |
 | `tests/stage2_rls.test.sql` | The Stage 2 verification script. Local or staging only. |
