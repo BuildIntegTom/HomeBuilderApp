@@ -1,0 +1,81 @@
+{
+  "ranAt": "2026-11-11T04:03:51.393Z",
+  "app": "http://localhost:3000/",
+  "pdfBytes": 183017,
+  "sectionBox": {
+    "display": "block",
+    "visibility": "visible",
+    "w": 1531,
+    "h": 1283,
+    "text": "Project Summary\nPROJECT TOTALS\nPrice\t$97800.00\n3,912 sq ft of coverage × $25.00/"
+  },
+  "results": [
+    {
+      "label": "the starter template draws a building",
+      "ok": true,
+      "detail": {
+        "template": "The Tank"
+      }
+    },
+    {
+      "label": "the Price page mounts the Project Summary",
+      "ok": true,
+      "detail": {
+        "sections": [
+          "detail-summary",
+          "project-totals",
+          "detail-material-totals"
+        ]
+      }
+    },
+    {
+      "label": "the Summary can be marked as a print target",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "label": "the printed section has a real WIDTH in print media",
+      "ok": true,
+      "detail": {
+        "display": "block",
+        "visibility": "visible",
+        "w": 1531,
+        "h": 1283,
+        "text": "Project Summary\nPROJECT TOTALS\nPrice\t$97800.00\n3,912 sq ft of coverage × $25.00/"
+      }
+    },
+    {
+      "label": "the printed section has a real HEIGHT in print media",
+      "ok": true,
+      "detail": {
+        "display": "block",
+        "visibility": "visible",
+        "w": 1531,
+        "h": 1283,
+        "text": "Project Summary\nPROJECT TOTALS\nPrice\t$97800.00\n3,912 sq ft of coverage × $25.00/"
+      }
+    },
+    {
+      "label": "and the price is the first thing on it",
+      "ok": true,
+      "detail": {
+        "text": "Project Summary\nPROJECT TOTALS\nPrice\t$97800.00\n3,912 sq ft of coverage × $25.00/"
+      }
+    },
+    {
+      "label": "no editor chrome prints beside the document",
+      "ok": true,
+      "detail": {
+        "leaked": []
+      }
+    },
+    {
+      "label": "the PDF is not an empty page",
+      "ok": true,
+      "detail": {
+        "bytes": 183017,
+        "emptyCeiling": 20000
+      }
+    }
+  ]
+}

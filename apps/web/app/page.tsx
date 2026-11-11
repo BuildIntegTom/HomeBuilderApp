@@ -15661,7 +15661,14 @@ export default function LayoutEditor() {
               it, so no intermediate stage can make anything unreachable. */}
           {editorSurface === "summary" && (
             <div className={styles.editorPageLayer} data-editor-surface="summary">
-              <div className={styles.editorPageIcons}>{safetyIconCluster}</div>
+              {/* ⚠ `print-hidden-chrome`: the ? / Review Log / bug / glossary
+                  cluster sits INSIDE `.editorPageLayer`, beside the printed
+                  document rather than around it, so the "a wrapper holding a
+                  printed document is not chrome" rule in globals.css does not
+                  reach it — it is a sibling, not an ancestor. Without this it
+                  printed as a row of icon outlines across the top of every
+                  sheet. */}
+              <div className={`${styles.editorPageIcons} print-hidden-chrome`}>{safetyIconCluster}</div>
               <div ref={setSummaryHostEl} data-summary-page-host="" />
             </div>
           )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { birdsEyeCameraPosition } from "./birdsEyeCamera";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import { BufferAttribute, BufferGeometry, DoubleSide, type Mesh } from "three";
 import {
@@ -119,8 +120,6 @@ import {
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
-const BIRDS_EYE_ELEVATION_DEG = 50;
-const BIRDS_EYE_AZIMUTH_DEG = 45; // a corner/3-quarter starting view, not straight-on
 const IN_PER_FT = 12;
 const BLOB_COLOR = "#b5b0a8";
 // Roof-bearing member (truss plate / box beam) isn't a NamedPanelType (no
@@ -170,24 +169,6 @@ function footprintBounds(footprint: Footprint): Bounds {
     maxDim: Math.max(maxX - minX, maxZ - minZ, 10),
     box: { minX, maxX, minZ, maxZ },
   };
-}
-
-/** Initial camera position for a "bird's-eye at `BIRDS_EYE_ELEVATION_DEG`"
- * starting view, auto-fit to the footprint's size — distance is a rough
- * multiple of the footprint's largest dimension, not a tight/exact fit
- * (this is a starting point; `OrbitControls` lets the view be adjusted
- * freely from there). */
-function birdsEyeCameraPosition(bounds: Bounds): [number, number, number] {
-  const distance = bounds.maxDim * 1.6;
-  const elevationRad = (BIRDS_EYE_ELEVATION_DEG * Math.PI) / 180;
-  const azimuthRad = (BIRDS_EYE_AZIMUTH_DEG * Math.PI) / 180;
-  const height = distance * Math.sin(elevationRad);
-  const horizontal = distance * Math.cos(elevationRad);
-  return [
-    bounds.centerX + horizontal * Math.cos(azimuthRad),
-    height,
-    bounds.centerZ + horizontal * Math.sin(azimuthRad),
-  ];
 }
 
 /** Real, real-height door Rough Opening height — see
@@ -1201,6 +1182,34 @@ const CAPTURE_SETTLE_MS = 300;
 /** A stable no-op, so the optional `onCaptureDone` never changes identity
  * between renders and cannot churn CaptureFrame. */
 const NOOP = () => {};
+
+/**
+ * ⚠ **POINTS THE CAPTURE CAMERA AT THE BUILDING, which nothing did.**
+ *
+ * The interactive view gets its aim from `OrbitControls`, which is mounted
+ * `{!captureMode && ...}` — so the capture Canvas had no controls and no
+ * `lookAt` anywhere in this file. react-three-fiber's own default for a
+ * camera created from `camera={{ position }}` is to aim it at the **world
+ * origin**, and a footprint drawn from a corner does not sit on the origin.
+ * The Project Summary's rendering was therefore framed on a point off the
+ * side of the building, which is the other half of *"part of the 3d birds
+ * eye of the building is usually cut off"* — the first half being a fit that
+ * ignored height (see `birdsEyeCameraPosition`).
+ *
+ * Aims at the same `defaultTarget` the interactive orbit uses, so the two
+ * views agree about what they are looking at.
+ */
+function CaptureCameraAim({ target }: { target: readonly [number, number, number] }) {
+  const camera = useThree((state) => state.camera);
+  const [x, y, z] = target;
+  /* During render, not in an effect: `set-state-in-effect` is one of the
+     rules apps/web/AGENTS.md says may never rise, and this sets no state at
+     all — it orients an object r3f already owns, before the frame that reads
+     it is drawn. */
+  camera.lookAt(x, y, z);
+  camera.updateMatrixWorld();
+  return null;
+}
 
 /**
  * Mounted only in `captureMode` — reads the Canvas's own `gl` via `useThree`
@@ -2845,8 +2854,49 @@ export default function Building3DView({
      been. With the site on it has to stand somewhere its shadow is visible —
      see `SITE_SUN_DIRECTION` for the measurement that forced it. */
   const sunDirection = showSite ? SITE_SUN_DIRECTION : VOID_SUN_DIRECTION;
-  const cameraPosition = birdsEyeCameraPosition(bounds);
-  const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
+  /* ⚠ **The capture Canvas is a known 720 x 480. The interactive one is
+     not** — it is CANVAS_HEIGHT tall and as wide as its column happens to
+     be, which changes with the window, the sidebar and the HIDE tab.
+     Fitting against a guessed-too-wide aspect crops the building's ends:
+     measured at 16/9 in a ~700px column, the 48ft wall ran off the right
+     edge. Assuming a SQUARE canvas instead can only err the safe way — any
+     canvas wider than it is tall then shows more than the fit asked for,
+     never less — and the cost is some margin on a wide screen, on a view
+     the user can orbit from the moment it opens. */
+  const cameraAspect = captureMode ? CANVAS_WIDTH / CANVAS_HEIGHT : 1;
+  /**
+   * ⚠ **The top of the building to be FRAMED, which is not the wall height.**
+   *
+   * Three candidates, and all three are needed:
+   *  - `totalHeightFt` — the walls, and the only one the old fit knew about.
+   *  - `siteRoofHighFt` — the roof plane's high point, but it is computed
+   *    only `showSite &&`, and `showSite` is never forwarded to
+   *    `captureMode`. So on the Project Summary's own render it is **0**,
+   *    which is exactly the surface the cut-off complaint came from.
+   *  - the gable row's own tiles, which ARE forwarded to `captureMode` and
+   *    carry absolute heights above the floor line. This is what gives the
+   *    capture a real roof height to frame against.
+   */
+  const gableTopFt =
+    Math.max(
+      0,
+      ...Object.values(gableTilesByWallId ?? {})
+        .flat()
+        .flatMap((tile) => [tile.leftEdgeHeightIn, tile.rightEdgeHeightIn]),
+    ) / 12;
+  const framedTopFt = Math.max(totalHeightFt, siteRoofHighFt, gableTopFt);
+  const framedTargetYFt = framedTopFt / 2;
+  const cameraPosition = birdsEyeCameraPosition({
+    box: bounds.box,
+    centerX: bounds.centerX,
+    centerZ: bounds.centerZ,
+    yMinFt: 0,
+    yMaxFt: framedTopFt,
+    targetYFt: framedTargetYFt,
+    fovDeg: 50,
+    aspect: cameraAspect,
+  });
+  const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, framedTargetYFt, footprintBoundsRaw.centerZ];
   const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
 
   /**
@@ -3030,6 +3080,7 @@ export default function Building3DView({
             if (tool3D === "orbit") setOrbitTargetOverride(null);
           }}
         >
+          {captureMode && <CaptureCameraAim target={target} />}
           {captureMode && onCapture && (
             <CaptureFrame
               onCapture={onCapture}

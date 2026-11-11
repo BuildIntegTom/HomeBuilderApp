@@ -13,6 +13,39 @@
   overflow-x: auto;
 }
 
+/**
+ * ⚠ **THE PROJECT SUMMARY'S RENDERING IS A THUMBNAIL, NOT A HERO.**
+ *
+ * > *"the image of the whole house should be much smaller, perhaps 3\"x3\"
+ * > and price, carbon, carbon equivolents, and material lists are some of the
+ * > first things one should see."* — Tommy, 2026-11-10
+ *
+ * It was `width: 100%` of the sheet, which on a printed landscape page is
+ * most of the first sheet before a single number appears. 3in square, right
+ * aligned, so the numbers below it start at the top of the page and the
+ * picture reads as a key to them.
+ *
+ * ⚠ Inches, not pixels, because this is sized for PAPER — the one place the
+ * complaint came from. On screen a CSS inch is 96px, which is the right
+ * order of magnitude for a thumbnail there too.
+ */
+.summaryRenderImage {
+  /* ⚠ Sized to the title block's own `.diagramZone`, not to the sheet. The
+     zone is a fixed share of the right-hand strip, so the picture fills it
+     and stops — roughly the 3in Tommy asked for on a letter sheet, and it
+     stays in proportion on tabloid instead of being pinned to an inch count
+     that only suits one page size.
+
+     `contain`, so a long building is letterboxed in the zone rather than
+     cropped: a cut-off rendering is the complaint, not the fix. */
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
 .sectionHeading {
   font-size: 13px;
   margin: 0 0 6px;

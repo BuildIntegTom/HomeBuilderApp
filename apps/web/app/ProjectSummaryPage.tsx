@@ -146,43 +146,49 @@ export default function ProjectSummaryPage({
   plasterNote,
 }: ProjectSummaryPageProps) {
   return (
-    <SheetTitleBlock title="Project Summary" description="Whole-project totals, materials, and a static rendering." role={role}>
-      <div className={styles.diagram}>
-        {renderImageDataUrl ? (
+    <SheetTitleBlock
+      title="Project Summary"
+      description="Whole-project totals, materials, and a static rendering."
+      role={role}
+      /* ⚠ **THE RENDERING MOVED INTO THE TITLE BLOCK'S SIDE PANEL.** It used
+         to be a full-width block at the top of the sheet — on a printed
+         landscape page that is most of the first page before a single number
+         appears, which is what Tommy was looking at on 2026-11-10: *"the
+         image of the whole house should be much smaller, perhaps 3x3 and
+         price, carbon, carbon equivolents, and material lists are some of the
+         first things one should see."*
+
+         `sideDiagram` is the zone the shop drawings already use for exactly
+         this — *"squeeze it... into the top big part of the side panel on the
+         right"* — and the right-hand strip on this sheet was otherwise blank
+         below the date. So the picture costs the document no vertical space
+         at all now, and PROJECT TOTALS starts at the top of the page with the
+         price on its first row. */
+      sideDiagram={
+        renderImageDataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            className={styles.summaryRenderImage}
             src={renderImageDataUrl}
             alt="Static SE bird's-eye rendering of the building"
-            style={{ width: "100%", height: "auto", alignSelf: "flex-start", display: "block" }}
           />
         ) : (
           <p className={styles.note}>Draw a footprint to generate the static rendering.</p>
-        )}
-      </div>
-
+        )
+      }
+    >
       <h4 className={styles.sectionHeading}>Project totals</h4>
       <table className={styles.fastenerTable}>
         <tbody>
-          <tr>
-            <td>Panels</td>
-            <td>
-              {panelsTotal}
-              <br />
-              <span className={styles.note}>{panelsNote}</span>
-            </td>
-          </tr>
-          <tr>
-            <td>Openings</td>
-            <td>{openingsNote}</td>
-          </tr>
-          <tr>
-            <td>Total weight</td>
-            <td>
-              {totalWeightLb.toFixed(1)} lb ({totalWeightKg.toFixed(1)} kg)
-              <br />
-              <span className={styles.note}>{weightNote}</span>
-            </td>
-          </tr>
+          {/* ⚠ **PRICE AND CARBON LEAD THIS TABLE.** Tommy, 2026-11-10:
+              *"price, carbon, carbon equivolents, and material lists are some
+              of the first things one should see."* They used to sit fourth,
+              fifth and sixth — under the panel count, the opening list and the
+              weight — so the first figure on the sheet was how many panels it
+              takes to build, which is not the question anybody opens this page
+              with. The Carbon Sequestered section below carries the
+              equivalencies and Materials follows it, so the three he named now
+              run in order from the top of the sheet. */}
           <tr>
             <td>Price</td>
             <td data-price-redacted={costsRedacted ? "" : undefined}>
@@ -204,6 +210,26 @@ export default function ProjectSummaryPage({
               {netCO2eKg.toFixed(1)} kg CO2e
               <br />
               <span className={styles.note}>{netCO2eNote}</span>
+            </td>
+          </tr>
+          <tr>
+            <td>Panels</td>
+            <td>
+              {panelsTotal}
+              <br />
+              <span className={styles.note}>{panelsNote}</span>
+            </td>
+          </tr>
+          <tr>
+            <td>Openings</td>
+            <td>{openingsNote}</td>
+          </tr>
+          <tr>
+            <td>Total weight</td>
+            <td>
+              {totalWeightLb.toFixed(1)} lb ({totalWeightKg.toFixed(1)} kg)
+              <br />
+              <span className={styles.note}>{weightNote}</span>
             </td>
           </tr>
           <tr>

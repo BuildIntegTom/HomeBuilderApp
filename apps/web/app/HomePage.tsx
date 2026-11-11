@@ -101,6 +101,9 @@ export interface HomePageProps {
   onClose: (() => void) | null;
 }
 
+/** A stable no-op for the one share state with no next step to take. */
+const noop = () => {};
+
 const PASTE_HELP = "Paste the whole link — a shared design or an invitation both work here.";
 const PASTE_UNRECOGNISED =
   "That doesn't look like one of our links. Copy the whole thing from the message you were sent, including the https:// part.";
@@ -162,6 +165,49 @@ export default function HomePage(props: HomePageProps) {
      thing here that asks first, and only when there is something to lose.
      Home being otherwise non-destructive is what makes the question
      meaningful; asking on every click would train people to dismiss it. */
+  /**
+   * ⚠ **THE THREE THINGS THAT HAVE TO BE TRUE BEFORE A DESIGN CAN BE
+   * SHARED, as one button that always does the next one.**
+   *
+   * > *"sharing should be much easier, and perhaps note on or near the
+   * > button that says you need to create an account to share this."*
+   * > — Tommy, 2026-11-10
+   *
+   * There is a drawing; you have an account; the drawing is saved to that
+   * account. Only the last of those was ever visible — `Sharing…` appeared
+   * beside Version history when a cloud project was open and was absent
+   * otherwise, so the person with no account, who is the one who has never
+   * heard of share links, saw nothing at all. A hidden control teaches
+   * nobody anything.
+   *
+   * Each state therefore names what is missing and does that step, instead
+   * of the feature vanishing. The only state with no step is having nothing
+   * drawn: Home is already a page of templates at that point, so the button
+   * says why rather than pretending.
+   */
+  const shareStep: { label: string; note: string | null; onClick: () => void; disabled: boolean } = cloud.hasProjectOpen
+    ? { label: "Share…", note: null, onClick: cloud.onSharing, disabled: false }
+    : current === null
+      ? {
+          label: "Share…",
+          note: "Start a building first — a share link points at a design.",
+          onClick: noop,
+          disabled: true,
+        }
+      : signedInAs === null
+        ? {
+            label: "Sign in to share…",
+            note: "Sharing needs an account, because the link points at a design saved to one. Sign in or create an account, save this design, then share it. Whoever you send the link to can make their own account from it.",
+            onClick: onSignIn,
+            disabled: false,
+          }
+        : {
+            label: "Save to share…",
+            note: "A share link points at a saved design, not at the copy on this computer. Save this one to the cloud and the Share button opens.",
+            onClick: cloud.canSaveToCloud ? cloud.onSaveToCloud : cloud.onSaveAsNew,
+            disabled: !cloud.canSaveToCloud && !cloud.canSaveAsNew,
+          };
+
   const pickTemplate: StarterTemplatePickerProps["onPick"] = (plan, name) => {
     if (current) {
       setConfirmingTemplate({ plan, name });
@@ -304,16 +350,39 @@ export default function HomePage(props: HomePageProps) {
               </button>
             )}
             {cloud.hasProjectOpen && (
-              <>
-                <button type="button" className={styles.button} onClick={cloud.onVersionHistory}>
-                  Version history
-                </button>
-                <button type="button" className={styles.button} onClick={cloud.onSharing}>
-                  Sharing…
-                </button>
-              </>
+              <button type="button" className={styles.button} onClick={cloud.onVersionHistory}>
+                Version history
+              </button>
             )}
+            {/* ⚠ **SHARE IS ALWAYS HERE, whatever state you are in.** Tommy,
+                2026-11-10: *"sharing should be much easier, and perhaps note
+                on or near the button that says you need to create an account
+                to share this."*
+
+                It used to appear only alongside Version history, behind
+                `hasProjectOpen` — so a signed-out visitor, who is exactly the
+                person who has never seen this feature, saw no trace that the
+                app can share at all. Hiding a control is not the same as
+                explaining it.
+
+                So the button never disappears, and in each state it does the
+                NEXT step rather than nothing: sign in, then save to the
+                cloud, then share. `shareStep` below holds the three. */}
+            <button
+              type="button"
+              className={styles.button}
+              onClick={shareStep.onClick}
+              disabled={shareStep.disabled}
+              data-home-share=""
+            >
+              {shareStep.label}
+            </button>
           </div>
+          {shareStep.note && (
+            <p className={styles.bandNote} data-home-share-note="">
+              {shareStep.note}
+            </p>
+          )}
           {cloud.refile && (
             <label className={styles.refileRow} data-home-refile="">
               {/* The owner-named heading, kept as the visible label rather

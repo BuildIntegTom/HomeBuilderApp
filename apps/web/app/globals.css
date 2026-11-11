@@ -234,6 +234,35 @@ a {
     display: none !important;
   }
 
+  /* ⚠ **A CHROME WRAPPER THAT HOLDS A PRINTED DOCUMENT IS NOT CHROME.**
+     This is why every PDF came out blank.
+
+     `.editorSection` — the whole editor shell, sidebar and canvas and all —
+     has carried `print-hidden-chrome` since the print system was built, and
+     that was correct while the printable sticky notes lived outside it. U4.2
+     ("Summary and Print are full pages") moved them INSIDE it, into
+     `.editorPageLayer`. Nothing in the print CSS noticed: `display: block
+     !important` on the targeted section cannot rescue a descendant of a
+     `display: none` ancestor, so the section measured **0 x 0** in print
+     media and `Page.printToPDF` returned a 1187-byte empty page — measured
+     over CDP on the Project Summary, 2026-11-10.
+
+     ⚠ The pair matters. Un-hiding the wrapper on its own would print the
+     sidebar and the canvas alongside the document on the drawing surface,
+     where neither is hidden by anything else; the second rule puts back
+     exactly what the first one let out, by hiding every child of that
+     wrapper that does not itself hold a target. So the only thing the
+     wrapper contributes is the path down to the document. */
+  body[data-print-mode] .print-hidden-chrome:has(.documentSection[data-print-target]) {
+    display: block !important;
+  }
+
+  body[data-print-mode]
+    .print-hidden-chrome:has(.documentSection[data-print-target])
+    > *:not(:has(.documentSection[data-print-target])) {
+    display: none !important;
+  }
+
   /* Packet exports are multi-page by construction, and flex fragmentation
      is the weakest path in Chrome's print engine. Neither of these needs to
      be a flex container on paper — the layout they build is a screen-only
