@@ -921,12 +921,38 @@ export function computeGableTiledRow(
   // nothing downstream is keyed to it.
   if (columnReservationWidthIn !== undefined && anchors.length === 3) {
     const peakAnchor = anchors[1]!;
-    /* ⚠ **THE WALL'S OWN RIDGE COLUMN WINS.** If the wall below has placed
-       one, the gable's column tile takes its two edges rather than centring
-       on the peak — so the two columns stack and the ridge bears straight
-       down. Nothing about the wall moves. */
+    /* ⚠ **THE WALL'S OWN RIDGE COLUMN WINS — BUT ONLY IF IT IS UNDER THE
+       RIDGE.** If the wall below has placed one there, the gable's column
+       tile takes its two edges rather than centring on the peak, so the two
+       columns stack and the ridge bears straight down. Nothing about the
+       wall moves.
+
+       ⚠ **The "under the ridge" test is new (2026-11-10) and it is a guard,
+       not a refinement.** This used to adopt a column of the right width
+       wherever it sat. A wall whose column had landed 15in past the peak
+       therefore dragged the gable's column 15in past it too — and because
+       the two segments are then trimmed to THAT column's edges,
+       `segments[0]` ran from the wall's start to 159in, straight through the
+       144in ridge and 15in down the far slope. One tile read its two edge
+       heights off a roofline that rose to the peak and fell again inside
+       itself, and the column's own top was still set to ridge-height-less-
+       the-beam, so it stood proud of the roof plane on the downhill side.
+       That is the overlapping, glitched gable end.
+
+       When the wall's column is NOT under the ridge the gable centres on the
+       peak instead: the ridge beam still lands on a gable column, the
+       segments are still trimmed either side of the ridge and nothing
+       straddles it. The two columns not stacking is then a real defect in
+       the WALL, which is where it has to be fixed — see
+       `placeColumnUnderPeak` — and not something this row can paper over by
+       drawing a broken tile. */
+    const peakEighths = toEighths(peakAnchor.xIn);
     const wallColumn = wallSlotsIn.find(
-      (sp) => sp.isColumn === true && toEighths(sp.xStartIn) < toEighths(sp.xEndIn),
+      (sp) =>
+        sp.isColumn === true &&
+        toEighths(sp.xStartIn) < toEighths(sp.xEndIn) &&
+        toEighths(sp.xStartIn) <= peakEighths &&
+        peakEighths <= toEighths(sp.xEndIn),
     );
     // Centered to within one eighth rather than exactly: the column's own
     // width stays exactly what was asked for, and its two edges stay on the

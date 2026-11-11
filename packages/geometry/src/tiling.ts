@@ -1043,6 +1043,60 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
 }
 
 /**
+ * One opening anchor becomes one `PanelSlot`.
+ *
+ * ⚠ Carries `heightIn`/`sillHeightIn`/`zones`/`includeSillOnBigHeader`
+ * through unconditionally — undefined for any anchor built without them (a
+ * brand-new opening) is a no-op on the resulting slot, exactly as if the
+ * field were omitted.
+ *
+ * ⚠ **Module scope, because TWO tilers build slots from anchors**:
+ * `retileWithOpenings` and `retileWithColumnAtInKeepingOpenings`. It was
+ * a closure inside the first of those until the second needed it, and a
+ * second copy of "which fields survive a re-tile" is exactly the drift
+ * `RESERVATION_PANEL_TYPES`' own comment describes.
+ */
+function openingSlotFromAnchor(o: OpeningAnchor): PanelSlot {
+  return {
+    type: o.type,
+    widthIn: roundToEighthIn(o.widthIn),
+    // The intent rides through the re-tile untouched, exactly like heightIn
+    // and sillHeightIn below. Undefined stays undefined.
+    anchorOffsetIn: o.offsetIn,
+    heightIn: o.heightIn,
+    sillHeightIn: o.sillHeightIn,
+    zones: o.zones,
+    includeSillOnBigHeader: o.includeSillOnBigHeader,
+  };
+}
+
+/**
+ * Drops each opening into a freshly-built plain run at its anchored ordinal
+ * ("after this many standards"). Anchors past the end of the run land at the
+ * end, which is what a wall that lost standards to a widened reservation
+ * needs.
+ */
+function interleaveOpenings(plainMiddle: PanelSlot[], openings: OpeningAnchor[]): PanelSlot[] {
+  const sorted = [...openings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
+  const out: PanelSlot[] = [];
+  let standardsSeen = 0;
+  let idx = 0;
+  for (const slot of plainMiddle) {
+    while (idx < sorted.length && sorted[idx]!.beforeStandardCount <= standardsSeen) {
+      out.push(openingSlotFromAnchor(sorted[idx]!));
+      idx++;
+    }
+    out.push(slot);
+    if (slot.type === "standard") standardsSeen++;
+  }
+  while (idx < sorted.length) {
+    out.push(openingSlotFromAnchor(sorted[idx]!));
+    idx++;
+  }
+  return out;
+}
+
+/**
  * Re-tiles a whole wall from scratch treating each opening as a fixed-width
  * reservation at its anchored position, instead of leaving it as a mutation
  * on top of a previously-tiled array. This is what makes resizing a window
@@ -1109,36 +1163,7 @@ export function retileWithOpenings(
   const plainBudgetIn = middleLengthIn - keptOpeningsTotalWidthIn;
   const plainMiddle = buildMiddle(Math.max(0, plainBudgetIn), standardWidthIn, gapEnd, allowBorrow, gapWidthIn);
 
-  // Carries heightIn/sillHeightIn/zones through unconditionally — undefined
-  // for any anchor built without them (a brand-new opening) is a no-op on
-  // the resulting PanelSlot, exactly as if the field were omitted.
-  const openingSlotFromAnchor = (o: OpeningAnchor): PanelSlot => ({
-    type: o.type,
-    widthIn: roundToEighthIn(o.widthIn),
-    // The intent rides through the re-tile untouched, exactly like heightIn
-    // and sillHeightIn below. Undefined stays undefined.
-    anchorOffsetIn: o.offsetIn,
-    heightIn: o.heightIn,
-    sillHeightIn: o.sillHeightIn,
-    zones: o.zones,
-    includeSillOnBigHeader: o.includeSillOnBigHeader,
-  });
-  const sortedOpenings = [...keptOpenings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
-  const middle: PanelSlot[] = [];
-  let standardsSeen = 0;
-  let openingIdx = 0;
-  for (const slot of plainMiddle) {
-    while (openingIdx < sortedOpenings.length && sortedOpenings[openingIdx]!.beforeStandardCount <= standardsSeen) {
-      middle.push(openingSlotFromAnchor(sortedOpenings[openingIdx]!));
-      openingIdx++;
-    }
-    middle.push(slot);
-    if (slot.type === "standard") standardsSeen++;
-  }
-  while (openingIdx < sortedOpenings.length) {
-    middle.push(openingSlotFromAnchor(sortedOpenings[openingIdx]!));
-    openingIdx++;
-  }
+  const middle = interleaveOpenings(plainMiddle, keptOpenings);
 
   return {
     slots: withSafetyGapSpacing(
@@ -1178,9 +1203,31 @@ export function retileWithOpenings(
  * holds `gapEnd`; the other side is tiled with no gap at all. One run, one
  * gap, exactly as a wall without a column gets.
  *
+ * ⚠ **IT ALSO CARRIES THE WALL'S OTHER OPENINGS**, via `leftOpenings` /
+ * `rightOpenings` — and that is not a convenience, it is the whole reason
+ * the exact path reaches real walls at all.
+ *
+ * Until 2026-11-10 this function knew about ONE reservation, so
+ * `placeColumnUnderPeak` could only call it on a wall with no windows or
+ * doors, and said so in its own comment: *"it is the freshly-drawn wall
+ * that spawns a ridge column, and it has no openings yet."* **That stopped
+ * being true the day walls started spawning their own windows and doors.**
+ * Every freshly-drawn gable wall then had openings, the exact path never
+ * ran again, and the ordinal fallback put the ridge column 15in off the
+ * peak on one gable wall and 27.6in off the other way on the other —
+ * measured on a 24 x 24 at 4:12. A ridge beam cannot span between two
+ * columns that are 42in out of line with each other.
+ *
+ * The two lists are split BY POSITION by the caller, which is the only
+ * place that knows where each opening physically sits; ordinals inside each
+ * list are re-based to that side's own run. An opening that would overlap
+ * the column's own span is the caller's problem too — this function tiles
+ * what it is given and refuses what will not sum.
+ *
  * Returns null where the column cannot be placed at that position at all —
- * a merged corner pair, a corner band that drops reservations, or a centre
- * that would push the column through a corner. The caller then keeps
+ * a merged corner pair, a corner band that drops reservations, a centre
+ * that would push the column through a corner, or a side whose openings no
+ * longer fit in the budget left beside the column. The caller then keeps
  * whatever it had rather than being handed a wall that does not sum.
  */
 export function retileWithColumnAtIn(
@@ -1194,10 +1241,20 @@ export function retileWithColumnAtIn(
   columnWidthIn: number,
   allowBorrow = true,
   cornerMayWiden = true,
+  /** The wall's other reservations that sit BEFORE the column, ordinals
+   * re-based to the left run's own standards. Empty keeps the pre-2026-11-10
+   * behaviour exactly. */
+  leftOpenings: readonly OpeningAnchor[] = [],
+  /** Likewise, the ones that sit AFTER it. */
+  rightOpenings: readonly OpeningAnchor[] = [],
 ): TileWallResult | null {
   const gridLengthIn = roundToEighthIn(wallLengthIn);
   const colWidthIn = roundToEighthIn(columnWidthIn);
   if (!(colWidthIn > 0)) return null;
+  const sumWidths = (list: readonly OpeningAnchor[]) =>
+    list.reduce((total, o) => total + roundToEighthIn(o.widthIn), 0);
+  const leftOpeningsWidthIn = sumWidths(leftOpenings);
+  const rightOpeningsWidthIn = sumWidths(rightOpenings);
 
   const gapWidthIn = safetyGapWidthForRunIn(gridLengthIn);
   const corners = resolveCorners(
@@ -1206,7 +1263,7 @@ export function retileWithColumnAtIn(
     hasCornerStart,
     hasCornerEnd,
     gapWidthIn,
-    colWidthIn,
+    colWidthIn + leftOpeningsWidthIn + rightOpeningsWidthIn,
     cornerMayWiden,
   );
   /* No room for a column at a chosen position on either of these paths, and
@@ -1214,7 +1271,7 @@ export function retileWithColumnAtIn(
   if (corners.merged || corners.dropsReservations) return null;
 
   const middleLengthIn = gridLengthIn - corners.fixedEndsIn;
-  if (middleLengthIn < colWidthIn) return null;
+  if (middleLengthIn < colWidthIn + leftOpeningsWidthIn + rightOpeningsWidthIn) return null;
 
   /* The column's span in the MIDDLE's own frame, snapped to the same eighth
      grid everything else here sits on. */
@@ -1223,10 +1280,21 @@ export function retileWithColumnAtIn(
   const colEndIn = colStartIn + colWidthIn;
   if (colStartIn < 0 || colEndIn > middleLengthIn) return null;
 
-  const leftBudgetIn = colStartIn;
-  const rightBudgetIn = middleLengthIn - colEndIn;
-  const left = buildMiddle(leftBudgetIn, standardWidthIn, gapEnd, allowBorrow, gapEnd === "start" ? gapWidthIn : 0);
-  const right = buildMiddle(rightBudgetIn, standardWidthIn, gapEnd, allowBorrow, gapEnd === "end" ? gapWidthIn : 0);
+  /* ⚠ Each side's PLAIN budget is what is left after its own openings. A
+     negative one means the column cannot sit at this centre without
+     squeezing a window out of the wall, so the whole placement is refused
+     and the caller keeps what it had — never a wall that does not sum. */
+  const leftPlainBudgetIn = colStartIn - leftOpeningsWidthIn;
+  const rightPlainBudgetIn = middleLengthIn - colEndIn - rightOpeningsWidthIn;
+  if (leftPlainBudgetIn < 0 || rightPlainBudgetIn < 0) return null;
+  const left = interleaveOpenings(
+    buildMiddle(leftPlainBudgetIn, standardWidthIn, gapEnd, allowBorrow, gapEnd === "start" ? gapWidthIn : 0),
+    [...leftOpenings],
+  );
+  const right = interleaveOpenings(
+    buildMiddle(rightPlainBudgetIn, standardWidthIn, gapEnd, allowBorrow, gapEnd === "end" ? gapWidthIn : 0),
+    [...rightOpenings],
+  );
 
   const column: PanelSlot = { type: "column", widthIn: colWidthIn };
   return {

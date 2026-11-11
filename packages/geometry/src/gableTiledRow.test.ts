@@ -4,6 +4,7 @@ import {
   computeGableTiledRow,
   GABLE_SAFETY_GAP_WIDTH_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
+  type GableWallJointSpan,
   type GableWindowReservation,
   type RoofProfilePoint,
 } from "./gableTiledRow";
@@ -651,6 +652,68 @@ describe("computeGableTiledRow — structural Column Panel reservation (columnRe
   it("omitting columnReservationWidthIn entirely reserves nothing (today's exact behavior)", () => {
     const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
     expect(panels.some((p) => p.isColumn)).toBe(false);
+  });
+
+  it("takes the WALL's column when that column is under the ridge — the two stack", () => {
+    /* *"Gable follows the wall."* — Tommy, 2026-11-01, asked who moves. */
+    const wallSlots: GableWallJointSpan[] = [
+      { xStartIn: 0, xEndIn: 67.25 },
+      { xStartIn: 67.25, xEndIn: 92.75, isColumn: true },
+      { xStartIn: 92.75, xEndIn: 160 },
+    ];
+    const panels = computeGableTiledRow(
+      160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN, 0, 160, wallSlots,
+    );
+    const column = panels.find((p) => p.isColumn)!;
+    expect(column.xStartIn).toBeCloseTo(67.25, 6);
+    expect(column.xEndIn).toBeCloseTo(92.75, 6);
+  });
+
+  it("⚠ REFUSES a wall column that is NOT under the ridge, and centres on the peak instead", () => {
+    /* ⚠ **The glitched gable end, 2026-11-10.** This row used to adopt a
+       column of the right width wherever the wall had put it. A wall whose
+       ridge column had landed 15in past the peak therefore dragged the
+       gable's column 15in past it too — and because the two segments are
+       trimmed to THAT column's edges, segment 0 then ran from the wall's
+       start straight THROUGH the ridge and 15in down the far slope. One tile
+       read its two edge heights off a roofline that rose to the peak and fell
+       again inside itself, while the column's own top was still set to
+       ridge-height-less-the-beam, so it stood proud of the roof plane on the
+       downhill side.
+
+       Measured on a 24 x 24 at 4:12 with the peak at 144in: wall BC's column
+       sat at 159..184.5 and wall DA's at 103.625..129.125.
+
+       The wall being wrong is a defect in the WALL — see
+       `placeColumnUnderPeak` — and this row must not draw a broken tile to
+       follow it there. */
+    const offRidge: GableWallJointSpan[] = [
+      { xStartIn: 0, xEndIn: 94.5 },
+      /* 15in past the 80in peak, exactly the measured case. */
+      { xStartIn: 94.5, xEndIn: 120, isColumn: true },
+      { xStartIn: 120, xEndIn: 160 },
+    ];
+    const panels = computeGableTiledRow(
+      160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN, 0, 160, offRidge,
+    );
+    const column = panels.find((p) => p.isColumn)!;
+    expect(column).toBeDefined();
+    /* Centred on the peak, NOT on the wall's own column. */
+    expect((column.xStartIn + column.xEndIn) / 2).toBeCloseTo(80, 1);
+
+    /* And nothing straddles the ridge: every tile lies wholly on one side of
+       it, or is the column spanning it. */
+    for (const p of panels) {
+      if (p.isColumn) continue;
+      const straddles = p.xStartIn < 80 - 1e-6 && p.xEndIn > 80 + 1e-6;
+      expect({ tile: [p.xStartIn, p.xEndIn], straddles }).toEqual({ tile: [p.xStartIn, p.xEndIn], straddles: false });
+    }
+
+    /* The row still sums to the wall exactly — no gap, no overlap. */
+    const sorted = [...panels].sort((a, b) => a.xStartIn - b.xStartIn);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i]!.xStartIn).toBeCloseTo(sorted[i - 1]!.xEndIn, 6);
+    }
   });
 });
 

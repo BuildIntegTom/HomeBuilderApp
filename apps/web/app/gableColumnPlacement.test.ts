@@ -121,10 +121,8 @@ describe("⚠ the Column Panel under a gable column", () => {
   });
 
   it("⚠ a wall that already has openings KEEPS them", () => {
-    /* ⚠ The exact-position tiler knows about one reservation, so a wall
-       carrying windows or doors stays on the ordinal search, which preserves
-       every anchor. Pinned because the alternative is silently deleting
-       somebody's windows to centre a column. */
+    /* Pinned because the obvious way to centre a column — retile the wall
+       around it — silently deletes somebody's windows. */
     const bare = bareSlots(273);
     const windowIdx = bare.findIndex((slot) => slot.type === "standard");
     const withWindow = bare.map((slot, i) =>
@@ -134,6 +132,104 @@ describe("⚠ the Column Panel under a gable column", () => {
     expect(placed.filter((slot) => slot.type === "window")).toHaveLength(1);
     expect(placed.filter((slot) => slot.type === "column")).toHaveLength(1);
     expect(+placed.reduce((t, slot) => t + slot.widthIn, 0).toFixed(4)).toBe(273);
+  });
+
+  it("⚠ AND it still lands dead on the peak — openings do not buy an off-ridge column", () => {
+    /* ⚠ **THE 2026-11-10 FIX.** The exact-position tiler used to know about
+       exactly one reservation, so `placeColumnUnderPeak` ran it only on a
+       wall with no windows or doors and justified that as narrow: *"it is
+       the freshly-drawn wall that spawns a ridge column, and it has no
+       openings yet."*
+
+       Auto-spawned windows and doors made that false and nothing caught it.
+       Every freshly-drawn gable wall then had openings, so the exact path
+       never ran and every ridge column fell through to the ordinal search.
+       Measured in the browser on a 24 x 24 at 4:12, peak at 144in: one gable
+       wall put its column at 159..184.5 and the other at 103.625..129.125 —
+       **15in past the ridge on one and 27.6in short of it on the other**, so
+       the ridge beam spanning between them was not parallel to the building.
+
+       This is that bug, as a test: a wall carrying a door AND a window, and
+       the column still dead on the peak. */
+    for (const lengthIn of [273, 288, 345, 432]) {
+      const bare = bareSlots(lengthIn);
+      const standardIdxs = bare.flatMap((slot, i) => (slot.type === "standard" ? [i] : []));
+      const withOpenings = bare.map((slot, i) => {
+        if (i === standardIdxs[0]) return { ...slot, type: "door" as const, widthIn: 38 };
+        if (i === standardIdxs[standardIdxs.length - 1]) return { ...slot, type: "window" as const, widthIn: 24, heightIn: 48 };
+        return slot;
+      });
+      const placed = placeColumnUnderPeak(inputs({ slots: withOpenings, lengthIn, peakXIn: lengthIn / 2 }))!;
+      expect({ lengthIn, placed: placed !== null }).toEqual({ lengthIn, placed: true });
+      expect({ lengthIn, centre: +columnCentresIn(placed, 0)[0]!.toFixed(4) }).toEqual({
+        lengthIn,
+        centre: +(lengthIn / 2).toFixed(4),
+      });
+      /* Both openings survive the move, and the wall still sums to itself. */
+      expect({ lengthIn, doors: placed.filter((s) => s.type === "door").length }).toEqual({ lengthIn, doors: 1 });
+      expect({ lengthIn, windows: placed.filter((s) => s.type === "window").length }).toEqual({ lengthIn, windows: 1 });
+      expect({ lengthIn, sum: +placed.reduce((t, s) => t + s.widthIn, 0).toFixed(4) }).toEqual({
+        lengthIn,
+        sum: +lengthIn.toFixed(4),
+      });
+    }
+  });
+
+  it("⚠ an opening sitting ON the peak is moved aside — the ridge column takes the ridge", () => {
+    /* The auto-spawned window lands mid-wall often enough that this is the
+       normal case, not an edge one. Something has to give: either the ridge
+       beam bears on a window header or the window slides to one side. It
+       slides, and it slides to the side its own centre is already on. */
+    const lengthIn = 288;
+    const bare = bareSlots(lengthIn);
+    /* A window straddling the peak. */
+    let atIn = 0;
+    const spans = bare.map((slot) => {
+      const span = { slot, startIn: atIn, endIn: atIn + slot.widthIn };
+      atIn += slot.widthIn;
+      return span;
+    });
+    const straddler = spans.find((sp) => sp.slot.type === "standard" && sp.startIn < lengthIn / 2 && sp.endIn > lengthIn / 2);
+    expect(straddler).toBeDefined();
+    const withWindow = bare.map((slot) => (slot === straddler!.slot ? { ...slot, type: "window" as const, widthIn: 24 } : slot));
+
+    const placed = placeColumnUnderPeak(inputs({ slots: withWindow, lengthIn, peakXIn: lengthIn / 2 }))!;
+    expect(columnCentresIn(placed, 0)).toEqual([lengthIn / 2]);
+    expect(placed.filter((s) => s.type === "window")).toHaveLength(1);
+    /* And the window is now clear of the column, not inside it. */
+    let cursorIn = 0;
+    const placedSpans = placed.map((slot) => {
+      const span = { slot, startIn: cursorIn, endIn: cursorIn + slot.widthIn };
+      cursorIn += slot.widthIn;
+      return span;
+    });
+    const col = placedSpans.find((sp) => sp.slot.type === "column")!;
+    const win = placedSpans.find((sp) => sp.slot.type === "window")!;
+    expect(win.endIn <= col.startIn || win.startIn >= col.endIn).toBe(true);
+  });
+
+  it("⚠ a column already on the wall but OFF the peak is re-placed, not left alone", () => {
+    /* ⚠ This is what made a misplaced ridge column permanent. The idempotence
+       guard below used to read *"is there a column of this width anywhere on
+       this wall?"* — so the first pass put one in the wrong bay and every
+       pass after it saw a column, said "done", and refused to touch it. The
+       question is where the column is, not whether one exists. */
+    const lengthIn = 288;
+    const bare = bareSlots(lengthIn);
+    const standardIdxs = bare.flatMap((slot, i) => (slot.type === "standard" ? [i] : []));
+    /* A column in the FIRST standard slot — nowhere near the peak. */
+    const misplaced = bare.map((slot, i) =>
+      i === standardIdxs[0] ? { ...slot, type: "column" as const, widthIn: COLUMN_TOTAL_WIDTH_IN } : slot,
+    );
+    const before = columnCentresIn(misplaced, 0)[0]!;
+    expect(Math.abs(before - lengthIn / 2)).toBeGreaterThan(STANDARD_IN);
+
+    const placed = placeColumnUnderPeak(inputs({ slots: misplaced, lengthIn, peakXIn: lengthIn / 2 }));
+    expect(placed).not.toBeNull();
+    expect(columnCentresIn(placed!, 0)).toEqual([lengthIn / 2]);
+    /* Exactly one — the misplaced one is MOVED, never joined by a second. */
+    expect(placed!.filter((s) => s.type === "column")).toHaveLength(1);
+    expect(+placed!.reduce((t, s) => t + s.widthIn, 0).toFixed(4)).toBe(lengthIn);
   });
 
   it("⚠ is idempotent — a wall that already has one is left alone", () => {

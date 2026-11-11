@@ -1,5 +1,6 @@
 import {
   getOpeningAnchors,
+  isReservationType,
   retileWithColumnAtIn,
   retileWithOpenings,
   type OpeningAnchor,
@@ -57,19 +58,61 @@ export interface ColumnUnderPeakInputs {
   columnWidthIn: number;
 }
 
+/**
+ * ⚠ **How far off the peak a ridge column may already be and still be left
+ * alone**, in inches.
+ *
+ * The column's two edges are snapped to the eighth grid, so a column whose
+ * width is an odd number of eighths sits 1/16in off the true peak and can
+ * never sit exactly on it. Anything inside half an eighth is that snap and
+ * nothing else; anything outside it is a column in the wrong bay.
+ */
+const RIDGE_COLUMN_ON_PEAK_TOLERANCE_IN = 1 / 16;
+
+/** Where each slot sits along the run, in inches from the run's own start. */
+function slotSpans(slots: readonly PanelSlot[]): { slot: PanelSlot; startIn: number; endIn: number }[] {
+  let atIn = 0;
+  return slots.map((slot) => {
+    const span = { slot, startIn: atIn, endIn: atIn + slot.widthIn };
+    atIn += slot.widthIn;
+    return span;
+  });
+}
+
 /** The slots with one Column Panel placed, or null when the wall has no safe
  * non-corner position for one. */
 export function placeColumnUnderPeak(inputs: ColumnUnderPeakInputs): PanelSlot[] | null {
   const standardFamilyCount = inputs.slots.filter((s) => s.type === "standard" || s.type === "braced").length;
   if (standardFamilyCount < 3) return null;
 
-  /* Already carrying a column of this width? Then the wall is done, and
-     re-tiling would move every panel on it for nothing. */
-  if (inputs.slots.some((s) => s.type === "column" && Math.abs(s.widthIn - inputs.columnWidthIn) < 0.01)) {
+  /** The peak in the RUN's own frame, which is the frame every slot span
+   * below is measured in — and the frame `retileWithColumnAtIn` wants. */
+  const peakInRunIn = inputs.peakXIn - inputs.startOffsetIn;
+
+  /* ⚠ **Already carrying a column ON THE PEAK? Then the wall is done**, and
+     re-tiling would move every panel on it for nothing.
+
+     ⚠ **This used to accept a column of the right WIDTH anywhere on the
+     wall**, which made a misplaced ridge column permanent: the first pass
+     put one 15in off the peak, and every pass after that saw "a column of
+     this width exists" and refused to touch it. The test is now where the
+     column is, not that it exists. */
+  const existingColumn = slotSpans(inputs.slots).find(
+    (sp) => sp.slot.type === "column" && Math.abs(sp.slot.widthIn - inputs.columnWidthIn) < 0.01,
+  );
+  if (
+    existingColumn &&
+    Math.abs((existingColumn.startIn + existingColumn.endIn) / 2 - peakInRunIn) <= RIDGE_COLUMN_ON_PEAK_TOLERANCE_IN
+  ) {
     return null;
   }
 
-  const existingAnchors = getOpeningAnchors([...inputs.slots]);
+  /* The ridge column is the one being placed, so it is never carried as an
+     opening — otherwise a re-place would reserve width for two of them. */
+  const slotsWithoutRidgeColumn = existingColumn
+    ? inputs.slots.filter((s) => s !== existingColumn.slot)
+    : [...inputs.slots];
+  const existingAnchors = getOpeningAnchors([...slotsWithoutRidgeColumn]);
 
   /**
    * ⚠ **EXACTLY UNDER THE PEAK FIRST, by tiling the two sides of the
@@ -84,13 +127,48 @@ export function placeColumnUnderPeak(inputs: ColumnUnderPeakInputs): PanelSlot[]
    * —50.25in, —2.25in and +23.63in — none of them reach it. Asked which
    * gives way, he chose to trim the neighbours rather than move the ridge.
    *
-   * ⚠ **Only when the wall carries no OTHER openings.** `retileWithColumnAtIn`
-   * knows about one reservation, so a wall with windows or doors would lose
-   * them; those walls keep the ordinal search, which preserves every anchor.
-   * That is a narrower fix than it looks — it is the freshly-drawn wall that
-   * spawns a ridge column, and it has no openings yet.
+   * ⚠ **IT CARRIES THE WALL'S OTHER OPENINGS NOW, and that is the fix.**
+   *
+   * This block used to run only `if (existingAnchors.length === 0)`, because
+   * `retileWithColumnAtIn` knew about one reservation and a wall with windows
+   * or doors would have lost them. The comment here justified that as narrow:
+   * *"it is the freshly-drawn wall that spawns a ridge column, and it has no
+   * openings yet."*
+   *
+   * **Auto-spawned windows and doors made that false**, and nothing noticed.
+   * Every freshly-drawn gable wall now arrives carrying openings, so this
+   * block stopped running at all and every ridge column fell through to the
+   * ordinal search below. Measured on a 24 x 24 at 4:12 with the peak at
+   * 144in: wall BC put its column at 159..184.5 (**15in past the ridge**) and
+   * wall DA put its at 103.6..129.1 (**27.6in short of it**) — so the ridge
+   * beam spanning between them was not even parallel to the building, and the
+   * gable row faithfully copied both.
+   *
+   * ⚠ **An opening is assigned to the side its own CENTRE falls on**, which
+   * is what slides a window out from under the ridge instead of refusing the
+   * column. The alternative — refusing whenever anything overlaps the peak —
+   * leaves the ridge beam bearing on a window header, which is not a trade
+   * worth making. The tiler still refuses outright when a side's openings no
+   * longer fit beside the column, and then the ordinal search runs.
    */
-  if (existingAnchors.length === 0) {
+  {
+    const columnStartIn = peakInRunIn - inputs.columnWidthIn / 2;
+    const reservationSpans = slotSpans(slotsWithoutRidgeColumn).filter((sp) => isReservationType(sp.slot.type));
+    /* Re-base the far side's ordinals onto the right run's own standards:
+       every standard-family slot that ends at or before the column is on the
+       left run and no longer precedes them. */
+    const standardsLeftOfColumn = slotSpans(slotsWithoutRidgeColumn).filter(
+      (sp) => (sp.slot.type === "standard" || sp.slot.type === "braced") && sp.endIn <= columnStartIn,
+    ).length;
+    const leftOpenings: OpeningAnchor[] = [];
+    const rightOpenings: OpeningAnchor[] = [];
+    existingAnchors.forEach((anchor, i) => {
+      const span = reservationSpans[i];
+      const centreIn = span ? (span.startIn + span.endIn) / 2 : Infinity;
+      if (centreIn < peakInRunIn) leftOpenings.push(anchor);
+      else rightOpenings.push({ ...anchor, beforeStandardCount: Math.max(0, anchor.beforeStandardCount - standardsLeftOfColumn) });
+    });
+
     const exact = retileWithColumnAtIn(
       inputs.lengthIn,
       inputs.standardWidthIn,
@@ -98,10 +176,12 @@ export function placeColumnUnderPeak(inputs: ColumnUnderPeakInputs): PanelSlot[]
       inputs.gapEnd,
       inputs.hasCornerStart,
       inputs.hasCornerEnd,
-      inputs.peakXIn - inputs.startOffsetIn,
+      peakInRunIn,
       inputs.columnWidthIn,
       inputs.allowBorrow,
       inputs.cornerMayWiden,
+      leftOpenings,
+      rightOpenings,
     );
     if (exact) return exact.slots;
   }
