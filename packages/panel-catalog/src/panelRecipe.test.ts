@@ -14,7 +14,12 @@ import {
   bracePairAddedMembers,
 } from "./bracePairPatterns";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
-import { memberBoxSizeIn } from "./panelMemberHelpers";
+import {
+  PLATE_2X4_WIDTH_IN,
+  computeBraceBoardCornersIn,
+  describeBraceEndCuts,
+  memberBoxSizeIn,
+} from "./panelMemberHelpers";
 import { overlappingPairsIn } from "./memberOverlap.test";
 
 const W = 48;
@@ -124,15 +129,89 @@ describe("the three patterns from his sketch", () => {
        every wall panel's top plate and under its bottom plate. That is the
        load this figure exists to spread. */
     const little = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "little-carrot", wythes: ["exterior"] });
-    for (const spec of little) expect(spec.kind === "diagonal" && spec.fromXIn).toBe(W / 2);
+    /* ⚠ **Asserted end-AGNOSTICALLY, and that is deliberate.** This used to
+       read `spec.fromXIn === W / 2`, which pinned the plate end to the `from`
+       slot — and `from` is not a neutral slot: `computeBraceBoardCornersIn`
+       cuts the FROM end plumb and the TO end level. Writing the plate into
+       `from` is what gave every Little Carrot a vertical cut where it lands
+       on a horizontal plate (see the end-cut test below). The property this
+       test is for is that one end sits on the plate centre; which argument
+       slot carries it is the cut geometry's business. */
+    const plateEnds = little.map((spec) => (spec.kind === "diagonal" ? { xIn: spec.toXIn, zIn: spec.toZIn } : { xIn: 0, zIn: 0 }));
+    for (const end of plateEnds) expect(end.xIn).toBe(W / 2);
     // One off the top plate and one off the bottom, not two off the same end.
-    const fromZs = little.map((spec) => (spec.kind === "diagonal" ? spec.fromZIn : 0)).sort((a, b) => a - b);
-    expect(fromZs[0]).toBeLessThan(H / 2);
-    expect(fromZs[1]).toBeGreaterThan(H / 2);
+    const plateZs = plateEnds.map((end) => end.zIn).sort((a, b) => a - b);
+    expect(plateZs[0]).toBeLessThan(H / 2);
+    expect(plateZs[1]).toBeGreaterThan(H / 2);
     /* ⚠ And it runs toward the SEAM, which is NOT the direction he sketched
        — see `littleCarrotSpecs` for the whole of why. Outward it crosses the
        Big Carrot's upper leg, and two 2x4s cannot share a groove. */
-    for (const spec of little) expect(spec.kind === "diagonal" && spec.toXIn).toBe(W - 1.5);
+    for (const spec of little) expect(spec.kind === "diagonal" && spec.fromXIn).toBe(W - 1.5);
+  });
+
+  it("⚠ a Little Carrot is cut LEVEL on the plate and PLUMB on the post — the same way round as the X's legs", () => {
+    /* > *"the little braces on the super carrot panels are cut wrong - take
+       > inspiration from the big carrot/X's."* — Tommy, 2026-11-12
+       
+       He was exactly right about where to look. Both figures go through
+       `computeBraceBoardCornersIn`, which cuts its FIRST anchor plumb (a
+       vertical face, for a stud or post) and its SECOND level (a horizontal
+       face, for a plate). The Big Carrot handed it post-then-plate and came
+       out right. The Little Carrot handed it plate-then-post, so every one
+       of them was cut **plumb where it lands on the top or bottom plate and
+       level where it dies against the post** — a knife edge against both,
+       instead of a flat seat against either. Measured on a 48 x 120 panel
+       before the fix: `little_carrot_exterior_left_top` ran
+       from (24.00, 117.75) to (46.50, 88.88) with cuts `plumb | level`,
+       against the Big Carrot's (46.50, 60.00) to (1.50, 117.75), also
+       `plumb | level` — the same two cuts on opposite ends.
+       
+       This asserts the CUTS, not the argument order, so it cannot be
+       satisfied by rearranging the call. */
+    const { bottomZIn, topZIn } = recipeClearHeightIn(H);
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+    const isPlateZ = (zIn: number) => near(zIn, topZIn) || near(zIn, bottomZIn);
+    const isPostX = (xIn: number) => near(xIn, 1.5) || near(xIn, W - 1.5);
+
+    for (const figure of ["super-carrot", "little-carrot", "big-carrot"] as const) {
+      for (const half of ["left", "right"] as const) {
+        const specs = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half, figure, wythes: ["exterior"] });
+        for (const spec of specs) {
+          if (spec.kind !== "diagonal") continue;
+          const corners = computeBraceBoardCornersIn(spec.fromXIn, spec.fromZIn, spec.toXIn, spec.toZIn, PLATE_2X4_WIDTH_IN);
+
+          /* Every one of these braces lands on a plate at one end and a post
+             at the other; find which anchor is which from the spec itself,
+             so the test never asks the builder what it meant. */
+          const plateEnd = isPlateZ(spec.fromZIn) ? { xIn: spec.fromXIn, zIn: spec.fromZIn } : { xIn: spec.toXIn, zIn: spec.toZIn };
+          const postEnd = isPostX(spec.fromXIn) ? { xIn: spec.fromXIn, zIn: spec.fromZIn } : { xIn: spec.toXIn, zIn: spec.toZIn };
+          const where = { id: spec.id, plateOnAPlate: isPlateZ(plateEnd.zIn), postOnAPost: isPostX(postEnd.xIn) };
+          expect(where).toEqual({ id: spec.id, plateOnAPlate: true, postOnAPost: true });
+
+          /* ⚠ **The assertion that bites.** A LEVEL cut is a horizontal line,
+             so both of its corners share the plate's own z. A PLUMB cut is a
+             vertical line, so both of its corners share the post's own x. Two
+             counts, read straight off the trapezoid — nothing here can be
+             satisfied by relabelling an argument.
+
+             Before the fix a Little Carrot had two corners sharing x = 24 (the
+             plate CENTRE, cut plumb) and two sharing the tip's own z (against
+             the post, cut level): both counts came out 0 and the board met
+             each face on an edge. */
+          const atPlateZ = corners.filter((c) => near(c.zIn, plateEnd.zIn)).length;
+          const atPostX = corners.filter((c) => near(c.xIn, postEnd.xIn)).length;
+          expect({ id: spec.id, levelCutOnThePlate: atPlateZ, plumbCutOnThePost: atPostX }).toEqual({
+            id: spec.id,
+            levelCutOnThePlate: 2,
+            plumbCutOnThePost: 2,
+          });
+
+          /* And the two cuts really are one of each, never two of a kind. */
+          const kinds = describeBraceEndCuts(corners).map((cut) => cut.kind).sort();
+          expect({ id: spec.id, kinds }).toEqual({ id: spec.id, kinds: ["level", "plumb"] });
+        }
+      }
+    }
   });
 
   it("⚠ every X leg starts at the seam-side POST, which is what lines the X up across it", () => {

@@ -235,6 +235,44 @@ describe("⚠ a gable joint lands on a wall joint, so the load goes straight dow
     }
   });
 
+  it("⚠ the gable column STACKS ON the wall column, and both sit on the peak — inset or not", () => {
+    /* > *"It seems that the column panel below it is centered, but the gable
+       > end is still not centered."* — Tommy, 2026-11-12, from a photo of
+       > strawpanels.com.
+       
+       That build was twelve commits behind `main` and predated the fix
+       entirely, but the complaint is the exact shape of the bug: two columns
+       that do not stack, so the ridge beam bears on one of them and misses
+       the other. This walks four wall lengths with and without the
+       truss-plate inset, because the inset shifts the gable ROW without
+       shifting the peak, and that is the most plausible way for the two rows
+       to disagree while each looks centred on its own terms. */
+    for (const wallFt of [24, 28.75, 36, 44]) {
+      const wallLengthIn = wallFt * 12;
+      for (const insetIn of [0, 5.5]) {
+        const spans = wallSpans(wallLengthIn);
+        const wallColumn = spans.find((sp) => sp.isColumn);
+        const tiles = computeGableTiledRow(
+          wallLengthIn, EAVE_IN, [{ xIn: wallLengthIn / 2, heightIn: EAVE_IN + 48 }], STANDARD_IN,
+          insetIn, true, 0, "truss-heel", [], COLUMN_IN, 0, wallLengthIn, spans,
+        );
+        const gableColumn = tiles.find((t) => t.isColumn);
+        const at = { wallFt, insetIn };
+        expect({ ...at, hasBoth: wallColumn !== undefined && gableColumn !== undefined }).toEqual({ ...at, hasBoth: true });
+        /* Stacked: the same two edges, to the eighth the grid works to. */
+        expect({ ...at, start: +gableColumn!.xStartIn.toFixed(4), end: +gableColumn!.xEndIn.toFixed(4) }).toEqual({
+          ...at,
+          start: +wallColumn!.xStartIn.toFixed(4),
+          end: +wallColumn!.xEndIn.toFixed(4),
+        });
+        /* And on the ridge, not merely agreeing with each other somewhere
+           else — two columns can stack perfectly and both be wrong. */
+        const centreIn = (gableColumn!.xStartIn + gableColumn!.xEndIn) / 2;
+        expect({ ...at, offPeakIn: Math.abs(centreIn - wallLengthIn / 2) < 0.0626 }).toEqual({ ...at, offPeakIn: true });
+      }
+    }
+  });
+
   it("no spans, no change — a row given nothing tiles the way it always did", () => {
     for (const wallFt of WALL_LENGTHS_FT) {
       const wallLengthIn = wallFt * 12;
