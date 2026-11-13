@@ -1939,7 +1939,7 @@ export const RING_GIRT_SCREWS_PER_RING = RING_GIRT_CORNER_SCREWS * 4 + RING_GIRT
 
 /** Split `[fromIn, toIn]` by the spans something else already occupies,
  * dropping any remainder too short to be a board. */
-function clearRunsIn(fromIn: number, toIn: number, occupied: readonly [number, number][]): [number, number][] {
+export function clearRunsIn(fromIn: number, toIn: number, occupied: readonly [number, number][]): [number, number][] {
   const runs: [number, number][] = [];
   let cursor = fromIn;
   for (const [start, end] of [...occupied].sort((a, b) => a[0] - b[0])) {
@@ -2066,7 +2066,7 @@ interface MemberBoxIn {
   zToIn: number;
 }
 
-function memberBoxIn(member: PanelMember): MemberBoxIn {
+export function memberBoxIn(member: PanelMember): MemberBoxIn {
   const box = memberBoxSizeIn(member);
   const { xIn, yIn, zIn } = member.position;
   return {
