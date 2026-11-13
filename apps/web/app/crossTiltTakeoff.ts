@@ -11,6 +11,7 @@ import {
   planFloorRoofPanelWidthsIn,
   type CrossTiltPanelOptions,
   type PanelMember,
+  type GirtStyle,
 } from "@building-integrity/panel-catalog";
 
 const IN_PER_FT = 12;
@@ -115,6 +116,9 @@ export interface CrossTiltTakeoffInput {
    * row has to start after it.
    */
   roofGableEndInsetIn: number;
+  /** The project's girt style, so this row's girts match every other panel's.
+   * Omitted = the catalog's own legacy default, never the project default. */
+  girtStyle?: GirtStyle;
   /** Withheld where no pitch resolves — then there is no roof to receive and
    * no row, rather than a guessed one. */
   roofPitchIn12: number | undefined;
@@ -233,7 +237,7 @@ function optionsKey(o: CrossTiltPanelOptions): string {
  * be wrong for the other.
  */
 export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTiltTakeoff {
-  const { footprint, crossTiltWallIds, depthIn, roofPitchIn12, wallHeightFt, roofGableEndInsetIn } = input;
+  const { footprint, crossTiltWallIds, depthIn, roofPitchIn12, wallHeightFt, roofGableEndInsetIn, girtStyle } = input;
   if (!footprint || !crossTiltWallIds || crossTiltWallIds.size === 0) return EMPTY;
   if (roofPitchIn12 === undefined) return EMPTY;
 
@@ -311,6 +315,7 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
         depthIn,
         lowHeightIn: rowHeights.interiorIn,
         pitchIn12: roofPitchIn12,
+        girtStyle,
       };
       const built = buildCrossTiltPanelMembers(options);
       if (built.refusal !== null) {

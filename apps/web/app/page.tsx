@@ -7858,8 +7858,12 @@ export default function LayoutEditor() {
          roof does. */
       roofGableEndInsetIn: deckPanelTakeoffInput.roofGableEndInsetIn,
       wallHeightFt,
+      /* ⚠ The project's girt style, so this row's girts are the same part
+         every other panel on the building gets. Added 2026-11-12 with the
+         girts themselves — before that this row had none at all. */
+      girtStyle,
     }),
-    [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt],
+    [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt, girtStyle],
   );
 
   const crossTiltTakeoff = useMemo(() => computeCrossTiltTakeoff(crossTiltTakeoffInput), [crossTiltTakeoffInput]);

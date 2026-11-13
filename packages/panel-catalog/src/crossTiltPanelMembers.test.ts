@@ -207,8 +207,17 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
        WERE the panel. */
     const built = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 4 });
     /* A 4ft panel: two skins, two bottom plates, two top plates, and two
-       rows of three studs — twelve, against the six it had. */
-    expect(built.members).toHaveLength(12);
+       rows of three studs — twelve, against the six it had.
+
+       ⚠ **Plus its girts since 2026-11-12.** A 96in panel's shorter wythe has
+       about 92in of stud, which is two rows under his "3ft or less" rule, and
+       a row is three members (a bar at each wythe plus the web). So eighteen.
+       Spelled out as a sum rather than bumped to a new literal: the point of
+       this test is still that the panel is a PANEL and not a handful of
+       sticks, and the girts are part of that now. */
+    const girtCount = built.members.filter((m) => /girt/i.test(m.memberId)).length;
+    expect(girtCount).toBe(2 * 3);
+    expect(built.members).toHaveLength(12 + girtCount);
     expect(built.members.some((m) => m.memberId === "cross_tilt_bottom_skin")).toBe(true);
     expect(built.members.some((m) => m.memberId === "cross_tilt_top_skin")).toBe(true);
     expect(built.members.filter((m) => m.role === "plate")).toHaveLength(4);
@@ -252,6 +261,67 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
     const steep = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 5 });
     expect(steep.tiltDeg).toBeGreaterThan(shallow.tiltDeg);
     expect(steep.highHeightIn).toBeGreaterThan(shallow.highHeightIn);
+  });
+
+  it("⚠ has GIRTS, which it had none of until 2026-11-12", () => {
+    /* > *"the north wall panels do not appear to have [girts]. They should
+       > have [girts] just like every other panel."* — Tommy, 2026-11-12
+
+       He was looking at a Tiny House with a 5ft shed, where this row comes
+       out 58 7/8in tall at the exterior face — a FIVE FOOT panel whose whole
+       cut list was four plates, four studs and two lids. No threshold was
+       rejecting girts and no rule forbade them: the builder never called for
+       any, while the sheet printed its weight as "Wood (studs/plates/girts)".
+
+       One row at a 58 7/8in panel, by his own rule — one girt for every 3ft
+       or less of unbraced span. A girt row is three members: a bar at each
+       wythe and the web between them. */
+    const built = buildCrossTiltPanelMembers({ widthIn: 24, depthIn: D, lowHeightIn: 58.875, pitchIn12: 4 });
+    expect(built.refusal).toBeNull();
+    const girts = built.members.filter((m) => /girt/i.test(m.memberId));
+    expect(girts).toHaveLength(3);
+    /* Mid-panel, inside the SHORTER wythe's studs — see below. */
+    for (const g of girts) {
+      expect({ id: g.memberId, aboveTheBottomPlate: g.position.zIn > 2.25 }).toEqual({ id: g.memberId, aboveTheBottomPlate: true });
+      expect({ id: g.memberId, belowTheShortStudTop: g.position.zIn < 58.875 - 2.25 }).toEqual({ id: g.memberId, belowTheShortStudTop: true });
+    }
+    /* Every width this row is cut at gets the same treatment — the end
+       panels at the wall's own depth included. */
+    for (const widthIn of [15.5, 17, 24]) {
+      const b = buildCrossTiltPanelMembers({ widthIn, depthIn: D, lowHeightIn: 58.875, pitchIn12: 4 });
+      expect({ widthIn, girts: b.members.filter((m) => /girt/i.test(m.memberId)).length }).toEqual({ widthIn, girts: 3 });
+    }
+  });
+
+  it("⚠ and a row too short to need one still gets none", () => {
+    /* The rule protects itself: his "3ft or less" gives zero rows on a short
+       panel, which is what the 3 1/2in minimum row wants. No separate floor,
+       no second rule to keep in step. */
+    const short = buildCrossTiltPanelMembers({ widthIn: 24, depthIn: D, lowHeightIn: 20, pitchIn12: 4 });
+    expect(short.refusal).toBeNull();
+    expect(short.members.filter((m) => /girt/i.test(m.memberId))).toHaveLength(0);
+  });
+
+  it("⚠ the girt fits inside the SHORTER wythe's studs, not the longer one's", () => {
+    /* The top plate carries the incline through the panel's DEPTH, so the two
+       rows of studs are different lengths. A row spaced on the longer one
+       would sit above the shorter one's own top plate — out of the panel on
+       that face. Same reasoning as a gable panel's girts, which spread across
+       its short edge for the same reason.
+
+       Checked at a steep pitch, where the two faces differ most. */
+    const built = buildCrossTiltPanelMembers({ widthIn: 24, depthIn: D, lowHeightIn: 80, pitchIn12: 5 });
+    expect(built.refusal).toBeNull();
+    const studTops = built.members
+      .filter((m) => /cross_tilt_stud_/.test(m.memberId))
+      .map((m) => m.position.zIn + m.actualDimsIn.lengthIn);
+    const shortestStudTopIn = Math.min(...studTops);
+    for (const g of built.members.filter((m) => /girt/i.test(m.memberId))) {
+      expect({ id: g.memberId, insideShortestStud: g.position.zIn < shortestStudTopIn }).toEqual({
+        id: g.memberId,
+        insideShortestStud: true,
+      });
+    }
   });
 
   it("refuses what it cannot build", () => {

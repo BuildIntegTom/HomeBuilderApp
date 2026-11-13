@@ -1,11 +1,16 @@
 import type { PanelMember, SectionSpacePoint2D } from "./componentSchema";
 import {
+  LEGACY_GIRT_STYLE,
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
+  buildGirtRows,
+  cutRingGirtsAroundVerticals,
+  type GirtStyle,
 } from "./panelMemberHelpers";
+import { GABLE_GIRT_MAX_UNBRACED_SPAN_IN } from "./gablePanelMembers";
 
 /**
  * A panel whose top is tilted FRONT TO BACK — through its depth — so an
@@ -122,6 +127,10 @@ export function crossTiltMinimumLowHeightIn(pitchIn12: number): number {
 export interface CrossTiltPanelOptions {
   widthIn: number;
   depthIn: number;
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default, so
+   * an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle?: GirtStyle;
   /**
    * Height at the panel's INTERIOR face, which is the LOW side.
    *
@@ -164,7 +173,7 @@ export interface CrossTiltPanelResult {
 }
 
 export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): CrossTiltPanelResult {
-  const { widthIn, depthIn, lowHeightIn, pitchIn12 } = options;
+  const { widthIn, depthIn, lowHeightIn, pitchIn12, girtStyle = LEGACY_GIRT_STYLE } = options;
   const empty = {
     members: [],
     highHeightIn: 0,
@@ -343,6 +352,16 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
   const plateBottomZIn = (y0In: number, y1In: number) =>
     Math.max(belowTopAtYIn(y0In, SKIN_THICKNESS_IN), belowTopAtYIn(y1In, SKIN_THICKNESS_IN)) - plateThicknessIn;
 
+  /** One wythe's stud length, from the top of the bottom plate to the
+   * underside of its own top plate. */
+  const studLengthForFace = (y0In: number) => plateBottomZIn(y0In, y0In + PLATE_2X4_WIDTH_IN) - bottomZIn;
+  /** ⚠ The SHORTER of the two, which is what a girt row has to fit inside —
+   * see the girt block at the end of this function. */
+  const shortestStudSpanIn = Math.max(
+    0,
+    Math.min(studLengthForFace(0), studLengthForFace(depthIn - PLATE_2X4_WIDTH_IN)),
+  );
+
   for (const [face, y0In] of [
     ["exterior", 0],
     ["interior", depthIn - PLATE_2X4_WIDTH_IN],
@@ -456,5 +475,45 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
     notes: `the one inclined surface — cut ${(depthIn / cos).toFixed(3)}in across, not the panel's ${depthIn}in depth. Cut the edges SQUARE (perpendicular to the sheet), not bevelled: the plate below finishes about ${(SKIN_THICKNESS_IN * sin).toFixed(3)}in proud of the plywood, which is expected.`,
   });
 
-  return { members, highHeightIn, tiltDeg, topPlateRip, refusal: null };
+  /**
+   * ⚠ **GIRTS, which this panel had none of until 2026-11-12.**
+   *
+   * > *"the north wall panels do not appear to have [girts]. They should have
+   * > [girts] just like every other panel."* — Tommy
+   *
+   * He was looking at a Tiny House with a 5ft shed, where this row comes out
+   * **58 7/8in tall at the exterior face and 64in at the interior** — a
+   * five-foot panel whose entire cut list was four plates, four studs and two
+   * lids. There was no threshold rejecting girts here and no rule against
+   * them: this builder simply never called for any. The sheet even printed
+   * its weight as *"Wood (studs/plates/girts)"*, promising a part the panel
+   * did not contain.
+   *
+   * ⚠ **Spaced on the SHORTER of the two wythes' studs.** The top plate
+   * carries the incline through the panel's depth, so the two rows of studs
+   * are different lengths; a row placed on the longer one would sit above the
+   * shorter one's own top plate. Same reasoning as a gable panel's girts,
+   * which spread across its short edge for the same reason.
+   *
+   * The rule itself is his, and is the one number every other panel uses:
+   * *"one for every 3' or less so that there are no spaces that are 3' that
+   * aren't braced laterally."* A row short enough to need none gets none,
+   * which is what the 3 1/2in minimum panel wants.
+   */
+  const girtRowCount = Math.max(0, Math.ceil(shortestStudSpanIn / GABLE_GIRT_MAX_UNBRACED_SPAN_IN) - 1);
+  if (girtRowCount > 0) {
+    /* Centres given explicitly rather than left to `girtRowCentreZsIn`'s own
+       even spread: that spread measures from the top of the bottom SKIN, and
+       this panel's studs start a plate higher than that. Spreading over the
+       real stud zone is what "no unbraced span over 3ft" means here. */
+    const centerZsIn = Array.from(
+      { length: girtRowCount },
+      (_, i) => bottomZIn + (shortestStudSpanIn * (i + 1)) / (girtRowCount + 1),
+    );
+    members.push(...buildGirtRows(girtRowCount, widthIn, depthIn, shortestStudSpanIn, centerZsIn, girtStyle));
+  }
+
+  /* A ring girt's rails are cut around the panel's own verticals once the
+     panel is whole — the same pass every other panel type ends with. */
+  return { members: cutRingGirtsAroundVerticals(members, depthIn), highHeightIn, tiltDeg, topPlateRip, refusal: null };
 }
