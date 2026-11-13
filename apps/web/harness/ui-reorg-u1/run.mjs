@@ -1163,6 +1163,40 @@ record(
 );
 
 console.log("1. a footprint, so the stops are the real ones");
+
+/**
+ * ⚠ **U3's starter picker STANDS WHERE THE CANVAS GOES, so it has to be
+ * dismissed before there is anything to drag on.** With no footprint drawn,
+ * `showStarterTemplates` is true and the viewer renders the picker INSTEAD of
+ * `FootprintCanvas` — so `document.querySelector('canvas')` is legitimately
+ * null, and no amount of waiting changes that.
+ *
+ * ⚠ THIS IS THE REAL CAUSE OF THE "no canvas" DEATH, and the first diagnosis
+ * was wrong. The failure was read as the dynamic-import chunk arriving after
+ * the load sleep, and the sleep was raised 400ms -> 9000ms to fix it. That is
+ * a true fact about this canvas (it IS a `next/dynamic` import) but it was not
+ * what was killing the run: U3 shipped the picker on 2026-11-07, one day
+ * before, and `starterTemplatesDismissed` is a plain `useState(false)` that is
+ * persisted NOWHERE — not in localStorage, not in the project file. So the
+ * picker comes up on every cold load of an empty plan, in every Chrome
+ * profile, and the committed harness could not reach step 1 on any of them.
+ * Verified 2026-11-09 against a fresh `--user-data-dir` with empty
+ * localStorage. The raised sleep is kept: it is correct for the chunk, and
+ * both waits are needed.
+ *
+ * Conditional on purpose — it must not become a second way to fail if the
+ * picker is pre-dismissed, removed, or skipped because a footprint is already
+ * loaded. `clickSelectorUntil` carries its own three-attempt budget and
+ * reports what it spent, and "a canvas now exists" is the real post-condition.
+ */
+if (await evaluate(`!!document.querySelector('[title="Start from an empty plan"]')`)) {
+  await clickSelectorUntil(
+    '[title="Start from an empty plan"]',
+    "the starter picker's Draw your own tile",
+    `!!document.querySelector('canvas')`,
+  );
+}
+
 const canvasBox = await evaluate(
   `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
 );
@@ -1468,19 +1502,16 @@ record(
       (c) =>
         c.placeholders.length === 2 &&
         c.placeholders.map((p) => p.control).join(",") === "summary,print" &&
-        /* Order settled by Tommy on 2026-10-11: *"Order: Summary Print"*.
-           The ORDER is still his; the first WORD is not.
-
-           ⚠ **This expected "Summary" and the button has said "Price" since
-           U2**, which renamed Design→Edit and Summary→Price. A
-           PRE-EXISTING failure, not one Home caused — the sibling check
-           `Design-and-View-are-BARE-WORDS` was updated for the same rename
-           and this one was missed. It went unnoticed because this harness
-           has not completed a run in some time: on `main` it dies three
-           steps earlier with "no canvas", the plan canvas being a
-           `next/dynamic` import that now arrives later than the fixed sleep
-           allowed for. `control` is still asserted as "summary", so the
-           identity of the button is unchanged — only what it calls itself. */
+        // Order settled by Tommy on 2026-10-11: *"Order: Summary Print"*.
+        /* ⚠ THE WORD IS "Price" AND THE KEY IS STILL `summary` — U2 renamed
+           the LABEL on 2026-11-06 (his own named path, `Edit -> View -> Price
+           -> Print`) without renaming the control. This expectation was left
+           on "Summary" by that pass and failed every run from then until
+           2026-11-09, while its own sibling in step 0 was updated for the
+           matching `Design -> Edit` rename in the same breath. Keeping the
+           KEY check next to the LABEL check is the point: the bar may be
+           re-worded again, and the thing every other locator in this file
+           reads is `data-bar-control="summary"`, which must not move with it. */
         c.placeholders.map((p) => p.label).join(",") === "Price,Print" &&
         c.placeholders.every(
           (p) => p.disabled === false && p.title.length > 0 && p.opensAMenu === false && p.isAViewMenu === false && p.onScreen === true,
@@ -2378,8 +2409,21 @@ record(
   // is visited directly and again after a detour through the OTHER menu, which
   // is what writes `showWraps` / `simplified3D` / `elevationViewWallId` in the
   // first place. Any difference at all — a digit, a pressed state, a section
-  // present one way and not the other — is `handleViewerStopChange` not being
-  // the only writer, or not being idempotent about the flags it does not own.
+  // present one way and not the other — is a real defect.
+  // ⚠ BUT NOT NECESSARILY A *WRITER* DEFECT, and this comment used to say it
+  // was ("`handleViewerStopChange` not being the only writer, or not being
+  // idempotent about the flags it does not own"). On 2026-11-08 this step
+  // failed on `Elevation: N` with a 29-line difference and that reading sent
+  // the first diagnosis straight at the menu handlers, which turned out to be
+  // correct code: `handleViewerStopChange` really was the only writer and
+  // `currentViewerStop` read the same flags back in the same precedence.
+  // The defect was on the READ side — the 3D Layers panel gated on raw
+  // `viewMode === "3d"`, and an elevation does not clear `viewMode` (by
+  // design; see `viewerShows3D` in page.tsx). So a failure here means the
+  // flags and Region 3 disagree, and the cause is EITHER a writer that left a
+  // flag behind OR a panel that reads one flag of the pair alone. Check the
+  // gate of whatever section `firstDifference` names before suspecting a
+  // handler — the diff tells you which panel, which is most of the answer.
   // ⚠ A HARD PIN, NOT A FLOOR — restored 2026-09-29 at U3's review. The
   // retired `region3-baseline` step asserted exactly its 8 keys; once it went,
   // a `>= 6` floor was the only thing left holding the count, and a run that

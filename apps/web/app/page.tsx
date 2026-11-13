@@ -2769,6 +2769,18 @@ export default function LayoutEditor() {
       setEditorTab(s.editorTab);
       setViewMode(s.viewMode);
       setShapeTool(s.shapeTool);
+      /* ⚠ `elevationViewWallId` is NOT in ProjectState, and restoring
+         `viewMode` alone cannot express "not in an elevation" — the elevation
+         axis outranks viewMode (see `viewerShows3D`), so leaving it set keeps
+         the reader in an elevation the file never asked for. Wall ids are
+         deterministic corner pairs ("AB", "BC"…), so the stale id usually
+         MATCHES a wall in the incoming footprint: load a file while viewing
+         elevation AB and you would land in elevation AB of the new building
+         while the file said plan or 3D. Found 2026-11-08 alongside the 3D
+         Layers gate, same root cause (two flags, one of them read alone),
+         different code path. Clearing it is what "go where that file was"
+         means for a file that stores no elevation. */
+      setElevationViewWallId(null);
     }
     setFootprint(s.footprint);
     setIsBumpedOut(s.isBumpedOut);
@@ -3024,6 +3036,25 @@ export default function LayoutEditor() {
   }, [cloud.menuModel]);
 
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
+
+  /** Is the viewer actually drawing the 3D model right now?
+   *
+   * `viewMode` is only "plan" | "3d" — an elevation is NOT a third value of
+   * it, it is a separate axis (`elevationViewWallId`) that OUTRANKS viewMode
+   * wherever the two are both set. That is deliberate: viewMode is the memory
+   * of which non-elevation stop to come back to, so the elevation panel's own
+   * close button (`setElevationViewWallId(null)`, and nothing else) returns
+   * you to the 3D view you left rather than dumping you in the plan.
+   *
+   * ⚠ So `viewMode === "3d"` on its own does NOT mean the 3D model is on
+   * screen, and anything that renders 3D-only chrome must say so through this
+   * flag. The 3D Layers panel read raw `viewMode` and was the one Region 3
+   * panel that did — it stayed in the sidebar over an elevation, which the U1
+   * harness caught as a 29-line Region 3 difference between reaching
+   * "Elevation: N" directly and reaching it via a 3D stop (2026-11-08). Its
+   * neighbours all spelled the precedence out by hand; this names it once so
+   * the next panel cannot get it wrong. */
+  const viewerShows3D = !elevationWall && viewMode === "3d";
 
   /** U3 — see the picker's own render site for why all five terms are here. */
   const showStarterTemplates =
@@ -14886,8 +14917,8 @@ export default function LayoutEditor() {
               </button>
             </div>
             {editorTab === "wall" && elevationWall && elevationControls}
-            {viewMode === "3d" && deckLayerControls}
-            {editorTab === "wall" && !elevationWall && viewMode === "3d" && showWraps && wallAssemblyControls}
+            {viewerShows3D && deckLayerControls}
+            {editorTab === "wall" && viewerShows3D && showWraps && wallAssemblyControls}
             {editorTab === "foundation" && foundationControls}
             {editorTab === "floor" && baleFoundationControls}
             {editorTab === "floor" && floorToolsControls}
@@ -14951,7 +14982,7 @@ export default function LayoutEditor() {
                 <PanelLegend />
               </>
             )}
-            {editorTab === "wall" && !elevationWall && viewMode === "3d" && (
+            {editorTab === "wall" && viewerShows3D && (
               <div role="group" aria-label="3D tool" className={styles.toolbar}>
                 <button
                   type="button"
