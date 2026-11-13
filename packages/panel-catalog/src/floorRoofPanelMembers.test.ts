@@ -21,7 +21,7 @@ import {
 } from "./floorRoofPanelMembers";
 import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn, memberLocalCornersIn } from "./panelMemberHelpers";
 import type { PanelMember } from "./componentSchema";
-import { overlappingMemberPairs } from "./memberPrism";
+import { memberPrism, overlappingMemberPairs } from "./memberPrism";
 import { computePanelCutList } from "./panelCutList";
 
 const floor = (over: Partial<FloorRoofPanelOptions> = {}): FloorRoofPanelOptions => ({
@@ -1207,4 +1207,122 @@ describe("⚠ the EAVE is a bird's mouth, not the tall end mirrored", () => {
       expect({ lengthIn, pairs: overlappingMemberPairs(roof({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
     }
   });
+});
+
+/**
+ * ⚠ **PLYWOOD FACES OUT ON EVERY LID, ALL FOUR OF THEM.**
+ *
+ * > *"Four lids should have plywood outside."* — Tommy, 2026-11-13, answering
+ * > a question about one lid and settling all of them.
+ *
+ * A floor panel has two and a roof panel has two, and they were not built the
+ * same way: until 2026-11-05 both lids were laid skin-then-faces from one
+ * base, so the plywood came out OUTBOARD at the start and INBOARD at the end.
+ * One lid presented plywood to the next panel and the other presented board
+ * ends — two different parts sharing one shop sheet.
+ *
+ * That was fixed by placing each layer from the end it faces. This holds it
+ * fixed, and holds it for the roof's two *different* lids too — the eave
+ * fascia and the plumb tall-end plate, which are built by their own functions
+ * and so could drift on their own. It asserts the property he stated rather
+ * than the coordinates it currently produces, so the guarantee survives a
+ * change of span, depth or pitch.
+ */
+describe("⚠ plywood faces out on all four lids", () => {
+  /**
+   * A member's extent along the span, AT ONE DEPTH.
+   *
+   * ⚠ **It has to be at one depth, and a bounding box will not do.** A roof
+   * panel's eave fascia and its plumb tall-end plate are cut on plumb planes
+   * while the panel itself leans at the pitch, so each lid is a parallelogram
+   * that slides along the span as it goes inward: at 4:12 the end lid runs
+   * z 143.21-144.00 at the exterior face but 136.49-137.20 at the far side.
+   * Its box therefore overlaps the box of the 2x4 face it is strictly outboard
+   * of, and comparing boxes reports every pitched lid as wrong. The first
+   * version of this test did exactly that, and I nearly believed it.
+   *
+   * Comparing at a shared depth is also the question that matters: a lid is
+   * outboard or not at the place where another panel meets it.
+   */
+  function spanRangeAtDepth(member: PanelMember, yIn: number): { lo: number; hi: number } | null {
+    const prism = memberPrism(member);
+    /* A z-axis prism runs ALONG the span, so its span extent is lo..hi and
+       the polygon is its (x, y) cross-section — it is there at this depth or
+       not at all. */
+    if (prism.axis === "z") {
+      const vs = prism.polygon.map((q) => q.v);
+      if (yIn < Math.min(...vs) - 1e-9 || yIn > Math.max(...vs) + 1e-9) return null;
+      return { lo: prism.lo, hi: prism.hi };
+    }
+    /* A y-axis prism runs through the depth; its (x, z) section does not vary
+       with depth, so the span extent is the section's z range. */
+    if (prism.axis === "y") {
+      if (yIn < prism.lo - 1e-9 || yIn > prism.hi + 1e-9) return null;
+      const vs = prism.polygon.map((q) => q.v);
+      return { lo: Math.min(...vs), hi: Math.max(...vs) };
+    }
+    /* An x-axis prism's section is (y, z): slice it at y = yIn. */
+    const zs: number[] = [];
+    const poly = prism.polygon;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i]!;
+      const b = poly[(i + 1) % poly.length]!;
+      if (Math.abs(a.u - yIn) < 1e-9) zs.push(a.v);
+      const spans = (a.u - yIn) * (b.u - yIn) < 0;
+      if (spans) zs.push(a.v + ((yIn - a.u) / (b.u - a.u)) * (b.v - a.v));
+    }
+    if (zs.length === 0) return null;
+    return { lo: Math.min(...zs), hi: Math.max(...zs) };
+  }
+
+  const LIDS: { what: string; opts: FloorRoofPanelOptions }[] = [
+    { what: "floor", opts: floor({ structuralGirtEnds: ["start", "end"] }) },
+    { what: "roof, square both ends", opts: floor({ kind: "roof", structuralGirtEnds: [] }) },
+    /* ⚠ These two reach the roof's OWN lid builders, which the square-end
+       cases never touch: the eave fascia at `start` and the plumb tall-end
+       plate at `end`. Both need `pitchIn12` AND a bearing seat — with either
+       missing the panel quietly falls back to the plain square lid, and the
+       case tests nothing. (It did exactly that first time round, under the
+       wrong property name.) */
+    { what: "roof at 4:12", opts: floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 4, bearingSeatDepthIn: 15.5 }) },
+    { what: "roof at 8:12", opts: floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 8, bearingSeatDepthIn: 15.5 }) },
+  ];
+
+  for (const { what, opts } of LIDS) {
+    for (const atEnd of ["start", "end"] as const) {
+      it(`${what}: the ${atEnd} lid's skin is its outermost layer`, () => {
+        const members = buildFloorRoofPanelMembers(opts);
+        const skin = members.find((m) => m.memberId === `lid-${atEnd}-skin`);
+        const faces = members.filter((m) => m.memberId.startsWith(`lid-${atEnd}-face-`));
+        /* Both must exist, or the test would pass by finding nothing. */
+        expect({ what, atEnd, skin: skin !== undefined, faces: faces.length > 0 }).toEqual({
+          what, atEnd, skin: true, faces: true,
+        });
+        /* Three depths across the panel, so a lid that is outboard at the
+           exterior face and crosses over further in cannot pass. */
+        /* ⚠ Counted, because every comparison below can `continue` past a
+           member that is not present at a depth — and a test that skips every
+           comparison passes. */
+        let compared = 0;
+        for (const yIn of [0.01, opts.depthIn / 2, opts.depthIn - 0.01]) {
+          const skinSpan = spanRangeAtDepth(skin!, yIn);
+          if (skinSpan === null) continue;
+          for (const face of faces) {
+            const faceSpan = spanRangeAtDepth(face, yIn);
+            if (faceSpan === null) continue;
+            compared += 1;
+            /* Outermost means: at the START end the skin sits at or below
+               every face; at the END end, at or above. A 1/64in slack keeps an
+               inclined cut's own arithmetic from failing it. */
+            const outboard =
+              atEnd === "start" ? skinSpan.hi <= faceSpan.lo + 1 / 64 : skinSpan.lo >= faceSpan.hi - 1 / 64;
+            expect({ what, atEnd, yIn, face: face.memberId, outboard }).toEqual({
+              what, atEnd, yIn, face: face.memberId, outboard: true,
+            });
+          }
+        }
+        expect({ what, atEnd, compared: compared > 0 }).toEqual({ what, atEnd, compared: true });
+      });
+    }
+  }
 });
