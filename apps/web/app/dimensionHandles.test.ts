@@ -98,12 +98,32 @@ describe("which handles a building gets", () => {
     ]);
   });
 
-  it("⚠ but the app ships FOUR — the peak slider is held back, deliberately and by name", () => {
-    /* If this ever reads `true`, the gable zero-height-tile crash has been
-       fixed and `includePeakHandle` and this test should both go. */
-    expect(PEAK_HANDLE_ENABLED).toBe(false);
+  it("⚠ and the app now SHIPS all five — Tommy re-enabled the peak slider 2026-11-13", () => {
+    /* ⚠ This assertion is deliberately the inverse of what it was, and the
+       flip is the record of a decision rather than a tidy-up.
+
+       It read `expect(PEAK_HANDLE_ENABLED).toBe(false)` from 2026-11-07, with
+       the note *"if this ever reads true, the gable zero-height-tile crash has
+       been fixed and `includePeakHandle` and this test should both go."* The
+       band it guarded no longer reproduces — swept inch by inch across all
+       three gable templates in `gablePeakSweep.test.ts`, and driven in the
+       browser — and Tommy made the call: *"Let's re-enable it then."*
+
+       ⚠ **`includePeakHandle` and `PEAK_HANDLE_ENABLED` both STAY**, against
+       that old note. They are the switch that takes the handle back out
+       without touching anything else, and the reason to keep it is that the
+       crash's root cause was never pinned to a commit — see
+       `PEAK_HANDLE_ENABLED`'s own doc comment. A control that went back on for
+       reasons we only partly understand keeps its off switch. */
+    expect(PEAK_HANDLE_ENABLED).toBe(true);
     const shipped = dimensionHandles({ ...input(), includePeakHandle: undefined });
-    expect(shipped.map((h) => h.id).sort()).toEqual(["depth", "roofHeight", "wallHeight", "width"]);
+    expect(shipped.map((h) => h.id).sort()).toEqual(["depth", "roofHeight", "roofPeak", "wallHeight", "width"]);
+  });
+
+  it("⚠ the override still takes the peak handle back out", () => {
+    /* The off switch, exercised — so it cannot rot while it is unused. */
+    const withheld = dimensionHandles({ ...input(), includePeakHandle: false });
+    expect(withheld.map((h) => h.id).sort()).toEqual(["depth", "roofHeight", "wallHeight", "width"]);
   });
 
   it("an octagon gets all five too — its straight walls drive the box", () => {

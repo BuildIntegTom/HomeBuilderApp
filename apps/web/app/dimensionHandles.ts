@@ -151,7 +151,16 @@ export interface DimensionHandleInput {
 }
 
 /**
- * ⚠ **THE PEAK SLIDER IS BUILT, TESTED AND HELD BACK — 2026-11-07.**
+ * ⚠ **THE PEAK SLIDER IS LIVE — Tommy, 2026-11-13: *"Let's re-enable it
+ * then."*** The history below is kept because it is the reason this constant
+ * exists at all, and because the band it records is what
+ * `gablePeakSweep.test.ts` now stands guard over. **Do not delete the
+ * constant to "clean up"** — it is the one switch that turns the fifth handle
+ * off again if that band ever comes back, and the sweep is what would tell us.
+ *
+ * ---
+ *
+ * **THE PEAK SLIDER IS BUILT, TESTED AND HELD BACK — 2026-11-07.**
  *
  * It is the one handle of the five that cannot be shipped yet, and the reason
  * is a defect it did not cause. A gable peak stored too close to a wall's end
@@ -197,8 +206,14 @@ export interface DimensionHandleInput {
  * it is Tommy's: it restores a control he named, on geometry that is now
  * tested but whose original failure is not fully explained. One line, and the
  * handle is back.
+ *
+ * ⚠ **He made that call the same day, and it is NOT a blind re-enable.** The
+ * handle's own `snapPeakPositionFt` already refuses to stop within the 24in
+ * dead zone beside either end — that shipped with U6. What held it back was
+ * that the measured band reached 36in, i.e. PAST that snap. The sweep is what
+ * covers the rest of the wall now.
  */
-export const PEAK_HANDLE_ENABLED = false;
+export const PEAK_HANDLE_ENABLED = true;
 
 /**
  * The handles this building has right now.
