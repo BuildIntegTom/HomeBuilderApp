@@ -10,6 +10,7 @@ import {
   computeGableColumnHeightIn,
 } from "./columnPanelMembers";
 import { memberBoxSizeIn, PLATE_END_CLEARANCE_IN } from "./panelMemberHelpers";
+import { overlappingMemberPairs } from "./memberPrism";
 
 const DEPTH_IN = 15.5;
 const HEIGHT_IN = 120;
@@ -23,9 +24,20 @@ describe("column panel constants", () => {
 });
 
 describe("computeColumnBlockingRowCount", () => {
-  it("uses 16in o.c. spacing, floor of studSpan/16", () => {
+  /* ⚠ This used to assert `floor(studSpan / 16)` and passed, because at 120in
+     the two rules agree — 7 rows either way. The rule it named was wrong at
+     other heights, so the test was describing a bug it could not see. */
+  it("uses 16in o.c. spacing, counting only rows that clear the top plate", () => {
     const studSpanIn = HEIGHT_IN - 1.5; // 118.5
-    expect(computeColumnBlockingRowCount(studSpanIn)).toBe(Math.floor(118.5 / 16));
+    /* 118.5 less the top plate's 1.5in and the row's own 3.5in = 113.5. */
+    expect(computeColumnBlockingRowCount(studSpanIn)).toBe(Math.floor(113.5 / 16));
+    /* Still 7 at 120in, which is why the old assertion survived. */
+    expect(computeColumnBlockingRowCount(studSpanIn)).toBe(7);
+  });
+
+  it("never returns a negative count on a panel too short for any row", () => {
+    expect(computeColumnBlockingRowCount(4)).toBe(0);
+    expect(computeColumnBlockingRowCount(0)).toBe(0);
   });
 });
 
@@ -114,5 +126,88 @@ describe("computeGableColumnHeightIn", () => {
 
   it("accepts a custom offset instead of the default", () => {
     expect(computeGableColumnHeightIn(150, 8)).toBeCloseTo(142, 6);
+  });
+});
+
+/**
+ * ⚠ **BLOCKING MUST FIT INSIDE THE PANEL, AT EVERY HEIGHT.**
+ *
+ * > *"We can't be having any overlapping in the 3d renderings or anywhere…
+ * > these need to be possible to build."* — Tommy, 2026-10-23
+ *
+ * The blocking row count was derived from a span 3in longer than the space
+ * the rows have, and took no account of a row's own 3 1/2in width, so at some
+ * heights the last row ran through the top plate and out of the top of the
+ * panel. It was invisible because `memberOverlap.test.ts` samples ONE height
+ * (96in) and 96in happens to be clean.
+ *
+ * So this sweeps instead of sampling. A single height proves nothing about a
+ * rule that only bites on some of them.
+ */
+describe("⚠ column blocking fits under the top plate at every height", () => {
+  /* Every inch from a short column to a two-storey one, so no height can hide
+     between the samples. */
+  const HEIGHTS = Array.from({ length: 113 }, (_, i) => 32 + i);
+
+  it("no blocking row touches a plate or a skin, and none leaves the panel", () => {
+    const bad: string[] = [];
+    for (const heightIn of HEIGHTS) {
+      const members = buildColumnPanelMembers(DEPTH_IN, heightIn, false);
+      const blocking = members.filter((m) => m.role === "blocking");
+      const shell = members.filter((m) => m.memberId.includes("plate_2x4") || m.memberId.includes("plate_skin"));
+      for (const b of blocking) {
+        const zLoIn = b.position.zIn;
+        const zHiIn = zLoIn + memberBoxSizeIn(b).zIn;
+        if (zHiIn > heightIn + 1e-9) {
+          bad.push(`h=${heightIn}: ${b.memberId} reaches ${zHiIn.toFixed(2)}in on a ${heightIn}in panel`);
+        }
+        for (const s of shell) {
+          const pair = overlappingMemberPairs([b, s]);
+          if (pair.length > 0) bad.push(`h=${heightIn}: ${pair.join(", ")}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("⚠ and the correction only ever REMOVES a row that could not be built", () => {
+    /* The old rule, kept here as the thing being compared against rather than
+       described in prose. A height where the two agree is a height this fix
+       did not touch; the count may never come out HIGHER than the old one. */
+    const oldRule = (studSpanIn: number) => Math.floor(studSpanIn / 16);
+    const changed: string[] = [];
+    for (const heightIn of HEIGHTS) {
+      const studSpanIn = heightIn - 1.5;
+      const now = computeColumnBlockingRowCount(studSpanIn);
+      const before = oldRule(studSpanIn);
+      expect({ heightIn, higher: now > before }).toEqual({ heightIn, higher: false });
+      if (now !== before) changed.push(`${heightIn}in: ${before} → ${now}`);
+    }
+    /* ⚠ Reported as BANDS rather than 35 separate lines, so a change of
+       spacing or stock reads as a moved band instead of a wall of numbers.
+       Each band is the five heights in every 16in course where the last row
+       no longer fits: the old rule turned a row on 1 1/2in after the previous
+       course, the new one waits until there is 5in of room for the row's own
+       3 1/2in plus the top plate's 1 1/2in. */
+    const bands: string[] = [];
+    for (const line of changed) {
+      const [heightPart, countPart] = line.split("in: ") as [string, string];
+      const heightIn = Number(heightPart);
+      const last = bands[bands.length - 1];
+      if (last !== undefined && last.endsWith(`|${heightIn - 1}|${countPart}`)) {
+        bands[bands.length - 1] = last.replace(`|${heightIn - 1}|`, `|${heightIn}|`);
+      } else {
+        bands.push(`${heightIn}-|${heightIn}|${countPart}`);
+      }
+    }
+    expect(bands.map((b) => b.replace("-|", "-").replace("|", "in: "))).toEqual([
+      "34-38in: 2 → 1",
+      "50-54in: 3 → 2",
+      "66-70in: 4 → 3",
+      "82-86in: 5 → 4",
+      "98-102in: 6 → 5",
+      "114-118in: 7 → 6",
+      "130-134in: 8 → 7",
+    ]);
   });
 });

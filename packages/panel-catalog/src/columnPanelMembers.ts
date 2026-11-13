@@ -83,13 +83,42 @@ function shiftMembersX(members: PanelMember[], deltaXIn: number): PanelMember[] 
   }));
 }
 
-/** Number of 2x4 blocking rows spaced `COLUMN_BLOCKING_SPACING_IN` apart,
+/**
+ * Number of 2x4 blocking rows spaced `COLUMN_BLOCKING_SPACING_IN` apart,
  * starting one spacing up from the bottom of the stud span (matching
  * ordinary "blocking every 16in o.c." framing convention) — an
  * interpretation of Tommy's spec, not independently confirmed against a
- * shop drawing. */
+ * shop drawing.
+ *
+ * ⚠ **A ROW IS ONLY COUNTED IF IT FITS UNDER THE TOP PLATE, and until
+ * 2026-11-13 that was not checked.** This read `floor(studSpanIn / 16)`,
+ * which is wrong twice over:
+ *
+ *   - `studSpanIn` is the height less the two SKINS only (`heightIn - 1.5`),
+ *     so it is 3in longer than the clear space between the two plate 2x4s
+ *     that the blocking actually has to live in.
+ *   - A row is itself `PLATE_2X4_WIDTH_IN` (3 1/2in) tall, laid on edge, and
+ *     the count never allowed for its own width.
+ *
+ * Together those put the last row through the top plate at some heights and
+ * clean at others, which is why the one height `memberOverlap.test.ts`
+ * sampled never saw it. Measured on a plain Column Panel: at 50in, row 3 sat
+ * at z 48.75-52.25 on a 50in panel — through the top plate 2x4, through the
+ * top skin, and 2 1/4in out of the top of the panel. At 84in, row 5 did the
+ * same. At 40, 60, 72, 96 and 120in nothing was wrong.
+ *
+ * A row that does not fit is simply not built, which is what a framer does:
+ * the top plate is the backing at the top of the face, so the last short
+ * interval needs no blocking of its own. The correction therefore only ever
+ * REMOVES a row that could not be built, and it changes the count at exactly
+ * those two heights — every other height above is unmoved.
+ */
 export function computeColumnBlockingRowCount(studSpanIn: number): number {
-  return Math.floor(studSpanIn / COLUMN_BLOCKING_SPACING_IN);
+  /* Row `n`'s far face sits at `SKIN + SPACING*n + WIDTH`, and the top plate
+     2x4's near face at `height - SKIN - PLATE`. With `studSpanIn = height -
+     2*SKIN`, requiring the former to clear the latter reduces to this. */
+  const usableIn = studSpanIn - PLATE_2X4_THICKNESS_IN - PLATE_2X4_WIDTH_IN;
+  return Math.max(0, Math.floor(usableIn / COLUMN_BLOCKING_SPACING_IN));
 }
 
 /** 2x4 blocking between the vertical corner studs, on both the interior
