@@ -174,6 +174,29 @@ export interface DimensionHandleInput {
  * of those values. It is written up as its own task with the reproduction, the
  * measurements and the two candidate fix sites. When it is fixed, delete this
  * constant and the handle comes back with no other change.
+ *
+ * ## ⚠ UPDATE 2026-11-13 — the band is gone, and the flag is now a decision
+ *
+ * Re-driven in the browser on the Tiny House: **every inch 0 -> 192 renders**,
+ * including 12, 24 and 36. The Tank's two danger bands (0 -> 96 and
+ * 228 -> 288) too. No React error in the console at any value.
+ *
+ * `gablePeakSweep.test.ts` now holds that: it sweeps the peak across every
+ * inch of all three gable templates, through the shed snap, the wall's own
+ * joints, a ridge column and a gable window, and it is mutation-checked — pull
+ * the lift's headroom clamp and 7 of its sweeps fail on the real message. So
+ * the geometry is pinned by a committed test rather than by one browser
+ * session.
+ *
+ * ⚠ **What is NOT established: which commit closed it.** The obvious
+ * candidate — the panel ceiling going 96in -> 120in in `7b92d11` — was rolled
+ * back by hand and the whole sweep still passed, so it was something else.
+ * Not bisected.
+ *
+ * **Flipping this to `true` is therefore a judgement call, not a cleanup**, and
+ * it is Tommy's: it restores a control he named, on geometry that is now
+ * tested but whose original failure is not fully explained. One line, and the
+ * handle is back.
  */
 export const PEAK_HANDLE_ENABLED = false;
 

@@ -314,7 +314,7 @@ export function buildGablePanelMembers(
   }
   if (tallerHeightIn > GABLE_PANEL_MAX_HEIGHT_IN) {
     throw new Error(
-      `The taller edge height (${tallerHeightIn}) exceeds the ${GABLE_PANEL_MAX_HEIGHT_IN}in (8ft) max a single Gable End Panel can be built at — this should be the panel's own height above the eave line, not an absolute floor height.`,
+      `The taller edge height (${tallerHeightIn}) exceeds the ${GABLE_PANEL_MAX_HEIGHT_IN}in (${GABLE_PANEL_MAX_HEIGHT_IN / 12}ft) max a single Gable End Panel can be built at — this should be the panel's own height above the eave line, not an absolute floor height.`,
     );
   }
 
