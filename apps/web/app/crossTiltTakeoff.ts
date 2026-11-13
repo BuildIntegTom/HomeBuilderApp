@@ -5,6 +5,9 @@ import {
   wallCompassDirection,
   type CompassDirection,
   type Footprint,
+  computeUpperRowWidths,
+  headerPeakOffsetsIn,
+  type PanelSlot,
 } from "@building-integrity/geometry";
 import {
   buildCrossTiltPanelMembers,
@@ -12,9 +15,18 @@ import {
   type CrossTiltPanelOptions,
   type PanelMember,
   type GirtStyle,
+  bigHeaderPeakCount,
 } from "@building-integrity/panel-catalog";
 
 const IN_PER_FT = 12;
+
+/** ⚠ **His own band for these panels**, 2026-11-12: *"Second story/roof
+ * helper panels can be 15.5\" to 4' wide and should have the same safety gaps
+ * as the walls below it."* 15.5in is the wall's own depth, which is also the
+ * corner panel's width and the row's own inset — see `computeUpperRowWidths`
+ * for why those three coinciding is what makes the alignment land exactly. */
+const CROSS_TILT_MIN_PANEL_WIDTH_IN = 15.5;
+const CROSS_TILT_MAX_PANEL_WIDTH_IN = 48;
 
 /** Where a panel sits in the world, in the frame `Building3DView` draws in. */
 export interface CrossTiltWorldPlacement {
@@ -119,6 +131,15 @@ export interface CrossTiltTakeoffInput {
   /** The project's girt style, so this row's girts match every other panel's.
    * Omitted = the catalog's own legacy default, never the project default. */
   girtStyle?: GirtStyle;
+  /**
+   * ⚠ **The wall below each of these walls, so this row's joints land on
+   * its joints** — his 2026-11-12 *"I really want these studs to line up."*
+   *
+   * Omitted and the row falls back to the deck's own 12in-minimum module,
+   * which is what it used to do and what put 15.5/24/17 over a wall running
+   * 48/44.125/40/28.125/32.125. See `computeUpperRowWidths`.
+   */
+  wallSlotsByWallId?: Record<string, readonly PanelSlot[]>;
   /** Withheld where no pitch resolves — then there is no roof to receive and
    * no row, rather than a guessed one. */
   roofPitchIn12: number | undefined;
@@ -237,7 +258,7 @@ function optionsKey(o: CrossTiltPanelOptions): string {
  * be wrong for the other.
  */
 export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTiltTakeoff {
-  const { footprint, crossTiltWallIds, depthIn, roofPitchIn12, wallHeightFt, roofGableEndInsetIn, girtStyle } = input;
+  const { footprint, crossTiltWallIds, depthIn, roofPitchIn12, wallHeightFt, roofGableEndInsetIn, girtStyle, wallSlotsByWallId } = input;
   if (!footprint || !crossTiltWallIds || crossTiltWallIds.size === 0) return EMPTY;
   if (roofPitchIn12 === undefined) return EMPTY;
 
@@ -295,7 +316,62 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
     const startInsetIn = gableEndOwnsCorner(wall.id, wall.startCorner) ? roofGableEndInsetIn : 0;
     const endInsetIn = gableEndOwnsCorner(wall.id, wall.endCorner) ? roofGableEndInsetIn : 0;
     const runIn = lengthIn - startInsetIn - endInsetIn;
-    const widthsIn = runIn > 0 ? planFloorRoofPanelWidthsIn(runIn, depthIn) : null;
+    /**
+     * ⚠ **THE ROW TAKES THE WALL'S OWN WIDTHS.**
+     *
+     * > *"the north tall third gable wall panels should have [girts] and the
+     * > same width panelized… I really want these studs to line up."*
+     * > — Tommy, 2026-11-12
+     *
+     * It used to divide `runIn` on the deck's 12in-minimum module, and said
+     * so on its own shop sheet. That gave 15.5/24/17 over a wall running
+     * 48/44.125/40/28.125/32.125 — two rules, no agreement, every stud
+     * landing mid-bay.
+     *
+     * It works out exactly on a normal building because the row's inset IS
+     * the wall thickness and the wall's corner panel is the same 15.5in, so
+     * the row spans precisely the wall between its two corners. Measured on
+     * his Tiny House: wall 288in, row 257in.
+     *
+     * ⚠ **And where it cannot, it REFUSES** — his call: *"build the exact
+     * match rule, refuse the exceptions."* The refusal carries both numbers
+     * and surfaces exactly where every other refusal in this takeoff does.
+     */
+    const wallSlots = wallSlotsByWallId?.[wall.id];
+    let widthsIn: number[] | null = null;
+    if (runIn > 0 && wallSlots && wallSlots.length > 0) {
+      const aligned = computeUpperRowWidths({
+        wallSlotsIn: wallSlots.map((slot) => ({
+          widthIn: slot.widthIn,
+          isSafetyGap: slot.type === "safety-gap",
+          /* ⚠ A slot too wide for one panel up here splits at its header's
+             own zigzag peaks — *"ideally the separations of panels would be
+             at the same intervals of where the /\/\/\/\ zigzag pattern of
+             headers peaks"*. The peak count is the header's own, so a joint
+             above a peak cannot drift from it. A slot with no height to read
+             a rise from supplies none, and the row refuses rather than
+             dividing it somewhere arbitrary. */
+          headerPeakOffsetsIn:
+            slot.widthIn > CROSS_TILT_MAX_PANEL_WIDTH_IN && slot.heightIn !== undefined
+              ? headerPeakOffsetsIn(slot.widthIn, bigHeaderPeakCount(slot.widthIn, slot.heightIn))
+              : undefined,
+        })),
+        rowStartIn: startInsetIn,
+        rowRunIn: runIn,
+        minPanelWidthIn: CROSS_TILT_MIN_PANEL_WIDTH_IN,
+        maxPanelWidthIn: CROSS_TILT_MAX_PANEL_WIDTH_IN,
+      });
+      if (aligned.refusal !== null) {
+        refusal ??= `The tilted row on wall ${wall.id} cannot follow the wall below it. ${aligned.refusal}`;
+        continue;
+      }
+      widthsIn = aligned.widthsIn;
+    } else if (runIn > 0) {
+      /* No wall handed over — the pre-2026-11-12 behaviour, kept so a caller
+         that has not been taught yet draws the row it always drew rather than
+         nothing at all. */
+      widthsIn = planFloorRoofPanelWidthsIn(runIn, depthIn);
+    }
     if (widthsIn === null) {
       refusal ??= `Wall ${wall.id} is ${(lengthIn / IN_PER_FT).toFixed(1)}ft long and leaves ${(runIn / IN_PER_FT).toFixed(1)}ft of roofed span once the gable ends take their own depth at each corner — too short to divide into cross-tilted panels, so the row is not drawn there rather than drawn wrong.`;
       continue;

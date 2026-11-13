@@ -58,3 +58,4 @@ export * from "./floorMembranePolygons";
 export * from "./uncombineSafetyGaps";
 export * from "./panelTypeChoices";
 export * from "./panelTypeTransition";
+export * from "./upperRowWidths";

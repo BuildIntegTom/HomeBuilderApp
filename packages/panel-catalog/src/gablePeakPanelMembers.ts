@@ -85,6 +85,22 @@ export function gablePeakClearZIn(heightIn: number): { bottomZIn: number; topZIn
   };
 }
 
+/**
+ * ⚠ **How far below the panel's own TOP the beam's top face lands.**
+ *
+ * Constant whatever the panel's height, because every term in it is: the top
+ * skin, the top plate the box hangs under, the box's own lid, and his quarter
+ * inch of clearance. 3 1/4in in all.
+ *
+ * Exported so the 3D view can place the beam from the same arithmetic the box
+ * is built from. A second copy of this in the renderer is exactly how the
+ * model and the shop drawings come to describe different buildings — which is
+ * the fault B9 was fixing when it found the beam floating 0.75in on
+ * nominal-versus-actual.
+ */
+export const GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN =
+  SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN + GABLE_PEAK_BOX_PLY_THICKNESS_IN + GABLE_PEAK_TOP_CLEARANCE_IN;
+
 /** Where the box sits in the panel, and where the beam sits in the box. */
 export interface GablePeakSlot {
   /** The box, plywood included. */

@@ -19,6 +19,7 @@ export * from "./panelRecipe";
 export * from "./panelEditorOps";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
+export * from "./gablePeakPanelMembers";
 export * from "./cornerPanelMembers";
 export * from "./gablePanelMembers";
 export * from "./verticalGapFillerMembers";

@@ -9,7 +9,7 @@ import {
   buildGablePeakPanelMembers,
   buildGablePeakPanelSchema,
 } from "./gablePeakPanelMembers";
-import { COLUMN_TOTAL_WIDTH_IN } from "./columnPanelMembers";
+import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMembers";
 import { ROOF_CATCHER_BEAM_DEPTH_IN, ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN } from "./roofCatcherBeamMembers";
 import { memberBoxIn } from "./panelMemberHelpers";
 import { overlappingPairsIn } from "./memberOverlap.test";
@@ -133,7 +133,38 @@ describe("the Gable Peak Panel", () => {
     expect(memberBoxIn(topSkin).zToIn).toBe(HEIGHT);
   });
 
-  it("⚠ NO OVERLAPPING MEMBERS — the standing rule, and the whole reason the box is furred", () => {
+  it("⚠ adds NO overlap the Column Panel did not already have — and that column has plenty", () => {
+    /* ⚠ **A PRE-EXISTING DEFECT, FOUND HERE AND NOT CAUSED HERE.** Measured
+       2026-11-12, overlapping pairs in a plain `buildColumnStyleMembers` at
+       the project's own 15.5in depth:
+
+         height  40  50  60  72  84  96  120
+         pairs    2  14   7   4   9   9    7
+
+       Mostly a girt BAR running through the 2x4 blocking at the same height,
+       and on some heights a blocking row sitting above the top plate. It is a
+       real breach of his 2026-10-23 standing rule and it belongs to the
+       Column Panel, not to this panel.
+
+       So the honest assertion is RELATIVE: cutting the column's rows around
+       the box and the packs must not introduce a collision of its own. It
+       does not — it removes several, because the segments it re-emits miss
+       the girts as well as the obstacles it was cutting for. Asserting a flat
+       zero here would have passed at 120in and quietly inherited the rest. */
+    for (const heightIn of [40, 50, 60, 72, 84, 96, 120]) {
+      const column = overlappingPairsIn(buildColumnStyleMembers(COLUMN_TOTAL_WIDTH_IN, DEPTH, heightIn, true));
+      const peak = overlappingPairsIn(buildGablePeakPanelMembers(DEPTH, heightIn, true));
+      /* Compared by COUNT, because cutting a row renames it (`blocking_1_exterior`
+         becomes `blocking_1_exterior_1`), so the same collision reads as a
+         different pair. The count is what cannot be argued with. */
+      expect({ heightIn, worseThanAPlainColumn: peak.length > column.length }).toEqual({
+        heightIn,
+        worseThanAPlainColumn: false,
+      });
+    }
+  });
+
+  it("⚠ and at the heights a gable peak actually gets built at, it is clean", () => {
     /* [[no_overlapping_members]], 2026-10-23. A box cut into the straw is
        only buildable if nothing else is already in that straw: the girts and
        the blocking rows that cross it are cut around it, and the centre

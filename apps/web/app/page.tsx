@@ -205,6 +205,7 @@ import {
   buildColumnPanelMembers,
   type GirtStyle,
   buildColumnStyleMembers,
+  buildGablePeakPanelMembers,
   buildCornerPanelMembers,
   buildDoorHeaderMembers,
   buildGablePanelMembers,
@@ -7518,13 +7519,26 @@ export default function LayoutEditor() {
            wall: 0 of 4 interior gable joints landed on a wall joint before,
            and all of them do now. */
         gableWallJointSpansFor(wall.id),
-        /* ⚠ **B9: the column's top IS the beam's underside.** *"gable end
-           column panels' tops should be flush/meet the bottom of the gable
-           ridge beams... The beam should air on top the panel."* The beam's
-           own depth, read from the beam, so the two cannot drift — they
-           already had, by 0.75in, nominal 12 against a 2x12's actual
-           11.25. */
-        ROOF_CATCHER_BEAM_DEPTH_IN,
+        /* ⚠ **THE COLUMN TILE NOW RUNS FULL HEIGHT TO THE PEAK — 0, not the
+           beam's depth.** Tommy, 2026-11-12, asked directly: *"The housing of
+           the beam goes all the way to the peak and matches the other panels
+           - yes."*
+
+           This supersedes B9, whose rule was that the column's top IS the
+           beam's underside — *"gable end column panels' tops should be
+           flush/meet the bottom of the gable ridge beams... The beam should
+           air on top the panel."* That was right while the beam sat ON the
+           panel. It now runs THROUGH it, inside the Gable Peak Panel's furred
+           plywood box, so the panel closes to the roofline like its
+           neighbours and the beam is carried inside rather than balanced on
+           top. The drop that used to hold the panel short is exactly what
+           would now open a gap at the ridge.
+
+           ⚠ `ROOF_CATCHER_BEAM_DEPTH_IN` has not stopped mattering — it is
+           what sizes the box's slot (see `GABLE_PEAK_SLOT_HEIGHT_IN`), so the
+           beam's own depth still decides the opening it drops into. It is
+           simply no longer what shortens the panel. */
+        0,
       );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
@@ -7862,8 +7876,13 @@ export default function LayoutEditor() {
          every other panel on the building gets. Added 2026-11-12 with the
          girts themselves — before that this row had none at all. */
       girtStyle,
+      /* ⚠ **The wall below, so this row's joints land on its joints** — his
+         *"I really want these studs to line up."* The TOP story's slots,
+         because that is the wall this row sits on, the same choice
+         `gableWallJointSpansFor` makes for the gable row. */
+      wallSlotsByWallId: stories[stories.length - 1]?.wallSlots ?? {},
     }),
-    [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt, girtStyle],
+    [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt, girtStyle, stories],
   );
 
   const crossTiltTakeoff = useMemo(() => computeCrossTiltTakeoff(crossTiltTakeoffInput), [crossTiltTakeoffInput]);
@@ -8838,11 +8857,30 @@ export default function LayoutEditor() {
             girtStyle,
           )
         : panelTypeId === "column"
-          ? /* ⚠ Real width, not the memoized nominal — see the corner note
+          ? /* ⚠ **A column in the GABLE ROW is a Gable Peak Panel** — the one
+               the ridge beam runs through, with its furred plywood box and
+               its two 2x6 packs. *"Let's call it a gable peak panel."* —
+               Tommy, 2026-11-12.
+
+               ⚠ **Told apart by the EDGE HEIGHTS, not by the instance.**
+               `membersForPanelTypeId` is reached two ways — once per
+               instance, carrying the whole `PanelInstance`, and once
+               per-type-nominal with no instance at all — and BOTH feed Shop
+               Fabrication pages. A flag read off the instance would be
+               invisible on the nominal path, so a Gable Peak reached that way
+               would be drawn and cut-listed as a plain Column Panel, which is
+               a sheet describing the wrong part. A gable TILE is the only
+               column that carries edge heights (`pushInstance` hands them
+               over for the gable row and for nothing else), so this reads the
+               same answer on both paths.
+
+               ⚠ Real width, not the memoized nominal — see the corner note
                below, which this now matches. A Shop Fabrication page is
                GROUPED by width, so a wider column used to get its own page
                that then drew and listed a 25.5in panel. */
-            buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
+            leftEdgeHeightInOverride !== undefined
+            ? buildGablePeakPanelMembers(thicknessIn, heightIn, includeNailer, girtStyle, widthIn)
+            : buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
           : panelTypeId === "corner"
             ? // ⚠ Built at this instance's REAL width (and real height), not at
               // the memoized nominal 25.5in panel. This is what the
@@ -9519,6 +9557,18 @@ export default function LayoutEditor() {
                 .sort()
                 .join(";"),
         );
+      }
+      /* ⚠ **A Gable Peak Panel is not a Column Panel**, even at the same
+         width and height. It carries a plywood box with the ridge beam
+         through it and two 2x6 packs under that; a wall column carries
+         neither. Without this they would share one Shop Fabrication page and
+         half of them would be built from members they do not have — the same
+         trap the Carrot pattern hit in 2026-11-02. Keyed on the edge heights
+         because that is what the member builder itself reads (see
+         `membersForPanelTypeId`), so the sheet and the part cannot disagree
+         about which panel this is. */
+      if (panelTypeId === "column") {
+        parts.push(inst.leftEdgeHeightIn === undefined ? "wall" : "gable-peak");
       }
       // Same idea for gable tiles — two tiles of the same width but
       // different edge heights (different position along the roofline)

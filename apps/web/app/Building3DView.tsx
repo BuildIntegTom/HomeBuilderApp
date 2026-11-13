@@ -54,6 +54,7 @@ import {
   columnStorySegments,
   divideRingFacet,
   buildTaperedPanelMembers,
+  GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN,
   ROOF_CATCHER_BEAM_DEPTH_IN,
   STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
@@ -2235,8 +2236,28 @@ export default function Building3DView({
       members: PanelMember[];
     }[] = [];
     const ridgeRad = Math.atan2(plane.highEnd.y - plane.highStart.y, plane.highEnd.x - plane.highStart.x);
-    /* The beam hangs UNDER the ridge line, so its top face is the ridge. */
-    const beamUnderFt = plane.highHeightFt - ROOF_CATCHER_BEAM_DEPTH_IN / IN_PER_FT;
+    /**
+     * ⚠ **THE BEAM NOW SITS INSIDE THE GABLE PEAK PANEL, NOT ON TOP OF IT.**
+     *
+     * > *"a furred out slot inside the straw… to house the beam"* — Tommy,
+     * > 2026-11-10, and on 2026-11-12: *"The housing of the beam goes all the
+     * > way to the peak and matches the other panels - yes."*
+     *
+     * Its top face used to BE the ridge, because it balanced on a column
+     * panel cut short by its own depth (B9). The panel now closes to the
+     * roofline and the beam drops into the plywood box inside it, so the
+     * ridge is the panel's top and the beam hangs below it by the box's lid
+     * and his quarter inch of clearance.
+     *
+     * ⚠ Read from `gablePeakSlotIn` rather than written out again here. The
+     * box's own geometry decides where the beam lands, and a second copy of
+     * that arithmetic in the renderer is how the view and the shop drawings
+     * come to describe different buildings — which is the exact fault B9 was
+     * fixing when it found the beam floating 0.75in on nominal-versus-actual.
+     */
+    const beamUnderFt =
+      plane.highHeightFt -
+      (GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN + ROOF_CATCHER_BEAM_DEPTH_IN) / IN_PER_FT;
 
     for (const segment of layout.segments) {
       out.push({
