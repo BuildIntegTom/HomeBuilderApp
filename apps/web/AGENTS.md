@@ -10,6 +10,19 @@
   `--max-old-space-size=4096`. Run it from `apps/web` — the flat config
   lives there, and from the repo root ESLint reports a migration error and
   writes nothing.
+
+  ⚠ **4096 IS NO LONGER RELIABLY ENOUGH, and it fails SILENTLY.** Measured
+  2026-11-13: three runs at 4GB produced a **zero-byte** JSON file while the
+  shell happily reported success, because the OOM goes to stderr and the
+  usual incantation sends stderr to `/dev/null`. A single-file run on
+  `page.tsx` alone then took over ten minutes before being killed. The same
+  tree linted clean at `--max-old-space-size=6144` in one pass.
+
+  So: **use 6144**, and **never discard stderr** — redirect it to a file and
+  look at it. A successful run's stderr is one benign Babel note ("has
+  deoptimised the styling of ... page.tsx as it exceeds the max of 500KB");
+  anything else, or an empty JSON, means the gate did not run. An empty
+  result is not a clean result, and it is easy to read as one.
 - **Measure a lint DELTA, not a total, and count WARNINGS too.** This app
   carries pre-existing errors (94 across the editor files as of
   2026-09-25), so "eslint reported errors" means nothing on its own.

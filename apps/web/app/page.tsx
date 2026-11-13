@@ -2857,7 +2857,19 @@ export default function LayoutEditor() {
     setRoofProfilePointHeightsFt(s.roofProfilePointHeightsFt);
     setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
     setGableWindowAnchorsByWallId(s.gableWindowAnchorsByWallId ?? {});
-    setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
+    /* ⚠ **CLAMPED ON THE WAY IN, like both of the controls that write it.**
+       `buildGablePanelMembers` THROWS above `GABLE_PANEL_MAX_HEIGHT_IN`, and
+       it runs inside the 3D view's render — so a value over 96 does not
+       degrade anything, it takes the page down. Both UI writers already clamp
+       (the Settings field and the elevation's own drag handle); this third
+       writer did not, so a stored file carrying a larger number — saved
+       before those clamps existed, or edited by hand — would open to a dead
+       page with no way back to the control that caused it.
+
+       Found 2026-11-13 while chasing the roof-peak crash. It is NOT that
+       crash (which is still unreproduced), it is a separate hole in the same
+       wall, and it is the one a loaded file can walk through. */
+    setMaxGablePanelHeightIn(Math.min(s.maxGablePanelHeightIn, GABLE_PANEL_MAX_HEIGHT_IN));
     setTrussPlateInsetIn(s.trussPlateInsetIn);
     setHeelHeightIn(s.heelHeightIn);
     setRoofBearingAnchorMode(s.roofBearingAnchorMode ?? "truss-heel");
