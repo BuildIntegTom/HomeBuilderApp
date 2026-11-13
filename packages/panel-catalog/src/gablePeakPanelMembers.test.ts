@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
-  BEAM_CATCHER_BOX_HEIGHT_IN,
-  BEAM_CATCHER_BOX_PLY_THICKNESS_IN,
-  BEAM_CATCHER_BOX_WIDTH_IN,
-  BEAM_CATCHER_SLOT_HEIGHT_IN,
-  BEAM_CATCHER_SLOT_WIDTH_IN,
-  beamCatcherSlotIn,
-  buildBeamCatcherPanelMembers,
-  buildBeamCatcherPanelSchema,
-} from "./beamCatcherPanelMembers";
+  GABLE_PEAK_BOX_HEIGHT_IN,
+  GABLE_PEAK_BOX_PLY_THICKNESS_IN,
+  GABLE_PEAK_BOX_WIDTH_IN,
+  GABLE_PEAK_SLOT_HEIGHT_IN,
+  GABLE_PEAK_SLOT_WIDTH_IN,
+  gablePeakSlotIn,
+  buildGablePeakPanelMembers,
+  buildGablePeakPanelSchema,
+} from "./gablePeakPanelMembers";
 import { COLUMN_TOTAL_WIDTH_IN } from "./columnPanelMembers";
 import { ROOF_CATCHER_BEAM_DEPTH_IN, ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN } from "./roofCatcherBeamMembers";
 import { memberBoxIn } from "./panelMemberHelpers";
 import { overlappingPairsIn } from "./memberOverlap.test";
 
 /**
- * ⚠ **The Beam Catcher Panel, built entirely from Tommy's own numbers.**
+ * ⚠ **The Gable Peak Panel, built entirely from Tommy's own numbers.**
  *
  * > *"a furred out slot inside the straw (3/4" plywood small box that is 1/4"
  * > bigger each sideways and taller to house the beam) and then the weight is
@@ -28,18 +28,18 @@ import { overlappingPairsIn } from "./memberOverlap.test";
 
 const DEPTH = 15.5;
 const HEIGHT = 120;
-const members = () => buildBeamCatcherPanelMembers(DEPTH, HEIGHT, true);
+const members = () => buildGablePeakPanelMembers(DEPTH, HEIGHT, true);
 
-describe("the Beam Catcher Panel", () => {
+describe("the Gable Peak Panel", () => {
   it("⚠ the slot is his quarter inch bigger than the beam on EACH side, and a quarter taller", () => {
-    expect(BEAM_CATCHER_SLOT_WIDTH_IN).toBe(ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN + 0.5);
-    expect(BEAM_CATCHER_SLOT_WIDTH_IN).toBe(5);
-    expect(BEAM_CATCHER_SLOT_HEIGHT_IN).toBe(ROOF_CATCHER_BEAM_DEPTH_IN + 0.25);
-    expect(BEAM_CATCHER_SLOT_HEIGHT_IN).toBe(11.5);
+    expect(GABLE_PEAK_SLOT_WIDTH_IN).toBe(ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN + 0.5);
+    expect(GABLE_PEAK_SLOT_WIDTH_IN).toBe(5);
+    expect(GABLE_PEAK_SLOT_HEIGHT_IN).toBe(ROOF_CATCHER_BEAM_DEPTH_IN + 0.25);
+    expect(GABLE_PEAK_SLOT_HEIGHT_IN).toBe(11.5);
     /* 3/4in plywood all round, so the box outside is the slot plus two
        thicknesses each way. */
-    expect(BEAM_CATCHER_BOX_WIDTH_IN).toBe(6.5);
-    expect(BEAM_CATCHER_BOX_HEIGHT_IN).toBe(13);
+    expect(GABLE_PEAK_BOX_WIDTH_IN).toBe(6.5);
+    expect(GABLE_PEAK_BOX_HEIGHT_IN).toBe(13);
   });
 
   it("⚠ the beam PASSES THROUGH — every box piece spans the full wall depth", () => {
@@ -47,28 +47,28 @@ describe("the Beam Catcher Panel", () => {
        box is open at both wall faces and only four pieces exist: a floor, a
        lid and two cheeks. A fifth piece closing an end would be the pocket he
        did not choose. */
-    const box = members().filter((m) => m.memberId.startsWith("beam_catcher_box_"));
+    const box = members().filter((m) => m.memberId.startsWith("gable_peak_box_"));
     expect(box).toHaveLength(4);
     for (const piece of box) {
       expect({ id: piece.memberId, spansDepth: piece.actualDimsIn.widthIn }).toEqual({ id: piece.memberId, spansDepth: DEPTH });
       expect({ id: piece.memberId, ply: piece.actualDimsIn.thicknessIn }).toEqual({
         id: piece.memberId,
-        ply: BEAM_CATCHER_BOX_PLY_THICKNESS_IN,
+        ply: GABLE_PEAK_BOX_PLY_THICKNESS_IN,
       });
     }
     const ids = box.map((p) => p.memberId).sort();
     expect(ids).toEqual([
-      "beam_catcher_box_cheek_left",
-      "beam_catcher_box_cheek_right",
-      "beam_catcher_box_floor",
-      "beam_catcher_box_lid",
+      "gable_peak_box_cheek_left",
+      "gable_peak_box_cheek_right",
+      "gable_peak_box_floor",
+      "gable_peak_box_lid",
     ]);
   });
 
   it("⚠ the beam rests on the box floor, with the quarter inch ABOVE it", () => {
     /* A beam cannot bear and be centred in its clearance at the same time.
        The slack is at the top, which is the only place it can be. */
-    const slot = beamCatcherSlotIn(COLUMN_TOTAL_WIDTH_IN, HEIGHT);
+    const slot = gablePeakSlotIn(COLUMN_TOTAL_WIDTH_IN, HEIGHT);
     expect(slot.beamFromZIn).toBe(slot.slotFromZIn);
     expect(slot.beamToZIn - slot.beamFromZIn).toBe(ROOF_CATCHER_BEAM_DEPTH_IN);
     expect(+(slot.slotToZIn - slot.beamToZIn).toFixed(6)).toBe(0.25);
@@ -79,7 +79,7 @@ describe("the Beam Catcher Panel", () => {
   it("⚠ FOUR 2x6s — two per wythe, 5.5in along the wall", () => {
     /* > *"lets go with 5.5\" along the wall."* — Tommy, 2026-11-12, asked
        > directly which way a 5.5 x 3.0in pack stands. */
-    const pack = members().filter((m) => m.memberId.startsWith("beam_catcher_pack_"));
+    const pack = members().filter((m) => m.memberId.startsWith("gable_peak_pack_"));
     expect(pack).toHaveLength(4);
     expect(pack.filter((m) => m.memberId.includes("exterior"))).toHaveLength(2);
     expect(pack.filter((m) => m.memberId.includes("interior"))).toHaveLength(2);
@@ -102,8 +102,8 @@ describe("the Beam Catcher Panel", () => {
   });
 
   it("⚠ the packs carry the box down to the bottom plate, with nothing floating", () => {
-    const slot = beamCatcherSlotIn(COLUMN_TOTAL_WIDTH_IN, HEIGHT);
-    const pack = members().filter((m) => m.memberId.startsWith("beam_catcher_pack_"));
+    const slot = gablePeakSlotIn(COLUMN_TOTAL_WIDTH_IN, HEIGHT);
+    const pack = members().filter((m) => m.memberId.startsWith("gable_peak_pack_"));
     for (const stud of pack) {
       const box = memberBoxIn(stud);
       /* Its top meets the box's underside exactly — no gap to shim, no
@@ -143,8 +143,8 @@ describe("the Beam Catcher Panel", () => {
   });
 
   it("⚠ refuses a centre nailer, because it would stand in the slot", () => {
-    const withNailer = buildBeamCatcherPanelMembers(DEPTH, HEIGHT, true);
-    const without = buildBeamCatcherPanelMembers(DEPTH, HEIGHT, false);
+    const withNailer = buildGablePeakPanelMembers(DEPTH, HEIGHT, true);
+    const without = buildGablePeakPanelMembers(DEPTH, HEIGHT, false);
     expect(withNailer.map((m) => m.memberId)).toEqual(without.map((m) => m.memberId));
     expect(withNailer.some((m) => m.memberId.includes("nailer"))).toBe(false);
   });
@@ -153,14 +153,14 @@ describe("the Beam Catcher Panel", () => {
     /* The unsupported plywood span under the beam, and the fact that housing
        the beam supersedes B9's "the column's top IS the beam's underside".
        Neither is quietly absorbed. */
-    const schema = buildBeamCatcherPanelSchema(DEPTH, HEIGHT, false);
-    expect(schema.displayName).toBe("Beam Catcher Panel");
+    const schema = buildGablePeakPanelSchema(DEPTH, HEIGHT, false);
+    expect(schema.displayName).toBe("Gable Peak Panel");
     expect(schema.notes.filter((n) => n.type === "deviation")).toHaveLength(2);
     expect(schema.notes.some((n) => /pending Building Integrity/i.test(n.text))).toBe(true);
   });
 
   it("is still a Column Panel underneath — same width, same depth, same height", () => {
-    const schema = buildBeamCatcherPanelSchema(DEPTH, HEIGHT, false);
+    const schema = buildGablePeakPanelSchema(DEPTH, HEIGHT, false);
     expect(schema.derivedFrom).toBe("column_panel");
     expect(schema.overallDimensions).toEqual({ heightIn: HEIGHT, widthIn: COLUMN_TOTAL_WIDTH_IN, depthIn: DEPTH });
   });

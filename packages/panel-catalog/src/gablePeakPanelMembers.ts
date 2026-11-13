@@ -16,10 +16,10 @@ import {
 } from "./panelMemberHelpers";
 
 /**
- * **The Beam Catcher Panel** — the ridge column, with the roof-catcher beam
+ * **The Gable Peak Panel** — the ridge column, with the roof-catcher beam
  * running *through* it instead of sitting on top of it.
  *
- * > *"this may entail making what I call a beam catcher panel, where it has a
+ * > *"this may entail making what I call a gable peak panel panel, where it has a
  * > furred out slot inside the straw (3/4" plywood small box that is 1/4"
  * > bigger each sideways and taller to house the beam) and then the weight is
  * > ditributed down with a 2x6 stud pack on each wythe."* — Tommy, 2026-11-10
@@ -28,7 +28,7 @@ import {
  *
  * | | |
  * |---|---|
- * | Replaces | the ridge column — *"wherever a ridge beam lands, that panel is a beam catcher"* |
+ * | Replaces | the ridge column — *"wherever a ridge beam lands, that panel is a gable peak panel"* |
  * | Beam | **passes all the way through**, so the box is open at both wall faces |
  * | Panel top | **full height, past the beam** — it runs to the roofline like its neighbours |
  * | Box clearance | **1/4in on each side**, so 5.0in x 11.5in inside a 4.5in x 11.25in beam |
@@ -52,33 +52,33 @@ import {
 /** ⚠ His *"1/4in bigger each sideways and taller"*, asked and answered
  * directly on 2026-11-12: a quarter inch at **each** face sideways, and a
  * quarter at the top. */
-export const BEAM_CATCHER_SIDE_CLEARANCE_IN = 0.25;
-export const BEAM_CATCHER_TOP_CLEARANCE_IN = 0.25;
+export const GABLE_PEAK_SIDE_CLEARANCE_IN = 0.25;
+export const GABLE_PEAK_TOP_CLEARANCE_IN = 0.25;
 
 /** The furring box's own plywood. */
-export const BEAM_CATCHER_BOX_PLY_THICKNESS_IN = 0.75;
-export const BEAM_CATCHER_BOX_PLY_SPEC = "3/4in_5ply_CDX";
+export const GABLE_PEAK_BOX_PLY_THICKNESS_IN = 0.75;
+export const GABLE_PEAK_BOX_PLY_SPEC = "3/4in_5ply_CDX";
 
 /** Clear inside the box: the beam plus his clearances. 5.0in x 11.5in. */
-export const BEAM_CATCHER_SLOT_WIDTH_IN = ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN + 2 * BEAM_CATCHER_SIDE_CLEARANCE_IN;
-export const BEAM_CATCHER_SLOT_HEIGHT_IN = ROOF_CATCHER_BEAM_DEPTH_IN + BEAM_CATCHER_TOP_CLEARANCE_IN;
+export const GABLE_PEAK_SLOT_WIDTH_IN = ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN + 2 * GABLE_PEAK_SIDE_CLEARANCE_IN;
+export const GABLE_PEAK_SLOT_HEIGHT_IN = ROOF_CATCHER_BEAM_DEPTH_IN + GABLE_PEAK_TOP_CLEARANCE_IN;
 
 /** Outside the box, plywood included. 6.5in x 13.0in. */
-export const BEAM_CATCHER_BOX_WIDTH_IN = BEAM_CATCHER_SLOT_WIDTH_IN + 2 * BEAM_CATCHER_BOX_PLY_THICKNESS_IN;
-export const BEAM_CATCHER_BOX_HEIGHT_IN = BEAM_CATCHER_SLOT_HEIGHT_IN + 2 * BEAM_CATCHER_BOX_PLY_THICKNESS_IN;
+export const GABLE_PEAK_BOX_WIDTH_IN = GABLE_PEAK_SLOT_WIDTH_IN + 2 * GABLE_PEAK_BOX_PLY_THICKNESS_IN;
+export const GABLE_PEAK_BOX_HEIGHT_IN = GABLE_PEAK_SLOT_HEIGHT_IN + 2 * GABLE_PEAK_BOX_PLY_THICKNESS_IN;
 
 /** ⚠ **Two 2x6s per wythe, 5.5in face along the wall.** Asked directly on
  * 2026-11-12 — *"lets go with 5.5\" along the wall"* — so each stud stands
  * 5.5in along the panel's length and 1.5in through its depth, and a pair makes
  * a 5.5in x 3.0in pack sitting under the 6.5in box. */
-export const BEAM_CATCHER_PACK_STUD_COUNT = 2;
-export const BEAM_CATCHER_PACK_WIDTH_IN = LUMBER_2X6_WIDTH_IN; // 5.5, along the wall
-export const BEAM_CATCHER_PACK_DEPTH_IN = BEAM_CATCHER_PACK_STUD_COUNT * PLATE_2X4_THICKNESS_IN; // 3.0, through the wall
+export const GABLE_PEAK_PACK_STUD_COUNT = 2;
+export const GABLE_PEAK_PACK_WIDTH_IN = LUMBER_2X6_WIDTH_IN; // 5.5, along the wall
+export const GABLE_PEAK_PACK_DEPTH_IN = GABLE_PEAK_PACK_STUD_COUNT * PLATE_2X4_THICKNESS_IN; // 3.0, through the wall
 
 /** The clear span between the plates — the same two numbers `buildPlates`
  * works to, so the box and the packs cannot drift from the panel they sit
  * in. */
-export function beamCatcherClearZIn(heightIn: number): { bottomZIn: number; topZIn: number } {
+export function gablePeakClearZIn(heightIn: number): { bottomZIn: number; topZIn: number } {
   return {
     bottomZIn: SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN,
     topZIn: heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN,
@@ -86,7 +86,7 @@ export function beamCatcherClearZIn(heightIn: number): { bottomZIn: number; topZ
 }
 
 /** Where the box sits in the panel, and where the beam sits in the box. */
-export interface BeamCatcherSlot {
+export interface GablePeakSlot {
   /** The box, plywood included. */
   boxFromXIn: number;
   boxToXIn: number;
@@ -109,22 +109,22 @@ export interface BeamCatcherSlot {
  * also what makes the panel "full height past the beam" true in the only
  * sense a panel can be — its plates and skins are continuous.
  */
-export function beamCatcherSlotIn(widthIn: number, heightIn: number): BeamCatcherSlot {
-  const { topZIn } = beamCatcherClearZIn(heightIn);
+export function gablePeakSlotIn(widthIn: number, heightIn: number): GablePeakSlot {
+  const { topZIn } = gablePeakClearZIn(heightIn);
   const centreXIn = widthIn / 2;
-  const boxFromXIn = centreXIn - BEAM_CATCHER_BOX_WIDTH_IN / 2;
+  const boxFromXIn = centreXIn - GABLE_PEAK_BOX_WIDTH_IN / 2;
   const boxToZIn = topZIn;
-  const boxFromZIn = boxToZIn - BEAM_CATCHER_BOX_HEIGHT_IN;
-  const slotFromZIn = boxFromZIn + BEAM_CATCHER_BOX_PLY_THICKNESS_IN;
+  const boxFromZIn = boxToZIn - GABLE_PEAK_BOX_HEIGHT_IN;
+  const slotFromZIn = boxFromZIn + GABLE_PEAK_BOX_PLY_THICKNESS_IN;
   return {
     boxFromXIn,
-    boxToXIn: boxFromXIn + BEAM_CATCHER_BOX_WIDTH_IN,
+    boxToXIn: boxFromXIn + GABLE_PEAK_BOX_WIDTH_IN,
     boxFromZIn,
     boxToZIn,
-    slotFromXIn: boxFromXIn + BEAM_CATCHER_BOX_PLY_THICKNESS_IN,
-    slotToXIn: boxFromXIn + BEAM_CATCHER_BOX_WIDTH_IN - BEAM_CATCHER_BOX_PLY_THICKNESS_IN,
+    slotFromXIn: boxFromXIn + GABLE_PEAK_BOX_PLY_THICKNESS_IN,
+    slotToXIn: boxFromXIn + GABLE_PEAK_BOX_WIDTH_IN - GABLE_PEAK_BOX_PLY_THICKNESS_IN,
     slotFromZIn,
-    slotToZIn: boxToZIn - BEAM_CATCHER_BOX_PLY_THICKNESS_IN,
+    slotToZIn: boxToZIn - GABLE_PEAK_BOX_PLY_THICKNESS_IN,
     /* The beam rests on the box floor; his quarter inch of clearance is at
        the TOP, which is the only place it can be once the beam is bearing. */
     beamFromZIn: slotFromZIn,
@@ -134,8 +134,8 @@ export function beamCatcherSlotIn(widthIn: number, heightIn: number): BeamCatche
 
 /** The four plywood faces of the box. Open at both wall faces, because the
  * beam runs through. */
-function buildBoxMembers(slot: BeamCatcherSlot, depthIn: number): PanelMember[] {
-  const t = BEAM_CATCHER_BOX_PLY_THICKNESS_IN;
+function buildBoxMembers(slot: GablePeakSlot, depthIn: number): PanelMember[] {
+  const t = GABLE_PEAK_BOX_PLY_THICKNESS_IN;
   const ply = (
     memberId: string,
     xIn: number,
@@ -147,7 +147,7 @@ function buildBoxMembers(slot: BeamCatcherSlot, depthIn: number): PanelMember[] 
     memberId,
     material: "plywood",
     speciesGrade: null,
-    plySpec: BEAM_CATCHER_BOX_PLY_SPEC,
+    plySpec: GABLE_PEAK_BOX_PLY_SPEC,
     nominalSize: null,
     actualDimsIn: { thicknessIn: t, widthIn: depthIn, lengthIn },
     /* Both pairs run the full depth of the wall; the difference is which way
@@ -162,34 +162,34 @@ function buildBoxMembers(slot: BeamCatcherSlot, depthIn: number): PanelMember[] 
 
   return [
     ply(
-      "beam_catcher_box_floor",
+      "gable_peak_box_floor",
       slot.boxFromXIn,
       slot.boxFromZIn,
-      BEAM_CATCHER_BOX_WIDTH_IN,
+      GABLE_PEAK_BOX_WIDTH_IN,
       false,
       "furring box floor — the beam bears on this, and it bears on the two 2x6 packs below",
     ),
     ply(
-      "beam_catcher_box_lid",
+      "gable_peak_box_lid",
       slot.boxFromXIn,
       slot.boxToZIn - t,
-      BEAM_CATCHER_BOX_WIDTH_IN,
+      GABLE_PEAK_BOX_WIDTH_IN,
       false,
       "furring box lid, directly under the top plate",
     ),
     ply(
-      "beam_catcher_box_cheek_left",
+      "gable_peak_box_cheek_left",
       slot.boxFromXIn,
       slot.slotFromZIn,
-      BEAM_CATCHER_SLOT_HEIGHT_IN,
+      GABLE_PEAK_SLOT_HEIGHT_IN,
       true,
       "furring box cheek — holds the straw off the beam on this side",
     ),
     ply(
-      "beam_catcher_box_cheek_right",
+      "gable_peak_box_cheek_right",
       slot.slotToXIn,
       slot.slotFromZIn,
-      BEAM_CATCHER_SLOT_HEIGHT_IN,
+      GABLE_PEAK_SLOT_HEIGHT_IN,
       true,
       "furring box cheek — holds the straw off the beam on this side",
     ),
@@ -198,30 +198,30 @@ function buildBoxMembers(slot: BeamCatcherSlot, depthIn: number): PanelMember[] 
 
 /** The two 2x6 packs, one at each wythe, carrying the box down to the bottom
  * plate. */
-function buildStudPacks(slot: BeamCatcherSlot, depthIn: number, heightIn: number): PanelMember[] {
-  const { bottomZIn } = beamCatcherClearZIn(heightIn);
+function buildStudPacks(slot: GablePeakSlot, depthIn: number, heightIn: number): PanelMember[] {
+  const { bottomZIn } = gablePeakClearZIn(heightIn);
   const lengthIn = slot.boxFromZIn - bottomZIn;
   if (lengthIn <= 0) return [];
-  const packFromXIn = (slot.boxFromXIn + slot.boxToXIn) / 2 - BEAM_CATCHER_PACK_WIDTH_IN / 2;
+  const packFromXIn = (slot.boxFromXIn + slot.boxToXIn) / 2 - GABLE_PEAK_PACK_WIDTH_IN / 2;
   const out: PanelMember[] = [];
   for (const [face, packYIn] of [
     ["exterior", 0],
-    ["interior", depthIn - BEAM_CATCHER_PACK_DEPTH_IN],
+    ["interior", depthIn - GABLE_PEAK_PACK_DEPTH_IN],
   ] as const) {
-    for (let i = 0; i < BEAM_CATCHER_PACK_STUD_COUNT; i++) {
+    for (let i = 0; i < GABLE_PEAK_PACK_STUD_COUNT; i++) {
       out.push({
-        memberId: `beam_catcher_pack_${face}_${i + 1}`,
+        memberId: `gable_peak_pack_${face}_${i + 1}`,
         material: "dimensional_lumber",
         speciesGrade: LUMBER_SPECIES_GRADE,
         plySpec: null,
         nominalSize: "2x6",
         /* 5.5in along the wall, 1.5in through it — his orientation. */
-        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: BEAM_CATCHER_PACK_WIDTH_IN, lengthIn },
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: GABLE_PEAK_PACK_WIDTH_IN, lengthIn },
         orientation: "vertical",
         position: { xIn: packFromXIn, yIn: packYIn + i * PLATE_2X4_THICKNESS_IN, zIn: bottomZIn, rotationDeg: 90 },
         role: "stud",
         qty: 1,
-        notes: `${face} wythe, ${i + 1} of ${BEAM_CATCHER_PACK_STUD_COUNT} — carries the beam's bearing from the furring box down to the bottom plate`,
+        notes: `${face} wythe, ${i + 1} of ${GABLE_PEAK_PACK_STUD_COUNT} — carries the beam's bearing from the furring box down to the bottom plate`,
       });
     }
   }
@@ -279,7 +279,7 @@ function cutRowsAroundObstacles(members: readonly PanelMember[], obstacles: read
         actualDimsIn: { ...member.actualDimsIn, lengthIn: toXIn - fromXIn },
         position: { ...member.position, xIn: fromXIn },
         notes: cut
-          ? `${member.notes ?? ""}${member.notes ? " — " : ""}cut around the beam catcher's furring box and 2x6 packs`
+          ? `${member.notes ?? ""}${member.notes ? " — " : ""}cut around the gable peak panel's furring box and 2x6 packs`
           : member.notes,
       });
     });
@@ -288,18 +288,18 @@ function cutRowsAroundObstacles(members: readonly PanelMember[], obstacles: read
 }
 
 /**
- * Every physical member of a Beam Catcher Panel: a Column Panel, with its
+ * Every physical member of a Gable Peak Panel: a Column Panel, with its
  * cross-members cut around a plywood furring box, plus the box and the two
  * 2x6 packs that carry it.
  */
-export function buildBeamCatcherPanelMembers(
+export function buildGablePeakPanelMembers(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
   widthIn: number = COLUMN_TOTAL_WIDTH_IN,
 ): PanelMember[] {
-  const slot = beamCatcherSlotIn(widthIn, heightIn);
+  const slot = gablePeakSlotIn(widthIn, heightIn);
   /* ⚠ **Never a centre nailer on this panel.** A nailer stands at mid-width,
      which is exactly where the box is, so the two would occupy the same
      straw. The box is the thing the panel exists for. */
@@ -308,8 +308,8 @@ export function buildBeamCatcherPanelMembers(
   return [...cutRowsAroundObstacles(column, added), ...added];
 }
 
-/** Wraps `buildBeamCatcherPanelMembers` in the full shared component schema. */
-export function buildBeamCatcherPanelSchema(
+/** Wraps `buildGablePeakPanelMembers` in the full shared component schema. */
+export function buildGablePeakPanelSchema(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
@@ -319,12 +319,12 @@ export function buildBeamCatcherPanelSchema(
   return {
     schemaVersion: "0.1",
     componentType: "panel",
-    id: "beam_catcher_panel",
-    displayName: "Beam Catcher Panel",
+    id: "gable_peak_panel",
+    displayName: "Gable Peak Panel",
     status: "draft",
     derivedFrom: "column_panel",
     overallDimensions: { heightIn, widthIn, depthIn },
-    members: buildBeamCatcherPanelMembers(depthIn, heightIn, includeNailer, girtStyle, widthIn),
+    members: buildGablePeakPanelMembers(depthIn, heightIn, includeNailer, girtStyle, widthIn),
     fasteners: [],
     notes: [
       {
