@@ -326,7 +326,13 @@ export interface ProjectState {
    * GABLE_PANEL_MAX_HEIGHT_IN (packages/panel-catalog) — this is a
    * user-tunable threshold AT OR BELOW that real physical ceiling; the
    * difference between it and the true truss-bottom height (if any) is
-   * filled by a real vertical safety-gap tile instead of silently clamped. */
+   * filled by a real vertical safety-gap tile instead of silently clamped.
+   *
+   * ⚠ **That ceiling rose from 96in to the main story panel height on
+   * 2026-11-13** (his *"They should be trapezoid and can be up the height of
+   * the main story panels"*). A file holding exactly the old 96 is RAISED to
+   * the new ceiling on load rather than kept — see page.tsx's load handler,
+   * which explains why. A smaller stored value was a real choice and stands. */
   maxGablePanelHeightIn: number;
   trussPlateInsetIn: number;
   /** Energy-heel (raised-heel) truss seat height (Tommy: "have the truss

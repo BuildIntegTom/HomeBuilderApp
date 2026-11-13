@@ -244,6 +244,7 @@ import {
   DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
   GABLE_PANEL_MAX_HEIGHT_IN,
   GABLE_PANEL_MIN_HEIGHT_IN,
+  LEGACY_GABLE_PANEL_MAX_HEIGHT_IN,
   OCTAGON_RING_DIAMETER_OPTIONS_FT,
   PLYWOOD_SHEET_AREA_SQFT,
   concreteEmbodiedCarbonKgPerFt3,
@@ -1441,7 +1442,11 @@ export default function LayoutEditor() {
   // user-tunable threshold at or below that real physical ceiling; the
   // difference (if any) between it and the true truss-bottom height is
   // filled by a real vertical safety-gap tile instead of silently clamped.
-  const [maxGablePanelHeightIn, setMaxGablePanelHeightIn] = useState(96);
+  /* ⚠ Defaults to the CEILING, which since 2026-11-13 is the main story
+     panel height rather than 8ft — his *"They should be trapezoid and can be
+     up the height of the main story panels."* Defaulting below the ceiling
+     is what made tiles flatten before they had to. */
+  const [maxGablePanelHeightIn, setMaxGablePanelHeightIn] = useState(GABLE_PANEL_MAX_HEIGHT_IN);
   // Toggles the Elevation view's own draggable max-height line (Tommy: "a
   // button that you highlight and then you can drag the line down on the
   // editor") — an alternate, visual way to set the SAME maxGablePanelHeightIn
@@ -2869,7 +2874,18 @@ export default function LayoutEditor() {
        Found 2026-11-13 while chasing the roof-peak crash. It is NOT that
        crash (which is still unreproduced), it is a separate hole in the same
        wall, and it is the one a loaded file can walk through. */
-    setMaxGablePanelHeightIn(Math.min(s.maxGablePanelHeightIn, GABLE_PANEL_MAX_HEIGHT_IN));
+    /* ⚠ **A stored 96 is RAISED, not kept.** 96 was the hard ceiling until
+       2026-11-13, so a project holding exactly that was pinned there by the
+       app rather than by a choice anyone made, and keeping it would leave his
+       own saved buildings flat-topped after he asked for trapezoids. A value
+       BELOW the old ceiling was a real decision — somebody dragged the
+       Elevation view's max-height line to it — so that is left alone. The
+       clamp above the new ceiling stays, because the builder still throws. */
+    setMaxGablePanelHeightIn(
+      s.maxGablePanelHeightIn === LEGACY_GABLE_PANEL_MAX_HEIGHT_IN
+        ? GABLE_PANEL_MAX_HEIGHT_IN
+        : Math.min(s.maxGablePanelHeightIn, GABLE_PANEL_MAX_HEIGHT_IN),
+    );
     setTrussPlateInsetIn(s.trussPlateInsetIn);
     setHeelHeightIn(s.heelHeightIn);
     setRoofBearingAnchorMode(s.roofBearingAnchorMode ?? "truss-heel");

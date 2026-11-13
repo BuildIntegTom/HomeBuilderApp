@@ -5,9 +5,12 @@ import {
   computeGableRipCallout,
   GABLE_PANEL_MAX_HEIGHT_IN,
   GABLE_PANEL_MIN_HEIGHT_IN,
+  LEGACY_GABLE_PANEL_MAX_HEIGHT_IN,
   gableGirtPlan,
 } from "./gablePanelMembers";
 import { memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
+import { standardPanelHeightIn } from "./data";
+import { overlappingMemberPairs } from "./memberPrism";
 
 /**
  * ⚠ **What a gable corner stud's LONG POINT really is**, now that its top
@@ -429,5 +432,49 @@ describe("buildGablePanelSchema", () => {
     expect(schema.overallDimensions.heightIn).toBe(HIGH_EDGE_IN);
     expect(schema.members.length).toBeGreaterThan(0);
     expect(schema.notes.some((n) => n.text.includes("rip"))).toBe(true);
+  });
+});
+
+/**
+ * ⚠ **THE CEILING MOVED, SO THE PANEL HAS TO ACTUALLY BUILD THERE.**
+ *
+ * > *"They should be trapezoid and can be up the height of the main story
+ * > panels."* — Tommy, 2026-11-13
+ *
+ * `GABLE_PANEL_MAX_HEIGHT_IN` went from 96 to the main story panel height.
+ * Raising a limit proves nothing on its own — this builds AT the new ceiling
+ * and checks the panel that comes out is a real one, with girts to its own
+ * span rule and nothing occupying the same space twice.
+ */
+describe("⚠ a gable panel at the new ceiling", () => {
+  it("is the main story panel height, read from the catalog, not a literal", () => {
+    expect(GABLE_PANEL_MAX_HEIGHT_IN).toBe(standardPanelHeightIn.value);
+    /* It went UP. A ceiling that silently dropped would flatten more tiles,
+       which is the opposite of what he asked for. */
+    expect(GABLE_PANEL_MAX_HEIGHT_IN).toBeGreaterThan(LEGACY_GABLE_PANEL_MAX_HEIGHT_IN);
+  });
+
+  it("builds at the ceiling, and one inch over it still refuses", () => {
+    expect(() =>
+      buildGablePanelMembers(48, DEPTH_IN, GABLE_PANEL_MAX_HEIGHT_IN, GABLE_PANEL_MAX_HEIGHT_IN - 16, false),
+    ).not.toThrow();
+    expect(() =>
+      buildGablePanelMembers(48, DEPTH_IN, GABLE_PANEL_MAX_HEIGHT_IN + 1, GABLE_PANEL_MAX_HEIGHT_IN - 16, false),
+    ).toThrow(/exceeds the/);
+  });
+
+  it("⚠ is a real trapezoid at the heights that used to flatten, with nothing overlapping", () => {
+    /* Every height between the old ceiling and the new one — the band whose
+       tiles used to come out flat-topped with a filler above them. Both edges
+       differ, so each one is a genuine trapezoid rather than a box. */
+    for (let tallerIn = LEGACY_GABLE_PANEL_MAX_HEIGHT_IN; tallerIn <= GABLE_PANEL_MAX_HEIGHT_IN; tallerIn += 1) {
+      const members = buildGablePanelMembers(48, DEPTH_IN, tallerIn, tallerIn - 16, false);
+      expect({ tallerIn, overlaps: overlappingMemberPairs(members) }).toEqual({ tallerIn, overlaps: [] });
+      /* Four corner studs: both edges carry a real pair at these heights. */
+      expect({ tallerIn, studs: members.filter((m) => m.role === "stud").length }).toEqual({ tallerIn, studs: 4 });
+      /* And girts, which is the point of the span rule — a 96in-plus panel
+         with no lateral member would be a worse part than a flat one. */
+      expect({ tallerIn, girts: members.some((m) => m.role === "girt") }).toEqual({ tallerIn, girts: true });
+    }
   });
 });

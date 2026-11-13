@@ -1,3 +1,4 @@
+import { standardPanelHeightIn } from "./data";
 import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./componentSchema";
 import {
   LUMBER_SPECIES_GRADE,
@@ -231,7 +232,40 @@ function buildGableCornerStuds(
  * correct in isolation, but facing the wrong way once placed in the real
  * scene). Either can be the taller one — there is no ordering
  * requirement. */
-export const GABLE_PANEL_MAX_HEIGHT_IN = 96;
+/**
+ * ⚠ **SUPERSEDED 2026-11-13: it is the MAIN STORY PANEL HEIGHT, not 8ft.**
+ *
+ * > *"Also gable end panels I noticed aren't trapezoid above a certain point.
+ * > Maybe there's a threshold or I remember putting some setting in the make
+ * > them flat…? They should be trapezoid and can be up the height of the main
+ * > story panels."* — Tommy, 2026-11-13
+ *
+ * This was `96` on his earlier *"gable panels…can be up to 8' tall"*, and the
+ * 8ft was doing two jobs: a real fabrication ceiling AND the point at which
+ * `capGableTileHeights` flattens a tile's top and hands the remainder to a
+ * vertical filler. So a gable steeper or wider than 8ft of rise stopped being
+ * a trapezoid and became a flat-topped box with a filler above it — which is
+ * the *"aren't trapezoid above a certain point"* he is describing.
+ *
+ * His new figure raises both: a gable panel may be built as tall as a wall
+ * panel. Read from `standardPanelHeightIn` rather than written as 120, so the
+ * two cannot drift — it is the same number the ground floor's own panels are
+ * built at, which is what *"the height of the main story panels"* says.
+ *
+ * ⚠ It does NOT follow a custom `wallHeightFt`. A project whose walls are set
+ * to 12ft still caps its gables at the catalog's standard panel height. That
+ * is the narrower reading of his words and the one that needs no new
+ * plumbing; if he wants it to track the project's own wall height, this
+ * becomes a parameter the caller supplies, the way `girtStyle` already is.
+ */
+export const GABLE_PANEL_MAX_HEIGHT_IN = standardPanelHeightIn.value;
+
+/**
+ * The 8ft ceiling this carried until 2026-11-13, kept only so a loader can
+ * recognise a stored project that was pinned at it and raise that project to
+ * the new ceiling. Not a limit any more — nothing builds against it.
+ */
+export const LEGACY_GABLE_PANEL_MAX_HEIGHT_IN = 96;
 
 /** ⚠ The floor, and it is a GEOMETRIC one rather than a fabrication
  * judgement: a Gable End Panel's studs span its height less its two 3/4in
