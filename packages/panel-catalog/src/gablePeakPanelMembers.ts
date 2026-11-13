@@ -125,8 +125,28 @@ export interface GablePeakSlot {
  * also what makes the panel "full height past the beam" true in the only
  * sense a panel can be — its plates and skins are continuous.
  */
-export function gablePeakSlotIn(widthIn: number, heightIn: number): GablePeakSlot {
-  const { topZIn } = gablePeakClearZIn(heightIn);
+export function gablePeakSlotIn(
+  widthIn: number,
+  heightIn: number,
+  /**
+   * ⚠ **How far below this panel's own top the ROOFLINE sits**, which is what
+   * the box actually hangs from.
+   *
+   * A gable panel closing to the roof's TOP surface is built taller than the
+   * roofline by the roof's own plumb thickness — 16 3/8in through a 15.5in
+   * deck at 4:12. The ridge beam belongs under the roof DECK, not up inside
+   * its thickness, so hanging the box from the panel's top put the box
+   * **16.338in above the beam** on The Tank: panel top 186.588in, box at
+   * 183.34in, beam drawn at 167.0in. Measured 2026-11-13, and the two numbers
+   * agreed to three decimals, which is what identified the lift as the cause.
+   *
+   * 0 for a panel whose top IS the roofline, which is every caller that does
+   * not close to the roof's top.
+   */
+  rooflineBelowTopIn = 0,
+): GablePeakSlot {
+  const { topZIn: panelTopZIn } = gablePeakClearZIn(heightIn);
+  const topZIn = panelTopZIn - Math.max(0, rooflineBelowTopIn);
   const centreXIn = widthIn / 2;
   const boxFromXIn = centreXIn - GABLE_PEAK_BOX_WIDTH_IN / 2;
   const boxToZIn = topZIn;
@@ -314,8 +334,11 @@ export function buildGablePeakPanelMembers(
   includeNailer: boolean,
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
   widthIn: number = COLUMN_TOTAL_WIDTH_IN,
+  /** See `gablePeakSlotIn` — how far below this panel's top the roofline is,
+   * which is where the beam goes. */
+  rooflineBelowTopIn = 0,
 ): PanelMember[] {
-  const slot = gablePeakSlotIn(widthIn, heightIn);
+  const slot = gablePeakSlotIn(widthIn, heightIn, rooflineBelowTopIn);
   /* ⚠ **Never a centre nailer on this panel.** A nailer stands at mid-width,
      which is exactly where the box is, so the two would occupy the same
      straw. The box is the thing the panel exists for. */
@@ -331,6 +354,7 @@ export function buildGablePeakPanelSchema(
   includeNailer: boolean,
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
   widthIn: number = COLUMN_TOTAL_WIDTH_IN,
+  rooflineBelowTopIn = 0,
 ): PanelComponentSchema {
   return {
     schemaVersion: "0.1",
@@ -340,7 +364,7 @@ export function buildGablePeakPanelSchema(
     status: "draft",
     derivedFrom: "column_panel",
     overallDimensions: { heightIn, widthIn, depthIn },
-    members: buildGablePeakPanelMembers(depthIn, heightIn, includeNailer, girtStyle, widthIn),
+    members: buildGablePeakPanelMembers(depthIn, heightIn, includeNailer, girtStyle, widthIn, rooflineBelowTopIn),
     fasteners: [],
     notes: [
       {

@@ -446,6 +446,7 @@ import {
   ROOF_PITCH_OPTIONS_IN12,
 } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
+import { isGablePeakColumn } from "./panelInstances";
 import { applyDrawTimeBracing } from "./drawTimeBracing";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 import HomePage from "./HomePage";
@@ -8842,6 +8843,25 @@ export default function LayoutEditor() {
     const heightIn = heightInOverride ?? wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
     const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
+    /**
+     * ⚠ **How far below a full-height gable panel's TOP the roofline sits.**
+     *
+     * A gable closing to the roof's top surface is built taller than the
+     * roofline by the roof's own plumb thickness, and the edge heights that
+     * reach here are the LIFTED ones. The Gable Peak's box has to hang from
+     * the roofline rather than from that lifted top, or the ridge beam ends
+     * up inside the roof's thickness instead of under its deck. Measured on
+     * The Tank, 2026-11-13: panel top 186.588in, box 183.34in, beam 167.0in
+     * — the box sitting 16.338in above the beam it exists to hold.
+     *
+     * The same `thickness x hypot(1, slope)` the lift itself is built from
+     * (see `gableTileRoofTopOffsetIn`), evaluated at the roof's own pitch
+     * because a column tile's top is flat and cannot report the slope from
+     * its own two edges.
+     */
+    const gablePeakRooflineBelowTopIn = gableEndsFullHeight
+      ? thicknessIn * Math.hypot(1, (deckPanelTakeoffInput.roofPitchIn12 ?? 0) / 12)
+      : 0;
     const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
     const base = panelTypeId === "standard"
       ? standardPanelMembersFor(source ?? {}, widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
@@ -8878,8 +8898,27 @@ export default function LayoutEditor() {
                below, which this now matches. A Shop Fabrication page is
                GROUPED by width, so a wider column used to get its own page
                that then drew and listed a 25.5in panel. */
-            leftEdgeHeightInOverride !== undefined
-            ? buildGablePeakPanelMembers(thicknessIn, heightIn, includeNailer, girtStyle, widthIn)
+            isGablePeakColumn(panelTypeId, leftEdgeHeightInOverride)
+            ? /* ⚠ **ITS OWN TILE HEIGHT, NOT THE WALL'S.** `heightIn` here is
+                 the storey height — the gable row's column tile is only as
+                 tall as the gable is at the peak. Passing the wall height
+                 printed a shop sheet headed "10' Column 25½"" with 118½in
+                 studs for a tile 48in tall, which is a part cut wrong and
+                 exactly the failure the nominal-path note above is about.
+                 Caught on The Tank before it shipped: the tile is 48in and
+                 the sheet said 120in.
+
+                 Both edges are the same on a column tile — its top is flat by
+                 construction (see `computeGableTiledRow`'s own column
+                 reservation) — so either local height is the panel's height. */
+              buildGablePeakPanelMembers(
+                thicknessIn,
+                gableLeftLocalIn,
+                includeNailer,
+                girtStyle,
+                widthIn,
+                gablePeakRooflineBelowTopIn,
+              )
             : buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
           : panelTypeId === "corner"
             ? // ⚠ Built at this instance's REAL width (and real height), not at
@@ -9495,6 +9534,13 @@ export default function LayoutEditor() {
           (inst.includeSillOnBigHeader === true ? sillDefaultHeightIn.value : 0)
         );
       }
+      /* ⚠ A Gable Peak is as tall as its own gable tile, not as tall as the
+         wall. Its sheet read "10'" for a panel 64in tall until 2026-11-13 —
+         same local-height rule the "gable" branch above uses, because it is
+         a tile in the same row. */
+      if (isGablePeakColumn(panelTypeId, inst.leftEdgeHeightIn)) {
+        return Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
+      }
       return inst.heightOverrideIn ?? wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
@@ -9568,7 +9614,7 @@ export default function LayoutEditor() {
          `membersForPanelTypeId`), so the sheet and the part cannot disagree
          about which panel this is. */
       if (panelTypeId === "column") {
-        parts.push(inst.leftEdgeHeightIn === undefined ? "wall" : "gable-peak");
+        parts.push(isGablePeakColumn(panelTypeId, inst.leftEdgeHeightIn) ? "gable-peak" : "wall");
       }
       // Same idea for gable tiles — two tiles of the same width but
       // different edge heights (different position along the roofline)
@@ -9631,6 +9677,7 @@ export default function LayoutEditor() {
             /* A hand-edited panel is its own part (B19) and gets its own
                sheet; the name has to say so or two sheets read alike. */
             ...(first.editedMembers !== undefined && { isEdited: true }),
+            ...(isGablePeakColumn(panelType.id, first.leftEdgeHeightIn) && { isGablePeak: true }),
           };
           return {
             uniqueKey: `${panelType.id}-${key}`,
@@ -14586,6 +14633,45 @@ export default function LayoutEditor() {
                       boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                     }}
                   >
+                    {/* ⚠ **Check all / Uncheck all** — his 2026-11-13 ask,
+                        *"have an check and Uncheck all option for printing
+                        options"*. On a real building this list is dozens of
+                        sheets long, and the common jobs are "the whole packet"
+                        and "start from nothing"; both were a dozen clicks.
+
+                        Both write `manualExportIds`, which is what takes the
+                        picker off its "whatever is currently open" default —
+                        so unchecking all really does mean none, rather than
+                        falling back to the open sections. */}
+                    <div style={{ display: "flex", gap: 8, paddingBottom: 6, marginBottom: 4, borderBottom: "1px solid #eee" }}>
+                      <button
+                        type="button"
+                        style={{ fontSize: 11, padding: "2px 6px" }}
+                        disabled={exportableSections.every((s) => effectiveExportIds.has(s.id))}
+                        onClick={() => setManualExportIds(new Set(exportableSections.map((s) => s.id)))}
+                      >
+                        Check all
+                      </button>
+                      <button
+                        type="button"
+                        style={{ fontSize: 11, padding: "2px 6px" }}
+                        disabled={effectiveExportIds.size === 0}
+                        onClick={() => setManualExportIds(new Set())}
+                      >
+                        Uncheck all
+                      </button>
+                      {/* ⚠ Counted WITHIN this list, not off `effectiveExportIds`
+                          itself. Read the raw set and it says "62 of 61" on a
+                          real building — because the default set is "whatever
+                          is open and formal", and that is not the same list
+                          this picker offers. The extra section is exported
+                          and cannot be unticked here. Recorded rather than
+                          papered over: the count below is true of the picker,
+                          and the mismatch is its own defect. */}
+                      <span style={{ fontSize: 11, color: "#666", marginLeft: "auto", alignSelf: "center" }}>
+                        {exportableSections.filter((s) => effectiveExportIds.has(s.id)).length} of {exportableSections.length}
+                      </span>
+                    </div>
                     {exportableSections.map((s) => (
                       <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "3px 0" }}>
                         <input

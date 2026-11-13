@@ -26,7 +26,6 @@ import {
 import {
   buildOpeningAssemblyMembers,
   COLUMN_TOTAL_WIDTH_IN,
-  ROOF_CATCHER_BEAM_DEPTH_IN,
   computeBoxBeamHeightDeltaIn,
   computeGableRipCallout,
   fabricationMinPanelWidthIn,
@@ -338,8 +337,12 @@ export interface WallElevationDiagramProps {
   /** This specific wall's own membership in gableStructuralPanelWallIds
    * (Tommy: "panels/beam" mode) — reserves a real, centered structural
    * Column Panel tile in the gable row (see computeGableTiledRow's own
-   * columnReservationWidthIn param) with a flat top ROOF_CATCHER_BEAM_DEPTH_IN
-   * below the peak, instead of open truss framing. Only ever reserved for a
+   * columnReservationWidthIn param) with a flat top AT the peak — it is a
+   * Gable Peak Panel, and the ridge beam runs through its furred box rather
+   * than resting on top of it — instead of open truss framing. (It sat
+   * ROOF_CATCHER_BEAM_DEPTH_IN below the peak until 2026-11-12; see this
+   * file's own `computeGableTiledRow` call for why that changed.) Only ever
+   * reserved for a
    * genuine single-peak, non-shed roofline — computeGableTiledRow itself
    * silently skips it otherwise (a flat-topped roofline has no single peak
    * to center under). */
@@ -1040,13 +1043,23 @@ export default function WallElevationDiagram({
            rather than quietly left: it is a separate piece of work from B9
            and wiring it needs the slots threaded in as a prop. */
         [],
-        /* ⚠ **B9: the column's top IS the beam's underside.** *"gable end
-           column panels' tops should be flush/meet the bottom of the gable
-           ridge beams... The beam should air on top the panel."* The beam's
-           own depth, read from the beam, so the two cannot drift — they
-           already had, by 0.75in, nominal 12 against a 2x12's actual
-           11.25. */
-        ROOF_CATCHER_BEAM_DEPTH_IN,
+        /* ⚠ **FULL HEIGHT TO THE PEAK — 0, matching page.tsx's own call.**
+           Tommy, 2026-11-12: *"The housing of the beam goes all the way to
+           the peak and matches the other panels - yes."*
+
+           This supersedes B9, whose rule was that the column's top IS the
+           beam's underside. That was right while the beam sat ON the column;
+           it now runs THROUGH the Gable Peak Panel's furred plywood box, so
+           the panel closes to the roofline and the beam is carried inside it.
+
+           ⚠ **THIS IS THE SECOND CALL, AND IT WAS MISSED THE FIRST TIME.**
+           page.tsx was changed and this preview was not, so the 3D model
+           closed to the ridge while the elevation still drew the column
+           11.25in short — the two views describing different buildings,
+           which is the same fault B9 itself was fixing. Measured on The Tank
+           before this line changed: the 3D column reached the peak and the
+           elevation's was 36.75in tall against a 48in rise. */
+        0,
       )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {

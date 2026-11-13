@@ -27,6 +27,24 @@ import {
  * are derived from window/door slots (see allPanelInstances), not their
  * own PanelSlot type: a window/door opening isn't a panel itself, but the
  * header above it (and, for a window, the sill below it) are. */
+/**
+ * ⚠ **Is this column the one at the gable's peak?** — the Gable Peak Panel,
+ * with the ridge beam running through its furred box.
+ *
+ * ONE predicate, because three places have to agree about it: the member
+ * builder, the Shop Fabrication group key, and the sheet's own name. Three
+ * copies of a type question is how `panelTypeTransition`'s own note says two
+ * of them came to be wrong.
+ *
+ * ⚠ Asked of the EDGE HEIGHTS rather than of a flag on the instance, because
+ * `membersForPanelTypeId` is reached both per-instance and per-type-nominal
+ * and only the first has an instance to read. A gable TILE is the only column
+ * that carries edge heights at all.
+ */
+export function isGablePeakColumn(panelTypeId: string, leftEdgeHeightIn: number | undefined): boolean {
+  return panelTypeId === "column" && leftEdgeHeightIn !== undefined;
+}
+
 export type NamedPanelType =
   | "standard"
   | "corner"

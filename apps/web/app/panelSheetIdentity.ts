@@ -75,6 +75,10 @@ export interface PanelSheetIdentity {
   /** True when this group's members came from `editedMembers` rather than
    * from its pattern — a hand-edited panel is its own part (B19). */
   isEdited?: boolean;
+  /** ⚠ This column is the Gable Peak Panel — see `isGablePeakColumn`. Its
+   * sheet must not read "Column", or the shop is handed a page whose name
+   * describes a different part from the one on it. */
+  isGablePeak?: boolean;
 }
 
 /** His names for the three carrots, from `bracePairPatterns.ts`. */
@@ -116,6 +120,11 @@ export function panelSheetFigureLabel(identity: PanelSheetIdentity): string {
   }
   if (identity.braceFigure !== undefined) return `${BRACE_FIGURE_LABELS[identity.braceFigure]}${half}`;
   if (identity.bracePairPattern !== undefined) return `${BRACE_PAIR_PATTERN_LABELS[identity.bracePairPattern]}${half}`;
+  /* ⚠ Before the type label, because a Gable Peak IS a column by type and
+     would otherwise be named one. Measured on The Tank: its sheet read
+     "10' Column 25½"" for a panel carrying a plywood beam box and four 2x6
+     packs that no wall column has. */
+  if (identity.isGablePeak === true) return "Gable Peak";
   return identity.panelTypeLabel.replace(/ Panel$/, "");
 }
 

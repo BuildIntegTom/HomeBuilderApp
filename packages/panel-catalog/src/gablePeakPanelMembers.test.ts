@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN,
   GABLE_PEAK_BOX_HEIGHT_IN,
   GABLE_PEAK_BOX_PLY_THICKNESS_IN,
   GABLE_PEAK_BOX_WIDTH_IN,
@@ -74,6 +75,40 @@ describe("the Gable Peak Panel", () => {
     expect(+(slot.slotToZIn - slot.beamToZIn).toFixed(6)).toBe(0.25);
     /* And it is centred across the panel, because the ridge is. */
     expect((slot.slotFromXIn + slot.slotToXIn) / 2).toBe(COLUMN_TOTAL_WIDTH_IN / 2);
+  });
+
+  it("⚠ the box hangs from the ROOFLINE, so it meets the beam the 3D view draws", () => {
+    /* ⚠ **A 16in MISS, found by opening the model and not by any test here.**
+       A gable panel closing to the roof's TOP surface is built taller than
+       the roofline by the roof's own plumb thickness. The box used to hang
+       from the panel's top, which put it up inside the roof's thickness while
+       the beam stayed under the deck where it belongs.
+
+       Measured on The Tank, 2026-11-13, before the fix:
+           panel top   186.588in
+           box slot    183.34in
+           beam drawn  167.00in     <- 16.338in away, exactly the lift
+
+       Every test in this file passed throughout, because they all measured
+       the panel against ITSELF. This one measures it against the building. */
+    const EAVE_IN = 122.25;
+    const ROOFLINE_IN = 170.25;
+    const liftIn = DEPTH * Math.hypot(1, 4 / 12);
+    const panelTopIn = ROOFLINE_IN + liftIn;
+    const localHeightIn = panelTopIn - EAVE_IN;
+
+    const slot = gablePeakSlotIn(COLUMN_TOTAL_WIDTH_IN, localHeightIn, liftIn);
+    const boxBeamTopIn = EAVE_IN + slot.beamToZIn;
+    /* Where Building3DView puts the beam: its own constant below the
+       ROOFLINE, which is what `plane.highHeightFt` reports. */
+    const drawnBeamTopIn = ROOFLINE_IN - GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN;
+    expect(boxBeamTopIn).toBeCloseTo(drawnBeamTopIn, 6);
+    expect(+boxBeamTopIn.toFixed(3)).toBe(167);
+
+    /* And with no lift the two are still the same thing — a panel whose top
+       IS the roofline needs no correction, which is what the default 0 says. */
+    const flat = gablePeakSlotIn(COLUMN_TOTAL_WIDTH_IN, 48);
+    expect(48 - flat.beamToZIn).toBeCloseTo(GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN, 6);
   });
 
   it("⚠ FOUR 2x6s — two per wythe, 5.5in along the wall", () => {
