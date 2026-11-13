@@ -32,7 +32,7 @@ import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWal
 import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
-import { gableTileRoofTopLiftIn } from "./gableProfilePoints";
+import { gableTileRoofTopLiftIn, gableWindowCapHeightsIn } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff } from "./crossTiltTakeoff";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 import { computeDeckPanelTakeoff } from "./deckPanelTakeoff";
@@ -50,6 +50,7 @@ import {
   buildRoofCatcherBeamMembers,
   buildStructuralColumnMembers,
   GABLE_PANEL_MAX_HEIGHT_IN,
+  GABLE_PANEL_MIN_HEIGHT_IN,
   ridgeBeamLayout,
   columnStorySegments,
   divideRingFacet,
@@ -1845,22 +1846,28 @@ export default function Building3DView({
             g.sillWidthsIn,
             includeNailer,
           ).filter((m) => !m.memberId.startsWith("header_"));
-          // Clamped so a window tall enough to reach one edge's own true
-          // roofline gets zero-height (flush) gable material on that side
-          // instead of an inverted/negative-height panel.
-          const capLeftLocalIn = Math.max(0, leftLocalIn - g.roTopZIn);
-          const capRightLocalIn = Math.max(0, rightLocalIn - g.roTopZIn);
-          const capMembers = buildGablePanelMembers(
-            tile.widthIn,
-            thicknessIn,
-            capLeftLocalIn,
-            capRightLocalIn,
-            includeNailer,
-            girtStyle,
-          ).map((m) => ({
-            ...m,
-            position: { ...m.position, zIn: m.position.zIn + g.roTopZIn },
-          }));
+          /* ⚠ **`null` HERE INSTEAD OF A CRASH.** A window in a short gable
+             tile clamped BOTH cap edges to 0 and handed the builder a panel
+             of no height, which it refuses by THROWING — inside this render,
+             so it took the viewport, not the panel. See
+             `gableWindowCapHeightsIn`, which owns that decision and is
+             tested. A window whose head reaches its own roofline simply has
+             no gable material above it. */
+          const cap = gableWindowCapHeightsIn(leftLocalIn, rightLocalIn, g.roTopZIn, GABLE_PANEL_MIN_HEIGHT_IN);
+          const capMembers =
+            cap.kind === "none"
+              ? []
+              : buildGablePanelMembers(
+                  tile.widthIn,
+                  thicknessIn,
+                  cap.leftIn,
+                  cap.rightIn,
+                  includeNailer,
+                  girtStyle,
+                ).map((m) => ({
+                  ...m,
+                  position: { ...m.position, zIn: m.position.zIn + g.roTopZIn },
+                }));
           members = [...lowerMembers, ...capMembers];
         } else {
           members = tile.isSafetyGap

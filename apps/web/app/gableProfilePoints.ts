@@ -200,3 +200,60 @@ export function gableTileRoofTopLiftIn(
   const headroomIn = maxPanelHeightIn - Math.max(tile.leftEdgeHeightIn, tile.rightEdgeHeightIn) + gableEaveHeightIn;
   return Math.max(0, Math.min(liftIn, headroomIn));
 }
+
+/**
+ * The gable cap above a gable WINDOW — or the statement that there is none.
+ *
+ * ⚠ **THE "none" CASE IS THE WHOLE POINT: this path took the page down.** The
+ * 3D view built the cap as
+ * `buildGablePanelMembers(w, d, max(0, leftLocalIn - roTopZIn), max(0, rightLocalIn - roTopZIn), …)`,
+ * and `roTopZIn` is the window's sill plus its own height — a figure with no
+ * relation to how tall the tile is. Put a window in a SHORT gable tile and
+ * both of those clamp to 0, so the builder is handed a panel of no height at
+ * all and answers the only way it can:
+ *
+ * > *"Neither edge of this Gable End Panel (0 and 0 across 24in) reaches the
+ * > 1.5in it needs for its own two skins"*
+ *
+ * — a `throw`, raised inside the 3D view's render, which does not fail one
+ * panel. It fails the viewport. This is the same shape of fault as the
+ * 2026-10-31 crash recorded on `buildGablePanelMembers` itself (*"This page
+ * couldn't load whenever I lift my fingers off of the shape draw on
+ * mobile"*), and it survived that fix because it lives at the CALL SITE: one
+ * `Math.max(0, …)` making an impossible number look like a legal one.
+ *
+ * ⚠ **Two different situations arrive here as the same clamp to zero, and the
+ * caller is told which.** A window whose head lands ON its own roofline
+ * genuinely has no gable material above it — a real answer, not a swallowed
+ * error. A window standing THROUGH the roof plane is a part that does not
+ * fit, and `exceedsRooflineIn` is how far. The first version of this returned
+ * plain `null` and carried that figure on the success value, where it could
+ * never be read — a breach always produces no cap. So the refusal carries
+ * it.
+ *
+ * ⚠ No caller reports the breach into the Review Log yet. Flagged rather
+ * than guessed at.
+ */
+export type GableWindowCap =
+  | { kind: "cap"; leftIn: number; rightIn: number }
+  | {
+      kind: "none";
+      /** How far the window's head stands above the tile's own roofline. 0
+       * means it lands on it, which is the legitimate case; anything above 0
+       * is a window that does not fit, waiting to be reported. */
+      exceedsRooflineIn: number;
+    };
+
+export function gableWindowCapHeightsIn(
+  leftLocalIn: number,
+  rightLocalIn: number,
+  roTopZIn: number,
+  minPanelHeightIn: number,
+): GableWindowCap {
+  const leftIn = Math.max(0, leftLocalIn - roTopZIn);
+  const rightIn = Math.max(0, rightLocalIn - roTopZIn);
+  if (Math.max(leftIn, rightIn) < minPanelHeightIn) {
+    return { kind: "none", exceedsRooflineIn: Math.max(0, roTopZIn - Math.max(leftLocalIn, rightLocalIn)) };
+  }
+  return { kind: "cap", leftIn, rightIn };
+}

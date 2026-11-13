@@ -6,6 +6,7 @@ import {
   matchStandardPitchIn12,
   resolveGableProfilePoints,
   gableTileRoofTopLiftIn,
+  gableWindowCapHeightsIn,
   resolveHeelSeat,
 } from "./gableProfilePoints";
 import {
@@ -280,5 +281,70 @@ describe("⚠ gableTileRoofTopLiftIn — the gable's own top, as fabricated", ()
     /* Which is exactly the point: the clamped height still builds. */
     const localIn = nearCeiling.leftEdgeHeightIn + 2 - EAVE_IN;
     expect(() => buildGablePanelMembers(48, DEPTH_IN, localIn, localIn, false)).not.toThrow();
+  });
+});
+
+/**
+ * ⚠ **A WINDOW IN A SHORT GABLE TILE USED TO TAKE THE WHOLE PAGE.**
+ *
+ * The 3D view capped the gable above a gable window at
+ * `max(0, localHeight - roTopZIn)` per edge, where `roTopZIn` is the window's
+ * sill plus its height — a number with no relation to how tall the tile is.
+ * In a short tile both edges clamp to 0, and `buildGablePanelMembers` refuses
+ * a panel of no height by THROWING, inside the render.
+ */
+describe("⚠ the gable cap above a gable window", () => {
+  const MIN = GABLE_PANEL_MIN_HEIGHT_IN;
+  const DEPTH_IN = 15.5;
+
+  it("reports no cap when the window's head reaches the roofline on both edges", () => {
+    /* A 30in tile with a 36in sill and a 24in window: the head is at 60in,
+       30in of it above the tile's own tallest edge. */
+    expect(gableWindowCapHeightsIn(30, 20, 60, MIN)).toEqual({ kind: "none", exceedsRooflineIn: 30 });
+  });
+
+  it("⚠ and that is exactly the case that threw, so the two agree", () => {
+    const leftLocalIn = 30;
+    const rightLocalIn = 20;
+    const roTopZIn = 60;
+    /* What the old call site computed... */
+    const oldLeftIn = Math.max(0, leftLocalIn - roTopZIn);
+    const oldRightIn = Math.max(0, rightLocalIn - roTopZIn);
+    expect({ oldLeftIn, oldRightIn }).toEqual({ oldLeftIn: 0, oldRightIn: 0 });
+    /* ...and what the builder does with it. This is the page going down. */
+    expect(() => buildGablePanelMembers(24, DEPTH_IN, oldLeftIn, oldRightIn, false)).toThrow(
+      /reaches the 1.5in it needs/,
+    );
+    /* The helper refuses to ask the question instead. */
+    expect(gableWindowCapHeightsIn(leftLocalIn, rightLocalIn, roTopZIn, MIN).kind).toBe("none");
+  });
+
+  it("builds the cap when the window fits, and the builder accepts it", () => {
+    /* A 96in tile, 36in sill, 24in window: 36in of gable above the head on
+       the tall edge and 24in on the short one. */
+    const cap = gableWindowCapHeightsIn(96, 84, 60, MIN);
+    expect(cap).toEqual({ kind: "cap", leftIn: 36, rightIn: 24 });
+    /* The guard and the builder have to agree about what is buildable, or one
+       of them is deciding on its own. */
+    if (cap.kind !== "cap") throw new Error("unreachable");
+    expect(() => buildGablePanelMembers(48, DEPTH_IN, cap.leftIn, cap.rightIn, false)).not.toThrow();
+  });
+
+  it("⚠ keeps a cap that only ONE edge can carry — a triangle is a real part", () => {
+    /* The short edge lands on the roofline and the tall edge still has 10in.
+       `buildGablePanelMembers` refuses on the TALLER edge only, by design:
+       *"We can take little gable end panels all the way to the end."* */
+    const cap = gableWindowCapHeightsIn(70, 55, 60, MIN);
+    expect(cap).toEqual({ kind: "cap", leftIn: 10, rightIn: 0 });
+    if (cap.kind !== "cap") throw new Error("unreachable");
+    expect(() => buildGablePanelMembers(48, DEPTH_IN, cap.leftIn, cap.rightIn, false)).not.toThrow();
+  });
+
+  it("⚠ distinguishes a window that LANDS on the roofline from one standing THROUGH it", () => {
+    /* Both produce no cap, and a bare clamp cannot tell them apart — which is
+       why the refusal carries the figure. Landing exactly on it is fine; 4in
+       through it is a part that does not fit, and nobody reports that yet. */
+    expect(gableWindowCapHeightsIn(60, 48, 60, MIN)).toEqual({ kind: "none", exceedsRooflineIn: 0 });
+    expect(gableWindowCapHeightsIn(96, 84, 100, MIN)).toEqual({ kind: "none", exceedsRooflineIn: 4 });
   });
 });
