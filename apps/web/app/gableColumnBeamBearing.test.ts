@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GABLE_COLUMN_FLAT_TOP_DROP_IN,
   computeGableTiledRow,
+  gableTileTallestHeightIn,
   tileWall,
   type GableWallJointSpan,
 } from "@building-integrity/geometry";
@@ -91,28 +92,64 @@ function columnTile(wallLengthIn: number, pitchIn12: number) {
 const WALLS_FT = [16, 18, 20, 22.75, 24, 25.25, 28, 30];
 
 describe("⚠ the ridge beam bears on the column panel", () => {
-  it("⚠ the column's top IS the beam's underside, to zero", () => {
+  /* ⚠ **2026-11-13 — B9'S CONTENT SURVIVES, BUT "THE COLUMN'S TOP" MOVED.**
+     This panel is now five-sided (Tommy: *"this Gable column panel would be
+     five-sided"*), so its top is a RIDGE rather than a flat plane: the two
+     edges follow the roofline and `apexHeightIn` carries the peak. Before,
+     the whole top sat at ridge height, which is why this panel stood
+     `(width / 2) x pitch/12` proud of both roof planes — 4.25in at 4:12.
+
+     So the assertions below read the APEX where they used to read
+     `leftHeightIn`. The joint being pinned is unchanged and still exact; what
+     changed is which point on the panel is the one the beam meets.
+
+     ⚠ **And "a beam cannot bear on a slope" is no longer the right objection
+     to a sloped top**, because the beam stopped bearing on this panel's top
+     at all. The 2026-11-12 Gable Peak Panel runs it THROUGH the panel inside
+     a plywood furring box, bearing on the box floor (see
+     `gablePeakSlotIn`) — which is also why `page.tsx` passes a drop of 0
+     today and this file's `ROOF_CATCHER_BEAM_DEPTH_IN` drop exercises the
+     contract rather than the live configuration. */
+  it("⚠ the column's RIDGE is the beam's underside, to zero", () => {
     for (const wallFt of WALLS_FT) {
       const { peakIn, tile } = columnTile(wallFt * 12, 4);
       expect({ wallFt, hasTile: tile !== undefined }).toEqual({ wallFt, hasTile: true });
 
       const beamUndersideIn = peakIn - ROOF_CATCHER_BEAM_DEPTH_IN;
-      expect({ wallFt, gapIn: +(beamUndersideIn - tile!.leftHeightIn!).toFixed(6) }).toEqual({ wallFt, gapIn: 0 });
-      /* Flat, both edges — a beam cannot bear on a slope. */
-      expect({ wallFt, left: tile!.leftHeightIn, right: tile!.rightHeightIn }).toEqual({
+      expect({ wallFt, gapIn: +(beamUndersideIn - gableTileTallestHeightIn(tile!)).toFixed(6) }).toEqual({
         wallFt,
-        left: beamUndersideIn,
-        right: beamUndersideIn,
+        gapIn: 0,
+      });
+      /* Symmetric about the ridge, and both edges BELOW it by the roof's own
+         fall across half the panel — which is the whole point of the change.
+         A tile still reporting two equal edges at ridge height would be the
+         old block back. */
+      expect({ wallFt, symmetric: +(tile!.leftHeightIn - tile!.rightHeightIn).toFixed(9) }).toEqual({
+        wallFt,
+        symmetric: 0,
+      });
+      const fallIn = (tile!.widthIn / 2) * (4 / 12);
+      expect({ wallFt, edgeIn: +tile!.leftHeightIn.toFixed(6) }).toEqual({
+        wallFt,
+        edgeIn: +(beamUndersideIn - fallIn).toFixed(6),
       });
     }
   });
 
-  it("⚠ holds at any pitch, because neither number depends on the pitch", () => {
+  it("⚠ holds at any pitch — the ridge never floats, however steep the roof", () => {
     for (const pitchIn12 of [2, 3, 4, 6, 8]) {
       const { peakIn, tile } = columnTile(273, pitchIn12);
-      expect({ pitchIn12, gapIn: +(peakIn - ROOF_CATCHER_BEAM_DEPTH_IN - tile!.leftHeightIn!).toFixed(6) }).toEqual({
+      expect({
         pitchIn12,
-        gapIn: 0,
+        gapIn: +(peakIn - ROOF_CATCHER_BEAM_DEPTH_IN - gableTileTallestHeightIn(tile!)).toFixed(6),
+      }).toEqual({ pitchIn12, gapIn: 0 });
+      /* And the steeper it gets, the further the edges fall away from the
+         ridge — the error the old flat top was making, now measured instead
+         of made. */
+      const fallIn = (tile!.widthIn / 2) * (pitchIn12 / 12);
+      expect({ pitchIn12, edgeDropIn: +(gableTileTallestHeightIn(tile!) - tile!.leftHeightIn).toFixed(6) }).toEqual({
+        pitchIn12,
+        edgeDropIn: +fallIn.toFixed(6),
       });
     }
   });
@@ -123,10 +160,14 @@ describe("⚠ the ridge beam bears on the column panel", () => {
        this test is the place that explains why they are not. */
     expect(GABLE_COLUMN_FLAT_TOP_DROP_IN - ROOF_CATCHER_BEAM_DEPTH_IN).toBeCloseTo(0.75, 9);
 
-    /* His 22ft 9in wall at 4:12, the exact numbers from the report. */
+    /* His 22ft 9in wall at 4:12, the exact numbers from the report — read at
+       the ridge now, which is where the panel's top is. */
     const { peakIn, tile } = columnTile(273, 4);
     expect(peakIn).toBeCloseTo(167.75, 6);
-    expect(tile!.leftHeightIn).toBeCloseTo(156.5, 6);
+    expect(gableTileTallestHeightIn(tile!)).toBeCloseTo(156.5, 6);
+    /* And the edges, 4.25in lower — the material the flat top used to put
+       above the roof plane on both sides. */
+    expect(tile!.leftHeightIn).toBeCloseTo(152.25, 6);
     // What the nominal 12 would have given, and what floated above it.
     expect(peakIn - GABLE_COLUMN_FLAT_TOP_DROP_IN).toBeCloseTo(155.75, 6);
   });

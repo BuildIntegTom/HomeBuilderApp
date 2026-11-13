@@ -7501,6 +7501,10 @@ export default function LayoutEditor() {
         windowHeightIn?: number;
         windowSillHeightIn?: number;
         isColumn?: boolean;
+        /** The ridge, when it falls inside this tile — see
+         * `GableTiledPanel.apexXIn`. Absolute wall x, like `xStartIn`. */
+        apexXIn?: number;
+        apexHeightIn?: number;
       }[]
     > = {};
     for (const wall of footprint.walls) {
@@ -7621,7 +7625,27 @@ export default function LayoutEditor() {
            filler, the same plywood piece a 3/4in gap between two panels gets.
            A window or column tile is left alone; neither can be this short
            without its own opening being degenerate first. */
-        const fabricatedTallerIn = Math.max(capped.leftEdgeHeightIn, capped.rightEdgeHeightIn) + liftIn - gableEaveHeightIn;
+        /* ⚠ **THE RIDGE IS CAPPED TOO, OR THE CAP IS NOT A CAP.**
+           A column tile straddling the peak carries its ridge in `apexXIn`
+           (see `GableTiledPanel.apexXIn`), and the ridge is by definition the
+           tallest thing on that tile. Capping only the two edges would let it
+           through, and `buildGablePanelMembers` answers a panel over its
+           fabrication ceiling by THROWING — inside this render. So the apex
+           goes through the same ceiling the edges do.
+
+           A ridge that no longer stands above its own edges after capping is
+           DROPPED rather than kept at zero rise: the tile really has been
+           flattened, and a builder that sees no apex can trust it is looking
+           at a plain trapezoid. */
+        const cappedApexHeightIn =
+          t.apexHeightIn === undefined ? undefined : Math.min(t.apexHeightIn, Math.max(gableEaveHeightIn + 1, capHeightIn - liftIn));
+        const apexStillRises =
+          cappedApexHeightIn !== undefined &&
+          cappedApexHeightIn > Math.max(capped.leftEdgeHeightIn, capped.rightEdgeHeightIn) + 1e-9;
+        const fabricatedTallerIn =
+          Math.max(capped.leftEdgeHeightIn, capped.rightEdgeHeightIn, apexStillRises ? cappedApexHeightIn : Number.NEGATIVE_INFINITY) +
+          liftIn -
+          gableEaveHeightIn;
         const tooShortToBuild = !t.isWindow && !t.isColumn && fabricatedTallerIn < GABLE_PANEL_MIN_HEIGHT_IN;
         return {
           widthIn: t.widthIn,
@@ -7632,6 +7656,7 @@ export default function LayoutEditor() {
           ...(t.isSafetyGap || tooShortToBuild ? { isSafetyGap: true } : {}),
           ...(t.isWindow ? { isWindow: true, windowHeightIn: t.windowHeightIn, windowSillHeightIn: t.windowSillHeightIn } : {}),
           ...(t.isColumn ? { isColumn: true } : {}),
+          ...(apexStillRises ? { apexXIn: t.apexXIn, apexHeightIn: cappedApexHeightIn } : {}),
         };
       });
     }

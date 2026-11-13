@@ -292,6 +292,11 @@ export function allPanelInstances(
       isWindow?: boolean;
       windowHeightIn?: number;
       windowSillHeightIn?: number;
+      /** ⚠ The ridge, when it falls strictly inside this tile — see
+       * `GableTiledPanel.apexXIn`. The one tile in a gable row whose top is
+       * not a straight line between its two edges. */
+      apexXIn?: number;
+      apexHeightIn?: number;
       /** This tile is the auto-centered structural Column Panel reserved
        * under a single-peak roofline (Tommy: "panels/beam" mode) — pushed
        * as a real `"column"` instance (reusing 100% of the existing
@@ -623,8 +628,21 @@ export function allPanelInstances(
             undefined,
             undefined,
             undefined,
-            tile.leftEdgeHeightIn,
-            tile.rightEdgeHeightIn,
+            /* ⚠ **THE RIDGE, NOT THE EDGE — this panel is built to its
+               tallest point.** Since 2026-11-13 a column tile straddling the
+               peak follows the roofline at its two edges and carries the
+               ridge in `apexHeightIn` (see `GableTiledPanel.apexXIn`).
+               Passing the edge height here would hand the shop a Gable Peak
+               Panel that stops short of the ridge by half its width times the
+               pitch — 6.38in on a 20ft wall at 6:12 — which is a real part
+               cut short, and the same class of fault as the "10' Column"
+               sheet the note below records.
+
+               So the fabricated panel is unchanged by the tile gaining a
+               ridge: still flat-topped, still at ridge height. It becomes
+               five-sided when `buildGablePeakTopMembers` is wired in. */
+            tile.apexHeightIn ?? tile.leftEdgeHeightIn,
+            tile.apexHeightIn ?? tile.rightEdgeHeightIn,
           );
           return;
         }

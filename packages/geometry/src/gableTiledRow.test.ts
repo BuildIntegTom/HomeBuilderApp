@@ -4,6 +4,7 @@ import {
   computeGableTiledRow,
   GABLE_SAFETY_GAP_WIDTH_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
+  gableTileTallestHeightIn,
   type GableWallJointSpan,
   type GableWindowReservation,
   type RoofProfilePoint,
@@ -611,16 +612,75 @@ describe("computeGableTiledRow — horizontal safety-gap absorption (Part B)", (
 describe("computeGableTiledRow — structural Column Panel reservation (columnReservationWidthIn)", () => {
   const COLUMN_WIDTH_IN = 25.5;
 
-  it("reserves a flat-topped column centered on the peak, GABLE_COLUMN_FLAT_TOP_DROP_IN (12in) below it", () => {
+  it("⚠ reserves a FIVE-SIDED column centered on the peak — the ridge is inside the tile", () => {
+    /* ⚠ This assertion is the inverse of what it was, and the flip is his
+       decision rather than a tidy-up.
+
+       > *"this Gable column panel would be five-sided... The top lid would be
+       > very weird and two pieces and that's fine."* — Tommy, 2026-11-13
+
+       It used to read `expect(column!.rightHeightIn).toBe(column!.leftHeightIn)`
+       with the comment *"Flat top — never sloped, unlike every other real
+       gable tile."* That flat top, at ridge height, stood half the tile's
+       width times the pitch proud of BOTH roof planes — on this very wall,
+       180.00 across a tile whose roofline runs 168.525 -> 180 -> 168.525, so
+       **11.475in out of the roof at each edge**. See `GableTiledPanel.apexXIn`. */
     const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN);
     const column = panels.find((p) => p.isColumn);
     expect(column).toBeDefined();
     expect(column!.xStartIn).toBeCloseTo(80 - COLUMN_WIDTH_IN / 2, 6);
     expect(column!.xEndIn).toBeCloseTo(80 + COLUMN_WIDTH_IN / 2, 6);
     expect(column!.widthIn).toBeCloseTo(COLUMN_WIDTH_IN, 6);
-    expect(column!.leftHeightIn).toBeCloseTo(192 - 12, 6);
-    // Flat top — never sloped, unlike every other real gable tile.
-    expect(column!.rightHeightIn).toBe(column!.leftHeightIn);
+
+    /* The two edges now sit on the real roofline, less the beam drop, exactly
+       like every other tile in the row. The roof rises 72in over 80in, so a
+       12.75in half-width is 11.475in of fall. */
+    const fallIn = (72 / 80) * (COLUMN_WIDTH_IN / 2);
+    expect(column!.leftHeightIn).toBeCloseTo(192 - 12 - fallIn, 6);
+    expect(column!.rightHeightIn).toBeCloseTo(192 - 12 - fallIn, 6);
+
+    /* And the ridge it straddles is carried as an apex instead of being
+       smeared flat across the whole top. */
+    expect(column!.apexXIn).toBeCloseTo(80, 6);
+    expect(column!.apexHeightIn).toBeCloseTo(192 - 12, 6);
+    expect(gableTileTallestHeightIn(column!)).toBeCloseTo(192 - 12, 6);
+  });
+
+  it("⚠ no tile in the row stands proud of the roofline any more, column included", () => {
+    /* The defect this whole change exists for, stated as the property rather
+       than as one panel's numbers. Before 2026-11-13 this failed on exactly
+       one tile — the column — by 11.475in. */
+    const peakXIn = 80;
+    const peakHeightIn = 192;
+    const eaveIn = 120;
+    const panels = computeGableTiledRow(
+      160, eaveIn, [{ xIn: peakXIn, heightIn: peakHeightIn }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN, 0, 160, [], 0,
+    );
+    const roofAt = (x: number) =>
+      x <= peakXIn
+        ? eaveIn + ((peakHeightIn - eaveIn) * x) / peakXIn
+        : eaveIn + ((peakHeightIn - eaveIn) * (160 - x)) / (160 - peakXIn);
+    for (const p of panels) {
+      expect(p.leftHeightIn, `tile at ${p.xStartIn}`).toBeCloseTo(roofAt(p.xStartIn), 6);
+      expect(p.rightHeightIn, `tile at ${p.xStartIn}`).toBeCloseTo(roofAt(p.xEndIn), 6);
+      if (p.apexHeightIn !== undefined) expect(p.apexHeightIn).toBeCloseTo(roofAt(p.apexXIn!), 6);
+    }
+  });
+
+  it("⚠ a peak exactly on the column's own edge leaves a plain trapezoid", () => {
+    /* `apexXIn` is set only when the ridge is STRICTLY inside, so a builder
+       that sees no apex can trust the tile really is a trapezoid. Here the
+       wall below hands the gable a column whose start edge is the peak. */
+    const panels = computeGableTiledRow(
+      160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN, 0, 160,
+      [{ xStartIn: 80, xEndIn: 80 + COLUMN_WIDTH_IN, isColumn: true }],
+      0,
+    );
+    const column = panels.find((p) => p.isColumn);
+    expect(column).toBeDefined();
+    expect(column!.xStartIn).toBeCloseTo(80, 6);
+    expect(column!.apexXIn).toBeUndefined();
+    expect(column!.apexHeightIn).toBeUndefined();
   });
 
   it("shrinks its 2 neighboring tiles to make room, keeping the wall's total tiled width exact", () => {

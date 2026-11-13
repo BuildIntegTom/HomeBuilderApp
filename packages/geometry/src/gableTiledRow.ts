@@ -30,13 +30,54 @@ export interface GableTiledPanel {
   windowSillHeightIn?: number;
   /** True for the auto-centered structural Column Panel reserved under a
    * single-peak roofline's own ridge (Tommy: "the panelizer will spawn a
-   * column panel centered under the peak... a flat top that is 12in down
-   * from the peak" — spawned when a gable wall is in "panels/beam" mode,
-   * see `computeGableTiledRow`'s own `columnReservationWidthIn` param).
-   * Unlike a window, this tile is NEVER sloped — `leftHeightIn` and
-   * `rightHeightIn` are always equal (the flat top), and it's always
-   * centered on the peak rather than anchored to a user-clicked ordinal. */
+   * column panel centered under the peak" — spawned when a gable wall is in
+   * "panels/beam" mode, see `computeGableTiledRow`'s own
+   * `columnReservationWidthIn` param).
+   *
+   * ⚠ **It is no longer flat-topped, and that is the point of `apexXIn`
+   * below.** This doc used to say the tile is "NEVER sloped" and that its two
+   * edge heights "are always equal (the flat top)". Both became false on
+   * 2026-11-13. */
   isColumn?: boolean;
+  /**
+   * ⚠ **THE RIDGE, INSIDE THE TILE — the one place a tile is not a
+   * trapezoid.**
+   *
+   * > *"What I've had in mind is that this Gable column panel would be
+   * > five-sided, or I guess technically seven-sided including the inside and
+   * > outside faces. The top lid would be very weird and two pieces and
+   * > that's fine."* — Tommy, 2026-11-13
+   *
+   * Every other tile in a gable row is a trapezoid, and gets away with it
+   * because the row is split **at** the ridge — the peak always lands on a
+   * tile boundary. The column tile is the single exception: the two segments
+   * either side are trimmed to ITS edges, so it straddles the ridge.
+   *
+   * Until 2026-11-13 it was given a flat top at ridge height, which left it
+   * standing `(widthIn / 2) x pitch/12` proud of BOTH roof planes — measured
+   * +6.38in on a 20ft wall at 6:12, +4.25in on The Tank at 4:12, and visible
+   * as a square block poking out of the roof with a step down to each
+   * neighbour. His report: *"Produces a Gable beam catcher that looks
+   * incomplete."*
+   *
+   * So the tile's two edges now follow the real roofline like every other
+   * tile's, and the ridge is carried HERE instead. Set only when the peak
+   * falls strictly inside the tile; absent means the tile really is a plain
+   * trapezoid and the caller needs no special case.
+   *
+   * ⚠ **In practice the apex is dead centre**, because `placeColumnUnderPeak`
+   * lands the wall's column exactly on the peak and the gable adopts its
+   * edges — measured at 50.0% across on every wall from 12ft to 40ft, with
+   * and without windows and doors below. The field is a position rather than
+   * a flag because the TYPE allows otherwise (the adoption test is only that
+   * the wall column's span CONTAINS the peak), not because a lopsided one has
+   * been seen. A builder that assumes symmetry would be right today and
+   * silently wrong the day that changes.
+   */
+  apexXIn?: number;
+  /** The ridge's own height, same absolute scale as `leftHeightIn`. Set if
+   * and only if `apexXIn` is. */
+  apexHeightIn?: number;
 }
 
 /** A gable tile reserved for a window (Tommy: "add an option to click-edit
@@ -305,6 +346,20 @@ function heightAtAnchors(xIn: number, anchors: RoofAnchor[]): number {
     }
   }
   return anchors[anchors.length - 1]!.heightIn;
+}
+
+/**
+ * ⚠ **The tile's highest point — use this, never `max(left, right)`.**
+ *
+ * Since 2026-11-13 a column tile can carry a ridge inside itself
+ * (`apexXIn`), and `Math.max(leftHeightIn, rightHeightIn)` then understates
+ * the tile by half its width times the pitch. Every consumer that sizes,
+ * caps, prices, draws or refuses a tile by its tallest point needs the apex
+ * in that answer, so there is one function for it rather than a pattern to
+ * remember.
+ */
+export function gableTileTallestHeightIn(tile: GableTiledPanel): number {
+  return Math.max(tile.leftHeightIn, tile.rightHeightIn, tile.apexHeightIn ?? Number.NEGATIVE_INFINITY);
 }
 
 function panel(xStartIn: number, xEndIn: number, anchors: RoofAnchor[], isSafetyGap = false): GableTiledPanel {
@@ -969,15 +1024,27 @@ export function computeGableTiledRow(
     if (columnStartIn >= segments[0]!.segStartIn && columnEndIn <= segments[1]!.segEndIn) {
       segments[0]!.segEndIn = columnStartIn;
       segments[1]!.segStartIn = columnEndIn;
-      /* The beam's UNDERSIDE, so the beam bears on this panel rather than
-         floating above it or running through it. */
-      const flatTopHeightIn = peakAnchor.heightIn - columnTopDropIn;
+      /* ⚠ **THE TOP FOLLOWS THE ROOF, AND THE RIDGE GOES IN `apexXIn`** —
+         his five-sided panel. See `GableTiledPanel.apexXIn` for the
+         measurements that forced this; in one line, a flat top at ridge
+         height stands half the tile's width times the pitch proud of both
+         roof planes, and the tile was the only one in the row doing it.
+
+         `columnTopDropIn` still applies, uniformly, to all three heights —
+         so a caller that wants the beam's underside rather than the roofline
+         gets the same pentagon shifted down, not a flat top back. */
+      const topAt = (xIn: number) => heightAtAnchors(xIn, anchors) - columnTopDropIn;
+      /* Strictly inside: a peak exactly ON an edge is that edge's own height
+         and the tile is a genuine trapezoid, with nothing for a builder to
+         special-case. */
+      const apexInside = columnStartIn < peakAnchor.xIn && peakAnchor.xIn < columnEndIn;
       columnTile = {
         xStartIn: columnStartIn,
         xEndIn: columnEndIn,
         widthIn: fromEighths(columnWidthEighths),
-        leftHeightIn: flatTopHeightIn,
-        rightHeightIn: flatTopHeightIn,
+        leftHeightIn: topAt(columnStartIn),
+        rightHeightIn: topAt(columnEndIn),
+        ...(apexInside ? { apexXIn: peakAnchor.xIn, apexHeightIn: topAt(peakAnchor.xIn) } : {}),
         isColumn: true,
       };
     }

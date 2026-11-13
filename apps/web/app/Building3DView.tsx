@@ -955,9 +955,15 @@ interface Building3DViewProps {
       windowSillHeightIn?: number;
       /** The auto-centered structural Column Panel reserved under a
        * single-peak roofline (Tommy: "panels/beam" mode) — rendered as a
-       * real Column Panel via buildColumnPanelMembers, not the sloped
-       * Gable End Panel shape every other tile uses. */
+       * real Column Panel, or, when it straddles the ridge, as the
+       * five-sided Gable Peak Panel below. */
       isColumn?: boolean;
+      /** ⚠ The ridge, when it falls strictly inside this tile — the one tile
+       * in a gable row that is not a trapezoid. Absolute wall x, matching
+       * `xStartIn`. See `GableTiledPanel.apexXIn` for why it exists and what
+       * it measured. */
+      apexXIn?: number;
+      apexHeightIn?: number;
     }[]
   >;
   /** Whether the Roof system is in scope at all (page.tsx's own
@@ -1797,7 +1803,15 @@ export default function Building3DView({
         );
         const leftLocalIn = tile.leftEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;
         const rightLocalIn = tile.rightEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;
-        const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
+        /* ⚠ **`Math.max` OF THE TWO EDGES IS NO LONGER THE TOP.** A column
+           tile straddling the ridge carries it in `apexHeightIn`, and the
+           ridge is the tallest point on the tile by definition — see
+           `GableTiledPanel.apexXIn`. Reading only the edges would size the
+           panel, its straw volume and its box short by half the tile's width
+           times the pitch. */
+        const apexLocalIn =
+          tile.apexHeightIn === undefined ? undefined : tile.apexHeightIn + appliedLiftIn - gableEaveHeightIn;
+        const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn, apexLocalIn ?? Number.NEGATIVE_INFINITY);
         let members: PanelMember[];
         if (tile.isColumn) {
           // Real, fabricable structural Column Panel (Tommy: "panels/beam"
@@ -1811,6 +1825,22 @@ export default function Building3DView({
              reservation comes from `columnReservationWidthIn`, which the
              caller supplies; building a fixed width inside it would leave
              the same open strip. */
+          /* ⚠ **STILL THE FLAT-TOPPED COLUMN, AND DELIBERATELY SO FOR NOW.**
+             `tallerLocalIn` now includes the apex, so this builds to exactly
+             the height it always did and this view is unchanged by the tile
+             gaining a ridge — which is the point: the apex lands as DATA
+             first, and the five-sided part that consumes it
+             (`buildGablePeakTopMembers`, built and tested beside the Gable
+             Peak Panel) is wired in once its seam with the body is right.
+
+             ⚠ The seam, stated so the next pass does not rediscover it: a
+             five-sided panel composed from a column body plus a sloped cap
+             gives either TWO stacked skins or a 3/4in void at their joint,
+             because each prefab piece carries its own. The fix is one shared
+             top assembly — the body built without its own top plate and skin,
+             the cap supplying them across the full width — which is a change
+             to a builder that ordinary wall columns also use, and belongs in
+             a stride of its own rather than at the end of this one. */
           members = buildColumnStyleMembers(tile.widthIn, thicknessIn, tallerLocalIn, includeNailer);
         } else if (tile.isWindow) {
           // Gable window (Tommy: "add an option to click-edit gable end
