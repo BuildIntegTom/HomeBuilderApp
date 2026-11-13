@@ -25,6 +25,7 @@ thumbnails are one piece of work.
 | **U6** | 2 | Dimension handles on the model |
 | **U7** | 3 | A per-tool first-use tutorial |
 | **U8** | 7 | Share a design by link |
+| **U9** | — | A favicon and a link thumbnail for strawpanels.com (added 2026-11-13; not from the teardown) |
 
 ---
 
@@ -1325,3 +1326,66 @@ stride.
   company can adopt. See the plan at `.claude/plans/unified-snacking-swan.md`.
 - Home has no thumbnails on Continue or on the cloud list; U3 stride 2 (3D
   template thumbnails) is also still open.
+
+---
+
+## U9 — a favicon and a link thumbnail for strawpanels.com
+
+> *"Also add to the queue that I want to Make a favicon and thumbnail for
+> strawpanels.com. that is not the vercel arrow. Just our simple logo house
+> pointing up and down will do."* — Tommy, 2026-11-13
+
+**Why it is a real item and not a 10-minute job: there is no logo asset in
+this repo.** `apps/web/app/TopBar.tsx` says so in as many words — the wordmark
+that used to sit in the bar was *"a `Building Integrity` text span (no logo
+asset exists)"*. And `apps/web/app/favicon.ico` is 25,931 bytes dated
+2026-07-06, which is the file `create-next-app` writes: **the arrow he is
+looking at is Next.js's default, shipped untouched since the app was
+scaffolded.**
+
+So this is a drawing job followed by a small wiring job.
+
+### What is actually missing
+
+| | today | wanted |
+| --- | --- | --- |
+| browser tab | Next's default `favicon.ico` | the house mark |
+| link preview (iMessage, Slack, WhatsApp, Discord) | **nothing at all** | a thumbnail |
+| `metadata` in `layout.tsx` | `title` + `description` only | plus `openGraph` and `icons` |
+
+⚠ **The thumbnail is the bigger of the two.** There is no `opengraph-image` in
+the app, so every link to strawpanels.com he has ever sent — including the
+share links of U8 — unfurls as a bare title and one line of text. A favicon is
+16 and 32 pixels; a link card is 1200×630 and is what somebody sees before
+they decide to click.
+
+⚠ **The `description` is wrong for a public link too**, and it will go out on
+the card: *"Reference-only floor-plan layout editor for prefab straw-panel
+homes."* That is a note to ourselves, not a line for a client. Worth his
+wording while he is looking at this.
+
+### The one thing that needs him
+
+**What "pointing up and down" means.** A house silhouette with a gable roof
+points up by itself, so the phrase is doing something I cannot read with
+confidence — a mirrored pair, a peak and an inverted peak, a roof pitch
+above and a floor pitch below. It is a logo, so guessing is the one thing
+not to do: ask with two or three drawn candidates and let him point, or take
+the file if he already has the mark somewhere (the Google Site, a business
+card, a sign).
+
+### Build notes, once the mark exists
+
+- `apps/web/app/icon.svg` — Next serves this as the favicon and renders the
+  `.ico` unnecessary. An SVG mark stays sharp at every size and is a few
+  hundred bytes.
+- `apps/web/app/opengraph-image.png` (1200×630) and
+  `apps/web/app/twitter-image.png`, or one `opengraph-image.tsx` that draws
+  the card so the mark and the card cannot drift apart.
+- Delete `favicon.ico` only after confirming the SVG serves — a tab with no
+  icon is worse than the arrow.
+- ⚠ The five scaffold SVGs in `apps/web/public/` (`vercel.svg`, `next.svg`,
+  `file.svg`, `globe.svg`, `window.svg`) are also untouched scaffold litter.
+  Nothing references them. Worth deleting in the same stride.
+- Verify the card in the browser rather than by reading the HTML: a wrong
+  path still renders a perfectly valid `<meta>` tag.
