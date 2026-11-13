@@ -41,6 +41,7 @@ thumbnails are one piece of work.
 | **U6** | Dimension handles | *"genius move"* — 5 handles named | **BUILT 2026-11-07** — the resize seam, four roof bypasses closed, and FOUR of the five handles; the peak slider is built and held back behind a pre-existing crash |
 | **U7** | Per-tool tutorial | yes — *"how would the remembering work?"* | **BUILT 2026-11-07** — three cards each for the panel menu, the panel editor and the Panelizer, remembered per tool and per VERSION; the signed-in half is a backend stride |
 | **U8** | Share by link | yes | **ready, but it is a sharing decision** |
+| **U9** | Favicon + link thumbnail | *"Just our simple logo house pointing up and down will do"* — then he sent the mark itself | **BUILT 2026-11-13** — his own Building Integrity mark, drawn into five assets from one master, plus the first link card the site has ever had |
 
 Nothing here is blocked by anything in the B-queue, and nothing in the B-queue
 is blocked by anything here. **The B-queue goes first** — his call, 2026-11-06.
@@ -1364,7 +1365,7 @@ the card: *"Reference-only floor-plan layout editor for prefab straw-panel
 homes."* That is a note to ourselves, not a line for a client. Worth his
 wording while he is looking at this.
 
-### The one thing that needs him
+### ~~The one thing that needs him~~ — ANSWERED 2026-11-13
 
 **What "pointing up and down" means.** A house silhouette with a gable roof
 points up by itself, so the phrase is doing something I cannot read with
@@ -1389,3 +1390,60 @@ card, a sign).
   Nothing references them. Worth deleting in the same stride.
 - Verify the card in the browser rather than by reading the HTML: a wrong
   path still renders a perfectly valid `<meta>` tag.
+
+**He answered it by sending the mark**, 2026-11-13: *"Here is the logo I would
+like to use for the app/favicon/thumbnail, etc. This is building integrity's
+simplified logo."* So none of the candidates were drawn from — the asset is
+his, and the phrase turns out to mean the mark itself: a blue house pointing
+up, a wheat field pointing down, one stalk through the middle.
+
+### BUILT 2026-11-13
+
+**One master, five outputs, one script.** `apps/web/brand/building-integrity-mark.png`
+is the mark exactly as he sent it (521x778, transparent, three colours:
+`#4C75BF` house, `#BD7A32` field and stalk, `#375283` shadow side — read off the
+file, not guessed). `apps/web/brand/generate-brand-assets.mjs` draws from it:
+
+| file | what it is |
+| --- | --- |
+| `app/icon.png` | 512x512, transparent, the tab icon |
+| `app/apple-icon.png` | 180x180 on warm paper — iOS composites a home-screen icon onto **black**, so this one cannot be transparent |
+| `app/favicon.ico` | 16/32/48 in one file, so a direct `/favicon.ico` hit still gets the mark |
+| `app/opengraph-image.png` | 1200x630, the link card |
+| `app/twitter-image.png` | the same bytes, under the name Twitter reads |
+
+Nothing in the build runs the script — the outputs are committed files. Change
+the mark, re-run it, commit what it writes.
+
+⚠ **`metadataBase` is the part that would have failed silently.** Without it
+Next emits a RELATIVE `og:image`, and every unfurl loses the card, because
+iMessage, Slack and Discord fetch that image from their own servers. In dev the
+tag reads `http://localhost:3000/...` no matter what `metadataBase` says —
+`getSocialImageMetadataBaseFallback` in
+`next/dist/lib/metadata/resolvers/resolve-url.js` returns the local base
+whenever `NODE_ENV === "development"`, and only outside dev does it return the
+configured one. So the localhost in the dev HTML is correct and expected; read
+that function rather than inferring from the tag.
+
+⚠ **The `description` was changed, and the new line is MINE, not his.** It now
+reads *"Draw a straw-panel building, panel by panel, and get its shop drawings
+and its price."* The old one — *"Reference-only floor-plan layout editor for
+prefab straw-panel homes."* — was a note to ourselves and would have gone out
+on every card. The new one is a draft in three places in `layout.tsx`
+(`description`, `openGraph`, `twitter`) and is flagged there as a draft.
+
+**Also deleted**: the five scaffold SVGs in `apps/web/public/`
+(`vercel.svg`, `next.svg`, `file.svg`, `globe.svg`, `window.svg`). Nothing
+referenced them; all five now 404, confirmed in the browser, and the folder is
+gone.
+
+**Verified in the browser, not by reading the source**: all five assets serve
+200 with the right content type and length, the three `<link rel="icon">` tags
+carry the right `sizes`, and the full `og:`/`twitter:` set is emitted
+including `og:image:width` 1200 and `og:image:height` 630.
+
+⚠ **Still open: at 16px the stalk is mush.** The silhouette holds — a blue
+house with an orange point under it, legible on a light and a dark tab strip,
+checked by rendering 16/32/48 and looking at them. But the wheat detail does
+not survive, and the only fix is a second, simplified mark for the small sizes.
+Worth a look before deciding it matters.

@@ -13,9 +13,42 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/**
+ * ⚠ The icons and the link card are NOT declared here. Next's file conventions
+ * pick them up from this same folder — `icon.png`, `apple-icon.png`,
+ * `favicon.ico`, `opengraph-image.png` and `twitter-image.png` — and emit the
+ * tags with the right sizes and types. An `icons` block here would be a
+ * second, hand-maintained copy of that.
+ *
+ * All five are drawn from one master by
+ * `apps/web/brand/generate-brand-assets.mjs`. Change the mark, re-run the
+ * script, commit what it writes; never hand-edit the outputs.
+ *
+ * ⚠ `metadataBase` is what makes `og:image` absolute. Without it Next emits a
+ * relative URL and **every unfurl silently loses the card** — iMessage, Slack,
+ * WhatsApp and Discord all fetch the image from their own servers, which have
+ * no idea what it is relative to.
+ */
 export const metadata: Metadata = {
+  metadataBase: new URL("https://strawpanels.com"),
   title: "Building Integrity — Fabricator App",
-  description: "Reference-only floor-plan layout editor for prefab straw-panel homes.",
+  // ⚠ DRAFT WORDING, mine and not Tommy's. This is the line a client reads
+  // under the card before deciding to click, so it replaced the old
+  // note-to-ourselves ("Reference-only floor-plan layout editor for prefab
+  // straw-panel homes."). One line to change if he wants it said differently.
+  description: "Draw a straw-panel building, panel by panel, and get its shop drawings and its price.",
+  openGraph: {
+    type: "website",
+    siteName: "Building Integrity",
+    url: "https://strawpanels.com",
+    title: "Building Integrity — Fabricator App",
+    description: "Draw a straw-panel building, panel by panel, and get its shop drawings and its price.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Building Integrity — Fabricator App",
+    description: "Draw a straw-panel building, panel by panel, and get its shop drawings and its price.",
+  },
 };
 
 export default function RootLayout({
