@@ -169,6 +169,26 @@ export interface PanelInstance {
    * Undefined for every other panel type. */
   leftEdgeHeightIn?: number;
   rightEdgeHeightIn?: number;
+  /**
+   * ⚠ **The RIDGE, for the one column tile that straddles it** — the
+   * five-sided Gable Peak Panel (`isGablePeakColumn`). `offsetXIn` is
+   * measured from this panel's own left edge, not along the wall.
+   *
+   * Set only when the ridge falls strictly inside the tile; see
+   * `GableTiledPanel.apexXIn`. A peak landing on a tile's own edge leaves
+   * these undefined and the panel is flat-topped, which is the truthful shape
+   * for it.
+   *
+   * ⚠ **This is what makes `leftEdgeHeightIn`/`rightEdgeHeightIn` above true
+   * for a column tile.** Until 2026-11-13 the column push handed the RIDGE
+   * height over as both edges, because the panel really was built flat at
+   * ridge height and there was nowhere else to put the peak. Both edges now
+   * carry the tile's real roofline and the peak lives here, so a consumer
+   * that reads only the edges gets a flat-topped panel of the right edge
+   * height rather than a silently 6in-tall lie.
+   */
+  gablePeakApexOffsetXIn?: number;
+  gablePeakApexHeightIn?: number;
   /** Only set for "gable" instances that ARE the tiled row's own dedicated
    * horizontal safety-gap tile (see GABLE_SAFETY_GAP_WIDTH_IN) — never a
    * real, fabricated Gable End Panel, just a 3/4in plywood filler at this
@@ -278,6 +298,12 @@ export function allPanelInstances(
     string,
     {
       widthIn: number;
+      /** Where this tile starts along its wall — the datum `apexXIn` below is
+       * measured against, so a column tile's ridge can be put in the panel's
+       * own coordinates. Optional, like every other field this function has
+       * grown: absent, a column tile is flat-topped, which is exactly what
+       * every caller that has no apex either already gets. */
+      xStartIn?: number;
       leftEdgeHeightIn: number;
       rightEdgeHeightIn: number;
       isSafetyGap?: boolean;
@@ -385,6 +411,9 @@ export function allPanelInstances(
        signature already made for the brace pair: this list is twenty deep and
        the two fields are never meaningful apart. */
     bigHeader?: { heightIn?: number; includeSill: boolean },
+    /* The ridge inside a Gable Peak column tile — one object for the same
+       reason `bigHeader` is one: the two fields are never meaningful apart. */
+    gablePeakApex?: { offsetXIn: number; heightIn: number },
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     const panelNumber = counters[direction]!;
@@ -418,6 +447,10 @@ export function allPanelInstances(
       ...(panelName !== undefined && { panelName }),
       ...(bigHeader?.heightIn !== undefined && { bigHeaderHeightIn: bigHeader.heightIn }),
       ...(bigHeader !== undefined && { includeSillOnBigHeader: bigHeader.includeSill }),
+      ...(gablePeakApex !== undefined && {
+        gablePeakApexOffsetXIn: gablePeakApex.offsetXIn,
+        gablePeakApexHeightIn: gablePeakApex.heightIn,
+      }),
     });
   };
 
@@ -628,21 +661,38 @@ export function allPanelInstances(
             undefined,
             undefined,
             undefined,
-            /* ⚠ **THE RIDGE, NOT THE EDGE — this panel is built to its
-               tallest point.** Since 2026-11-13 a column tile straddling the
-               peak follows the roofline at its two edges and carries the
-               ridge in `apexHeightIn` (see `GableTiledPanel.apexXIn`).
-               Passing the edge height here would hand the shop a Gable Peak
-               Panel that stops short of the ridge by half its width times the
-               pitch — 6.38in on a 20ft wall at 6:12 — which is a real part
-               cut short, and the same class of fault as the "10' Column"
-               sheet the note below records.
+            /* ⚠ **THE TILE'S REAL EDGES, with the ridge carried separately**
+               — see `gablePeakApexOffsetXIn` below.
 
-               So the fabricated panel is unchanged by the tile gaining a
-               ridge: still flat-topped, still at ridge height. It becomes
-               five-sided when `buildGablePeakTopMembers` is wired in. */
-            tile.apexHeightIn ?? tile.leftEdgeHeightIn,
-            tile.apexHeightIn ?? tile.rightEdgeHeightIn,
+               Stage 1 handed the RIDGE height over as BOTH edges, and had to:
+               the fabricated panel was flat-topped, so passing its edge
+               height would have stopped the part short of the ridge by half
+               its width times the pitch — 6.38in on a 20ft wall at 6:12, a
+               real part cut short, the same class of fault as the "10'
+               Column" sheet the note below records. Now that the panel is
+               five-sided, the shop sheet describes the same part the 3D view
+               draws only if the edges are the edges and the peak is the peak.
+               `panelHeightInFor` takes the sheet's stated height from all
+               three, so the sheet still reads the panel's tallest point. */
+            tile.leftEdgeHeightIn,
+            tile.rightEdgeHeightIn,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            /* ⚠ Panel-local, not along the wall: `apexXIn` is absolute wall x
+               (like `xStartIn`) and every builder downstream works in the
+               panel's own coordinates. */
+            tile.apexXIn !== undefined && tile.apexHeightIn !== undefined && tile.xStartIn !== undefined
+              ? { offsetXIn: tile.apexXIn - tile.xStartIn, heightIn: tile.apexHeightIn }
+              : undefined,
           );
           return;
         }

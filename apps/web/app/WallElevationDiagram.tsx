@@ -1064,7 +1064,24 @@ export default function WallElevationDiagram({
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {
     const capped = capGableTileHeights(p.leftHeightIn, p.rightHeightIn, capHeightIn);
-    return { ...p, leftHeightIn: capped.leftEdgeHeightIn, rightHeightIn: capped.rightEdgeHeightIn, verticalGapIn: capped.verticalGapIn };
+    /* ⚠ **THE RIDGE IS CAPPED TOO, exactly as page.tsx caps it.** The ridge
+       column's peak is the tallest thing on its tile (see
+       `GableTiledPanel.apexXIn`), so capping only the two edges would let it
+       through this ceiling. A ridge that no longer stands above its own capped
+       edges is DROPPED rather than kept at zero rise — the tile really has
+       been flattened, and a reader that sees no apex can trust it is looking
+       at a plain trapezoid. */
+    const cappedApexHeightIn = p.apexHeightIn === undefined ? undefined : Math.min(p.apexHeightIn, capHeightIn);
+    const apexStillRises =
+      cappedApexHeightIn !== undefined &&
+      cappedApexHeightIn > Math.max(capped.leftEdgeHeightIn, capped.rightEdgeHeightIn) + 1e-9;
+    return {
+      ...p,
+      leftHeightIn: capped.leftEdgeHeightIn,
+      rightHeightIn: capped.rightEdgeHeightIn,
+      verticalGapIn: capped.verticalGapIn,
+      ...(apexStillRises ? { apexHeightIn: cappedApexHeightIn } : { apexXIn: undefined, apexHeightIn: undefined }),
+    };
   });
   const maxHeightIn = hasGableEnd ? maxProfileHeightIn : roofBaseHeightIn;
   // ⚠ ONE UNIFORM SCALE, both axes. `scaleX` used to be
@@ -2562,18 +2579,40 @@ export default function WallElevationDiagram({
               // in), so skipping it here keeps a click on any LATER tile
               // targeting the exact position that same numbering expects.
               if (p.isColumn) {
-                return (
-                  <rect
-                    key={i}
-                    x={xPx(p.xStartIn)}
-                    y={yPx(p.leftHeightIn)}
-                    width={(p.xEndIn - p.xStartIn) * scaleX}
-                    height={yPx(roofBaseHeightIn) - yPx(p.leftHeightIn)}
-                    fill={SLOT_COLORS.column}
-                    stroke="#2c5a66"
-                    strokeWidth={1}
-                  />
-                );
+                /* ⚠ **FIVE-SIDED WHEN THE RIDGE IS INSIDE IT, and this used
+                   to be a flat `<rect>` at `leftHeightIn`.**
+
+                   The ridge column is the one tile that STRADDLES the peak, so
+                   its two edges follow the real roofline and the ridge rises
+                   between them — his Gable Peak Panel. A rectangle drawn to
+                   one edge is wrong in both directions at once: it buries the
+                   peak and it squares off a top that is really two slopes.
+                   Measured as a defect 2026-11-13 on the flat-topped build:
+                   the block stood (width / 2) x pitch/12 proud of BOTH roof
+                   planes — 6.38in on a 20ft wall at 6:12 — which is how he
+                   first reported it, as *"a Gable beam catcher that looks
+                   incomplete"*. With no apex this is the same four-cornered
+                   block as before, which is the truthful shape for a peak
+                   landing on this tile's own edge. */
+                const topPointsPx: [number, number][] =
+                  p.apexXIn !== undefined && p.apexHeightIn !== undefined
+                    ? [
+                        [xPx(p.xEndIn), yPx(p.rightHeightIn)],
+                        [xPx(p.apexXIn), yPx(p.apexHeightIn)],
+                        [xPx(p.xStartIn), yPx(p.leftHeightIn)],
+                      ]
+                    : [
+                        [xPx(p.xEndIn), yPx(p.rightHeightIn)],
+                        [xPx(p.xStartIn), yPx(p.leftHeightIn)],
+                      ];
+                const columnPoints = [
+                  [xPx(p.xStartIn), yPx(roofBaseHeightIn)],
+                  [xPx(p.xEndIn), yPx(roofBaseHeightIn)],
+                  ...topPointsPx,
+                ]
+                  .map(([x, y]) => `${x},${y}`)
+                  .join(" ");
+                return <polygon key={i} points={columnPoints} fill={SLOT_COLORS.column} stroke="#2c5a66" strokeWidth={1} />;
               }
               const thisOrdinal = ordinal;
               ordinal++;

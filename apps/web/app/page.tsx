@@ -206,6 +206,7 @@ import {
   type GirtStyle,
   buildColumnStyleMembers,
   buildGablePeakPanelMembers,
+  type GablePeakTopProfile,
   buildCornerPanelMembers,
   buildDoorHeaderMembers,
   buildGablePanelMembers,
@@ -414,6 +415,12 @@ type PanelMemberSource = Pick<
   | "panelName"
   | "bigHeaderHeightIn"
   | "includeSillOnBigHeader"
+  /* The ridge inside a Gable Peak column tile — what makes its shop sheet
+     describe the five-sided part the 3D view draws. Arriving through this
+     Pick rather than as positionals is the point of the note above: all four
+     call sites already hand over the instance. */
+  | "gablePeakApexOffsetXIn"
+  | "gablePeakApexHeightIn"
 >;
 import { shearMembersFor } from "./shearMembers";
 import {
@@ -7839,10 +7846,22 @@ export default function LayoutEditor() {
       result[wallId] = tiles.map((t) => {
         const liftIn = gableTileRoofTopLiftIn(t, gableEndsFullHeight, thicknessIn, pitchIn12, gableEaveHeightIn, GABLE_PANEL_MAX_HEIGHT_IN);
         /* Both edges by the SAME amount, so the tile's own rake — and with it
-           every slope label and cut angle derived from it — is untouched. */
+           every slope label and cut angle derived from it — is untouched.
+           ⚠ **AND THE RIDGE WITH THEM.** `apexHeightIn` was left behind when
+           it was added on 2026-11-13, which was invisible only for as long as
+           nothing built a shape from it: the ridge column's two edges rose
+           16 3/8in on a 4:12 deck while its peak stayed put, so the apex came
+           out 12.1in BELOW its own edges. `gablePeakHasFiveSidedTop` would
+           have read that as a flat top and the shop sheet would have quietly
+           described a flat-topped panel while the 3D view drew five sides. */
         return liftIn === 0
           ? t
-          : { ...t, leftEdgeHeightIn: t.leftEdgeHeightIn + liftIn, rightEdgeHeightIn: t.rightEdgeHeightIn + liftIn };
+          : {
+              ...t,
+              leftEdgeHeightIn: t.leftEdgeHeightIn + liftIn,
+              rightEdgeHeightIn: t.rightEdgeHeightIn + liftIn,
+              ...(t.apexHeightIn !== undefined && { apexHeightIn: t.apexHeightIn + liftIn }),
+            };
       });
     }
     return result;
@@ -8916,6 +8935,27 @@ export default function LayoutEditor() {
       ? thicknessIn * Math.hypot(1, (deckPanelTakeoffInput.roofPitchIn12 ?? 0) / 12)
       : 0;
     const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
+    /**
+     * ⚠ **The ridge inside a Gable Peak column tile, as the three rises the
+     * builder wants** — see `GablePeakTopProfile`.
+     *
+     * Off the instance (`source`), so the shop sheet is built from the same
+     * numbers the 3D view's own branch reads and the two cannot describe
+     * different parts. Absent whenever the peak lands on this tile's own edge,
+     * which leaves the flat-topped panel that is the truthful shape for it.
+     */
+    const gablePeakApexProfile: GablePeakTopProfile | undefined = (() => {
+      const apexOffsetXIn = source?.gablePeakApexOffsetXIn;
+      const apexHeightIn = source?.gablePeakApexHeightIn;
+      if (apexOffsetXIn === undefined || apexHeightIn === undefined) return undefined;
+      const edgeTopLocalIn = Math.min(gableLeftLocalIn, gableRightLocalIn);
+      return {
+        apexOffsetXIn,
+        leftRiseIn: gableLeftLocalIn - edgeTopLocalIn,
+        apexRiseIn: apexHeightIn - gableEaveHeightIn - edgeTopLocalIn,
+        rightRiseIn: gableRightLocalIn - edgeTopLocalIn,
+      };
+    })();
     const base = panelTypeId === "standard"
       ? standardPanelMembersFor(source ?? {}, widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
       : panelTypeId === "braced"
@@ -8961,16 +9001,29 @@ export default function LayoutEditor() {
                  Caught on The Tank before it shipped: the tile is 48in and
                  the sheet said 120in.
 
-                 Both edges are the same on a column tile — its top is flat by
-                 construction (see `computeGableTiledRow`'s own column
-                 reservation) — so either local height is the panel's height. */
+                 ⚠ **ITS TOP IS NOT FLAT, and this comment used to say it
+                 was.** It read *"Both edges are the same on a column tile —
+                 its top is flat by construction"*, which was true of the
+                 reservation the row used to make and stopped being true on
+                 2026-11-13: the ridge column is the one tile that STRADDLES
+                 the peak, so its two edges follow the real roofline and the
+                 ridge rises between them (`GableTiledPanel.apexXIn`). Reading
+                 one edge as "the panel's height" is what left the part 6.38in
+                 short of the ridge on a 20ft wall at 6:12.
+
+                 So the panel is built to its LOWER edge and the profile below
+                 carries the rest of the shape — the same three rises the 3D
+                 view passes, off the same instance. With no ridge inside this
+                 tile the profile is absent and the two edges really are equal,
+                 which is the flat-topped panel exactly as before. */
               buildGablePeakPanelMembers(
                 thicknessIn,
-                gableLeftLocalIn,
+                gablePeakApexProfile ? Math.min(gableLeftLocalIn, gableRightLocalIn) : gableLeftLocalIn,
                 includeNailer,
                 girtStyle,
                 widthIn,
                 gablePeakRooflineBelowTopIn,
+                gablePeakApexProfile,
               )
             : buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
           : panelTypeId === "corner"
@@ -9592,7 +9645,20 @@ export default function LayoutEditor() {
          same local-height rule the "gable" branch above uses, because it is
          a tile in the same row. */
       if (isGablePeakColumn(panelTypeId, inst.leftEdgeHeightIn)) {
-        return Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
+        /* ⚠ **THE RIDGE IS THE HEIGHT, and the two edges no longer give it.**
+           Stage 1 pushed the ridge height as both edges, so a max over them
+           was the peak. They now carry the tile's real roofline and the peak
+           arrives separately — so without it in here the sheet would head a
+           five-sided panel with its EDGE height, short by half the panel's
+           width times the pitch. That is the same "part cut short" this
+           branch was added to fix, one field along. */
+        return (
+          Math.max(
+            inst.leftEdgeHeightIn ?? gableEaveHeightIn,
+            inst.rightEdgeHeightIn ?? gableEaveHeightIn,
+            inst.gablePeakApexHeightIn ?? Number.NEGATIVE_INFINITY,
+          ) - gableEaveHeightIn
+        );
       }
       return inst.heightOverrideIn ?? wallHeightFt * 12;
     };
@@ -9668,6 +9734,20 @@ export default function LayoutEditor() {
          about which panel this is. */
       if (panelTypeId === "column") {
         parts.push(isGablePeakColumn(panelTypeId, inst.leftEdgeHeightIn) ? "gable-peak" : "wall");
+        /* ⚠ **And a Gable Peak's own shape, for the same reason the gable
+           tiles below carry theirs.** Its top is five-sided now, so two
+           Gable Peak Panels of the same width and different edge or ridge
+           heights are physically different parts — and this page draws and
+           cut-lists the FIRST instance in the group. A wall column leaves
+           every one of these undefined, so its key is unchanged. */
+        if (isGablePeakColumn(panelTypeId, inst.leftEdgeHeightIn)) {
+          parts.push(
+            (inst.leftEdgeHeightIn ?? 0).toFixed(3),
+            (inst.rightEdgeHeightIn ?? 0).toFixed(3),
+            (inst.gablePeakApexOffsetXIn ?? -1).toFixed(3),
+            (inst.gablePeakApexHeightIn ?? -1).toFixed(3),
+          );
+        }
       }
       // Same idea for gable tiles — two tiles of the same width but
       // different edge heights (different position along the roofline)

@@ -436,15 +436,75 @@ const GABLE_PEAK_WEDGE_THICKNESS_IN = PLATE_2X4_THICKNESS_IN;
  * ⚠ Vertical, not perpendicular: a 3/4in sheet cut plumb on a 4:12 slope
  * stands 0.79in tall. The rest of this file is careful about that `1/cos`
  * and so is this.
+ *
+ * ## ⚠ ONE SHARED PLATE UNDER BOTH SLOPES — his ruling, 2026-11-13
+ *
+ * Asked directly whether the five-sided peak wants one plate spanning the
+ * whole panel under both slopes, or its own plate per slope, he answered:
+ * **"one shared plate under both slopes."**
+ *
+ * That is what this builds, and it is why the body is left alone: the Column
+ * Panel's own top plate already runs unbroken across the full width, and both
+ * slopes bear on it through their wedges. No second plate is added at the
+ * ridge, none per slope, and the body's plate is not cut to make room for
+ * one. It also keeps the furring box's bearing intact — `gablePeakSlotIn`'s
+ * own note is that the plate stays unbroken and the box hangs beneath it.
+ *
+ * This closes the last `pending-BI-confirmation` on the shape of this top.
  */
 export function gablePeakLidVerticalThicknessIn(runIn: number, riseIn: number): number {
   const cosTheta = runIn > 0 ? runIn / Math.hypot(runIn, riseIn) : 1;
   return SKIN_THICKNESS_IN / cosTheta;
 }
 
+/**
+ * ⚠ **How far below the ROOF'S RIDGE the beam's top face lands, now that the
+ * peak is five-sided.**
+ *
+ * `GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN` (3 1/4in) measures from the
+ * PANEL'S OWN TOP, and while that top was flat at ridge height the two were
+ * the same number — which is why `Building3DView` could place the ridge beam
+ * off the roof plane with a constant.
+ *
+ * They are not the same number any more. The panel's body now stops at its
+ * LOWER edge less one lid, and the ridge rises above that, so the box the
+ * beam drops into sits `apexRise + lidThickness` further down than the old
+ * constant believed. On The Tank at 4:12 that is 4.25 + 0.79 = **5.04in**,
+ * and holding the constant would have drawn the beam straight up through the
+ * lid of its own box — the B9 fault again, which was found at 0.75in.
+ *
+ * Exported so the renderer and the builder read one derivation. A second
+ * copy of this arithmetic is exactly how the model and the shop drawings
+ * come to describe different buildings.
+ *
+ * ⚠ **Assumes the ridge is CENTRED in the panel**, which is what
+ * `placeColumnUnderPeak` produces on every wall from 12ft to 40ft, measured.
+ * An off-centre ridge sits further above the lower edge than `width / 2`
+ * implies, and this would then run shallow.
+ */
+export function gablePeakBeamTopBelowRidgeIn(widthIn: number, pitchIn12: number): number {
+  const runIn = widthIn / 2;
+  const riseIn = runIn * (pitchIn12 / 12);
+  /* ⚠ No rise means no cap and therefore no lid — the panel is the ordinary
+     flat-topped one and the old constant is exactly right. Returning
+     "constant + a lid" here would drop the beam 3/4in for a roof that has no
+     ridge to speak of. */
+  if (riseIn <= 0) return GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN;
+  return riseIn + gablePeakLidVerticalThicknessIn(runIn, riseIn) + GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN;
+}
+
 /** The body's flat top, given where the panel's top SURFACE sits at its
  * lower edge. */
 export function gablePeakWedgeBodyTopZIn(widthIn: number, edgeTopZIn: number, top: GablePeakTopProfile): number {
+  /* ⚠ **A profile with no rise builds no lid, so the body must NOT drop.**
+     Found by the beam test: a `top` whose apex is level with its edges makes
+     `buildGablePeakWedgeTopMembers` return nothing, and shortening the body
+     anyway left a 3/4in void where the lid would have been. A degenerate
+     profile has to collapse all the way back to the plain flat-topped panel,
+     not nearly. */
+  const maxRiseIn = Math.max(top.leftRiseIn, top.apexRiseIn, top.rightRiseIn);
+  const minRiseIn = Math.min(top.leftRiseIn, top.apexRiseIn, top.rightRiseIn);
+  if (maxRiseIn - minRiseIn <= 0) return edgeTopZIn;
   const leftRunIn = top.apexOffsetXIn;
   const rightRunIn = widthIn - top.apexOffsetXIn;
   return (
@@ -488,7 +548,56 @@ export function buildGablePeakWedgeTopMembers(
     if (runIn <= 0) continue;
     const deepestIn = Math.max(slope.fromRiseIn, slope.toRiseIn);
     if (deepestIn <= 0) continue;
-    const stock = gablePeakWedgeStockFor(deepestIn);
+
+    /**
+     * ⚠ **THE WEDGE IS A 2x4 AND IT STOPS WHERE A 2x4 STOPS — his call.**
+     *
+     * > *"if the 2x4 is not deep enough to cap it off - that's fine. just
+     * > have that space exposed and i can stuff it worth straw."* — Tommy,
+     * > 2026-11-13
+     *
+     * This settles the conflict his own two numbers had: a wedge that
+     * feathers to nothing needs a depth equal to the ridge's rise, and on a
+     * 25.5in panel at 4:12 that is 4.25in — three quarters of an inch more
+     * than a 2x4 can give. The earlier resolution was "geometry wins, the
+     * stock follows", which quietly promoted the board to a 2x6. **He would
+     * rather keep the 2x4 and leave the deep corner open.**
+     *
+     * The lid still lies on the true roof plane — that is not negotiable,
+     * it is the whole defect being fixed — so the wedge can only sit where
+     * the gap under the lid is 3 1/2in or less. That is the OUTER part of
+     * the slope: the gap grows from nothing at the panel's edge to the full
+     * rise at the ridge, reaching 3 1/2in at `3.5 x run / rise` from the
+     * edge. Inboard of that the void is deeper than any 2x4 rip and is left
+     * open for him to pack.
+     *
+     * | panel | pitch | rise | wedge covers | open next to the ridge |
+     * |---|---|---|---|---|
+     * | 25.5in | 3:12 | 3.19in | all 12.75in | none |
+     * | 25.5in | 4:12 | 4.25in | 10.50in | 2.25in |
+     * | 25.5in | 8:12 | 8.50in | 5.25in | 7.50in |
+     *
+     * ⚠ The open void grows fast with pitch, and at 8:12 it is more than
+     * half the slope. That is his decision to make and he has made it, but
+     * the numbers are printed on the member's own cut note so nobody has to
+     * rediscover them at a steep pitch.
+     */
+    const wedgeDeepestIn = Math.min(deepestIn, GABLE_PEAK_WEDGE_MAX_STOCK_IN);
+    /* Where along this slope the gap under the lid reaches the wedge's own
+       depth. The wedge runs from the SHALLOW end (the panel edge) to here. */
+    const wedgeRunIn = deepestIn > 0 ? (wedgeDeepestIn / deepestIn) * runIn : runIn;
+    const openRunIn = runIn - wedgeRunIn;
+    /* Which end of this slope is the shallow one — the wedge grows from
+       there. On the left slope the panel edge is `fromXIn`; on the right it
+       is `toXIn`, because the right slope falls away from the ridge. */
+    const shallowAtFrom = slope.fromRiseIn <= slope.toRiseIn;
+    const wedgeFromXIn = shallowAtFrom ? slope.fromXIn : slope.toXIn - wedgeRunIn;
+    const wedgeToXIn = shallowAtFrom ? slope.fromXIn + wedgeRunIn : slope.toXIn;
+    const shallowRiseIn = Math.min(slope.fromRiseIn, slope.toRiseIn);
+    const wedgeShallowXIn = shallowAtFrom ? wedgeFromXIn : wedgeToXIn;
+    const wedgeDeepXIn = shallowAtFrom ? wedgeToXIn : wedgeFromXIn;
+
+    const stock = gablePeakWedgeStockFor(wedgeDeepestIn);
     /* The wedges. Two per slope, one at each wythe face. */
     for (const [face, yIn] of [
       ["exterior", 0],
@@ -500,10 +609,10 @@ export function buildGablePeakWedgeTopMembers(
         speciesGrade: LUMBER_SPECIES_GRADE,
         plySpec: null,
         nominalSize: stock,
-        actualDimsIn: { thicknessIn: GABLE_PEAK_WEDGE_THICKNESS_IN, widthIn: deepestIn, lengthIn: runIn },
+        actualDimsIn: { thicknessIn: GABLE_PEAK_WEDGE_THICKNESS_IN, widthIn: wedgeDeepestIn, lengthIn: wedgeRunIn },
         orientation: "diagonal",
         position: {
-          xIn: slope.fromXIn,
+          xIn: wedgeFromXIn,
           yIn,
           zIn: bodyTopZIn,
           rotationDeg: 0,
@@ -512,18 +621,22 @@ export function buildGablePeakWedgeTopMembers(
              the top face is the roof plane, so the section really does come
              to a point at the shallow end. */
           trapezoidCornersIn: [
-            { xIn: slope.fromXIn, zIn: bodyTopZIn + slope.fromRiseIn },
-            { xIn: slope.toXIn, zIn: bodyTopZIn + slope.toRiseIn },
-            { xIn: slope.toXIn, zIn: bodyTopZIn },
-            { xIn: slope.fromXIn, zIn: bodyTopZIn },
+            { xIn: wedgeShallowXIn, zIn: bodyTopZIn + shallowRiseIn },
+            { xIn: wedgeDeepXIn, zIn: bodyTopZIn + shallowRiseIn + wedgeDeepestIn },
+            { xIn: wedgeDeepXIn, zIn: bodyTopZIn },
+            { xIn: wedgeShallowXIn, zIn: bodyTopZIn },
           ],
           trapezoidDepthIn: GABLE_PEAK_WEDGE_THICKNESS_IN,
         },
         role: "stud",
         qty: 1,
         notes:
-          `${face} wythe — tapered rip from a ${stock}, ${deepestIn.toFixed(2)}in at the ridge to a feather edge at ` +
-          `the panel edge over ${runIn.toFixed(2)}in. His "long cut triangle"; the taper IS the roof pitch.`,
+          `${face} wythe — tapered rip from a ${stock}, ${wedgeDeepestIn.toFixed(2)}in deep to a feather edge over ` +
+          `${wedgeRunIn.toFixed(2)}in. His "long cut triangle"; the taper IS the roof pitch.` +
+          (openRunIn > 1e-6
+            ? ` ⚠ The inner ${openRunIn.toFixed(2)}in next to the ridge is left OPEN — the void there is up to ` +
+              `${deepestIn.toFixed(2)}in deep, more than a ${stock} can rip. Pack it with straw on site (his call, 2026-11-13).`
+            : ""),
       });
     }
 

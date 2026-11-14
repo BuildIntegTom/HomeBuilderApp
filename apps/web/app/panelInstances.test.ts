@@ -119,6 +119,51 @@ describe("allPanelInstances — gableTilesByWallId", () => {
     expect(gable.rightEdgeHeightIn).toBe(150);
   });
 
+  it("carries a column tile's REAL edges plus its ridge, panel-local", () => {
+    /* ⚠ **The edges used to be a lie, and had to be.** Stage 1 pushed the
+       RIDGE height as BOTH edges, because the fabricated panel was flat-topped
+       and passing an edge height would have stopped the part short of the
+       ridge. Now that the Gable Peak Panel is five-sided, the shop sheet
+       describes the same part the 3D view draws only if the edges are the
+       edges and the peak is the peak.
+
+       ⚠ `apexXIn` is absolute wall x, like `xStartIn`; every builder
+       downstream works in the panel's own coordinates, so the offset is
+       converted here and once. */
+    const gableTilesByWallId = {
+      AB: [
+        {
+          widthIn: 25.5,
+          xStartIn: 100,
+          leftEdgeHeightIn: 150,
+          rightEdgeHeightIn: 150,
+          isColumn: true,
+          apexXIn: 112.75,
+          apexHeightIn: 154.25,
+        },
+      ],
+    };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
+    const column = instances.find((i) => i.panelType === "column" && i.slotIndexInWall < 0)!;
+    expect(column.leftEdgeHeightIn).toBe(150);
+    expect(column.rightEdgeHeightIn).toBe(150);
+    expect(column.gablePeakApexOffsetXIn).toBe(12.75);
+    expect(column.gablePeakApexHeightIn).toBe(154.25);
+  });
+
+  it("leaves a column tile with no ridge flat-topped, carrying no apex at all", () => {
+    /* A peak landing on this tile's own edge is a plain flat-topped column,
+       which is the truthful shape for it — and the row only reports an apex
+       when the ridge falls strictly inside a tile. */
+    const gableTilesByWallId = {
+      AB: [{ widthIn: 25.5, xStartIn: 100, leftEdgeHeightIn: 150, rightEdgeHeightIn: 150, isColumn: true }],
+    };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
+    const column = instances.find((i) => i.panelType === "column" && i.slotIndexInWall < 0)!;
+    expect(column.gablePeakApexOffsetXIn).toBeUndefined();
+    expect(column.gablePeakApexHeightIn).toBeUndefined();
+  });
+
   it("gives gable tiles a negative slotIndexInWall that never collides with a real slot index", () => {
     const gableTilesByWallId = {
       AB: [
