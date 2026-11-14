@@ -112,14 +112,25 @@ Cloud projects have an id; a local-only design does not. Minted at first
 export and stored, exactly as the panel codes are, so the second export agrees
 with the first. Renaming must not touch it (his words).
 
-### 3. "Panel type" — his four buckets, or the app's dozen?
+### 3. "Panel type" — ANSWERED 2026-11-14: the app's own names
 
-He wrote *"e.g. Wall, Roof, Floor, Gable"*. The app distinguishes far more:
-Standard, Braced, Corner, Column, Window, Door, Big Header, Gable, Gable Peak,
-Cross-tilt, Floor, Roof, Truss Plate, Box Beam, Mid-Wall Beam, Safety Gap.
-Does Tip4urTime want the coarse four (a crew claims "a wall"), or the real
-type? Coarse is my read of his examples; it is a one-line mapping either way,
-but the wrong guess makes the profit-sharing numbers mean something different.
+His brief said *"e.g. Wall, Roof, Floor, Gable"*, which I read as a coarse
+four. He corrected it:
+
+> *"I think the original coarse panel type stuff is out of date. I really like
+> where we're headed with the current naming scheme with the apps dozen
+> descriptive names."*
+
+So the column carries the app's real type, not a bucket — Standard, Braced,
+Corner, Column, Window, Door, Big Header, Gable End, Gable Peak, Cross-Tilt,
+Floor, Roof, Truss Plate, Box Beam, Mid-Wall Beam, Safety Gap.
+
+⚠ **Then `Panel type` and the distinct NAME are two different columns doing
+different jobs, and the file should not collapse them.** `8' Super Carrot`
+already encodes height, figure and hand; the type is the coarse class a crew
+claims against. Keep the type machine-stable (the catalog's own id, title-
+cased) and let `Label` carry the human string, since that is what a re-import
+matches on and what a crew reads.
 
 ### 4. Sq ft above 0 — what about the panels that are not faces
 

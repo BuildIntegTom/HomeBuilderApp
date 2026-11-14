@@ -104,6 +104,30 @@ export interface GableWindowReservation {
  * single-slope shed. */
 export const GABLE_SHED_SNAP_THRESHOLD_IN = 24;
 
+/**
+ * ⚠ **Whether a placed profile point IS a shed** — the single predicate for
+ * the 24in dead zone, so nothing can hold a different opinion from the
+ * anchors that actually get built.
+ *
+ * It exists because something did. Until 2026-11-14 `page.tsx` decided the
+ * roof's FORM with *"any gable wall has a stored position at all → shed"*,
+ * which was true only while the sole way to store one was the roof defaults
+ * writing a shed's own `0` / `wallLength`. Once U6 gave the peak a draggable
+ * handle, **dragging the ridge to the middle of the building stored a
+ * position and therefore made the roof a shed** — the gable END drew its two
+ * slopes correctly while the roof planes, the roof panels, the ridge beam and
+ * the deck takeoff were all told "shed". Tommy, 2026-11-14, with a photo:
+ * *"I slid the peak to the middle of a tiny house and it didn't change the
+ * roof into a gable roof."*
+ *
+ * `resolveAnchors` below calls this, so the form and the geometry are now the
+ * same question asked once.
+ */
+export function gableProfilePointIsShedEnd(xIn: number, wallWidthIn: number): boolean {
+  const clampedIn = Math.min(Math.max(xIn, 0), wallWidthIn);
+  return clampedIn < GABLE_SHED_SNAP_THRESHOLD_IN || clampedIn > wallWidthIn - GABLE_SHED_SNAP_THRESHOLD_IN;
+}
+
 /** Fixed width of the dedicated safety-gap tile a tiled run's own leftover
  * width gets absorbed into (mirrors packages/geometry/src/tiling.ts's own
  * `WIDE_SAFETY_GAP_WIDTH_IN` — duplicated rather than imported, since this
@@ -249,6 +273,8 @@ function resolveAnchors(
   for (const p of points) {
     let xIn = Math.min(Math.max(p.xIn, 0), wallWidthIn);
     if (p.isExplicitPosition) {
+      /* Both ends tested through `gableProfilePointIsShedEnd`'s own halves,
+         so the form predicate above and these anchors cannot drift apart. */
       if (!leftClaimed && xIn < GABLE_SHED_SNAP_THRESHOLD_IN) {
         leftAnchor = { xIn: 0, heightIn: p.heightIn };
         leftClaimed = true;

@@ -32,6 +32,7 @@ import {
   gableEndWallIdsFor,
   simpleRoofPlanes,
   GABLE_SHED_SNAP_THRESHOLD_IN,
+  gableProfilePointIsShedEnd,
   computePanelLoadOrder,
   computePanelsPerStack,
   computePierGrid,
@@ -7789,9 +7790,34 @@ export default function LayoutEditor() {
      rather than in the canvas so the 2D and 3D cannot disagree about where
      the beam is — both read the same `simpleRoofPlanes` + `ridgeBeamLayout`
      pair. Null on a shed, which has no beam at all. */
+  /**
+   * ⚠ **A STORED PEAK POSITION IS NOT A SHED. WHERE it sits is.**
+   *
+   * This read *"any gable wall has a stored position at all → shed"*, which
+   * was true only while the only thing that ever stored one was
+   * `applyRoofDefaultsForFootprint` writing a shed's own `0` / `wallLength`.
+   * U6 gave the peak a draggable handle and the elevation editor has its own
+   * Position slider, so a stored position now usually means *"the ridge is
+   * HERE"* — and every one of those made the roof a shed.
+   *
+   * > *"I slid the peak to the middle of a tiny house and it didn't change
+   * > the roof into a gable roof."* — Tommy, 2026-11-14, with a photo
+   *
+   * The gable END was right the whole time: `computeGableTiledRow` only
+   * snaps a point to an end inside the 24in dead zone, so his wall drew two
+   * real slopes while the roof planes, the roof panels, the ridge beam and
+   * the deck takeoff were all told "shed". Both now ask
+   * `gableProfilePointIsShedEnd`, which is that same dead zone and the same
+   * code the anchors use.
+   */
   const roofFormFromProfile: "shed" | "peaked" = [...gableEndWallIds].some((wallId) => {
     const positionIn = gableProfilePositionsInByWallId[wallId]?.[0];
-    return positionIn !== null && positionIn !== undefined;
+    if (positionIn === null || positionIn === undefined) return false;
+    const wallLengthIn = (footprint?.walls.find((w) => w.id === wallId)?.lengthFt ?? 0) * 12;
+    /* A wall with no length cannot be measured along, so it cannot be the
+       thing that declares a shed. */
+    if (!(wallLengthIn > 0)) return false;
+    return gableProfilePointIsShedEnd(positionIn, wallLengthIn);
   })
     ? "shed"
     : "peaked";

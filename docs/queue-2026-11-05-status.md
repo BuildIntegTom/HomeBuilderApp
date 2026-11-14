@@ -62,7 +62,23 @@ is cut, what sets the radius) was answering the wrong question.
    export and stored from then on, so nothing is stored until a project
    actually goes to a crew, and it is a join key rather than a panel name —
    his derived-identity rule is untouched. Three smaller questions remain.
+   Panel type is now the app's own dozen names, not a coarse bucket.
    Full brief and the conflicts: `Claude outputs/tip4urtime-export-queued-2026-11-14.md`.
+6. **Jack studs take optional 2x4s** — queued 2026-11-14. The plywood jack
+   sheet stays the default (I had read his "no plywood skins on either side"
+   as covering it; it does not). Two toggles add a 2x4 at the exterior and
+   interior wythe, taking the jack from 3/4in to 2 1/4in in elevation.
+   ⚠ Not a toggle-sized job: `jackStudThicknessIn` feeds the clear rough
+   opening, a Big Header's chord lengths and its web's end inset, so an
+   opening gets 3in narrower unless the slot grows. One open question —
+   project-wide or per opening.
+7. **The shallow-shed cross-tilt hole** — his cross-tilt answer resolved to
+   *no change* (the low edge is the roof plane; thickening it pushes the
+   panel through the roof it carries). What is left is the other direction:
+   below the derived minimum the row is left UNDRAWN, which fails his own
+   "fills the entire space". Fix is the same move shallow headers just got —
+   a solid tapered filler instead of a framed panel. Both in
+   `Claude outputs/jack-stud-2x4-option-and-cross-tilt-2026-11-14.md`.
 
 ## D. Open questions that are not blocking anything
 

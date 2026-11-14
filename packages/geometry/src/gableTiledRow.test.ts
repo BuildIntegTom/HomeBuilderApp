@@ -4,6 +4,7 @@ import {
   computeGableTiledRow,
   GABLE_SAFETY_GAP_WIDTH_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
+  gableProfilePointIsShedEnd,
   gableTileTallestHeightIn,
   type GableWallJointSpan,
   type GableWindowReservation,
@@ -1099,5 +1100,65 @@ describe("computeGableTiledRow — a wall that stops short (Stage 3)", () => {
     const dropped = computeGableTiledRow(240, 120, PEAK, 40, 0, true, 0, "truss-heel", [], 25.5, 150, 240);
     expect(dropped.some((p) => p.isColumn)).toBe(false);
     for (const p of dropped) expect(p.widthIn).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * ⚠ **THE PREDICATE THE ROOF'S FORM IS DECIDED BY.**
+ *
+ * `page.tsx` used to decide shed-vs-peaked with *"any gable wall has a stored
+ * position at all → shed"*. That held only while the roof defaults were the
+ * only thing that ever stored one. Once the peak got a draggable handle,
+ * **sliding the ridge to the middle stored a position and made the roof a
+ * shed** — the gable END drew two real slopes (this file's own cases below
+ * already proved that part worked) while the roof planes, the roof panels,
+ * the ridge beam and the deck takeoff were told otherwise.
+ *
+ * > *"I slid the peak to the middle of a tiny house and it didn't change the
+ * > roof into a gable roof."* — Tommy, 2026-11-14
+ *
+ * So the two have to be the same question. These assert the predicate AND
+ * that the row it describes really does come back with two slopes, because a
+ * predicate that agrees with nothing is how this broke the first time.
+ */
+describe("gableProfilePointIsShedEnd", () => {
+  /* His building: a 16ft gable wall on a 24 x 16 Tiny House. */
+  const WALL_IN = 16 * 12;
+
+  it("⚠ a peak anywhere in the middle is NOT a shed", () => {
+    for (const xIn of [24, 48, 69.5, 96, 120, WALL_IN - 24]) {
+      expect({ xIn, shed: gableProfilePointIsShedEnd(xIn, WALL_IN) }).toEqual({ xIn, shed: false });
+    }
+  });
+
+  it("⚠ only the 24in dead zone at either end is", () => {
+    for (const xIn of [0, 1, 12, 23.9, WALL_IN - 23.9, WALL_IN - 1, WALL_IN]) {
+      expect({ xIn, shed: gableProfilePointIsShedEnd(xIn, WALL_IN) }).toEqual({ xIn, shed: true });
+    }
+  });
+
+  it("a position off the end of its own wall is clamped, not wrapped", () => {
+    expect(gableProfilePointIsShedEnd(-50, WALL_IN)).toBe(true);
+    expect(gableProfilePointIsShedEnd(WALL_IN + 50, WALL_IN)).toBe(true);
+  });
+
+  it("⚠ agrees with the row the same position actually builds", () => {
+    /* The point of the whole fix: the predicate and the anchors must not be
+       able to disagree. A middle peak builds a rise AND a fall; a snapped one
+       builds a single slope. */
+    const rowAt = (xIn: number) =>
+      computeGableTiledRow(WALL_IN, 120, [{ xIn, heightIn: 184, isExplicitPosition: true }], 48, 0, false);
+    const middle = rowAt(96);
+    const snapped = rowAt(12);
+    /* Two slopes: something rises and something falls. One slope: it only
+       ever goes one way. */
+    const slopes = (panels: { leftHeightIn: number; rightHeightIn: number }[]) => ({
+      rises: panels.some((p) => p.rightHeightIn > p.leftHeightIn + 1e-6),
+      falls: panels.some((p) => p.rightHeightIn < p.leftHeightIn - 1e-6),
+    });
+    expect({ at: 96, ...slopes(middle) }).toEqual({ at: 96, rises: true, falls: true });
+    expect({ at: 12, ...slopes(snapped) }).toEqual({ at: 12, rises: false, falls: true });
+    expect(gableProfilePointIsShedEnd(96, WALL_IN)).toBe(false);
+    expect(gableProfilePointIsShedEnd(12, WALL_IN)).toBe(true);
   });
 });
