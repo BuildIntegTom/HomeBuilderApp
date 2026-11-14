@@ -14,7 +14,7 @@
  * Its three colours are read off that file rather than guessed:
  */
 import { Buffer } from "node:buffer";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -28,6 +28,22 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const MASTER = path.join(here, "building-integrity-mark.png");
 const appDir = path.resolve(here, "..", "app");
 const out = (name) => path.join(appDir, name);
+
+/**
+ * ⚠ **The maskable icon goes in `public/`, NOT in `app/`.**
+ *
+ * Next's file conventions serve `app/icon.png`, `app/apple-icon.png` and
+ * friends by exact name. `app/icon-maskable.png` matches nothing, so it would
+ * be written, committed, and **never served** — a 404 behind a manifest entry
+ * that looks correct in the source. It is referenced by `app/manifest.ts` by
+ * URL, so it has to be a real static file.
+ *
+ * `public/` was deleted in U9 (it held only Next's scaffold SVGs). This
+ * recreates it for the one file that genuinely needs it.
+ */
+const publicDir = path.join(appDir, "..", "public");
+mkdirSync(publicDir, { recursive: true });
+const outPublic = (name) => path.join(publicDir, name);
 
 /** The mark's own proportions, so nothing below hard-codes 521x778. */
 const master = sharp(MASTER);
@@ -125,10 +141,51 @@ const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
 const paper = { r: 0xf7, g: 0xf2, b: 0xe7, alpha: 1 };
 
 // The tab icon. Transparent, so it reads on a light or a dark tab strip.
-writeFileSync(out("icon.png"), await squareIcon(512, { fill: 0.9, background: transparent }));
+writeFileSync(out("icon.png"), await squareIcon(512, { fill: 0.94, background: transparent }));
 
-// iOS composites a home-screen icon onto BLACK, so this one needs a background.
-writeFileSync(out("apple-icon.png"), await squareIcon(180, { fill: 0.76, background: paper }));
+/**
+ * ⚠ **THE MASKABLE ICON — why the home-screen tile looked small, and the
+ * only thing that actually fixes it.**
+ *
+ * > *"can we make the favicon/thumbnail bigger? ... Pretty entirely fill the
+ * > space there. Similar to tip for your time."* — Tommy, 2026-11-13, with a
+ * > screenshot of his home screen
+ *
+ * Two things were making it small and only one of them was a number:
+ *
+ * 1. **The mark is PORTRAIT** — 521 x 778, aspect 0.670, and measured with a
+ *    trim pass it has **zero** transparent padding, so there was nothing to
+ *    reclaim. Fitted by height at 0.9 of the side it occupies 0.60 of the
+ *    WIDTH, and a square tile of a portrait mark reads as mostly empty.
+ * 2. ⚠ **Android wraps a non-maskable icon in its own white circle**, with
+ *    its own padding, and nothing in our PNG can stop it. That white ring is
+ *    the gap he is pointing at; Tip4urTime fills its tile because it ships a
+ *    maskable icon and is not given the ring.
+ *
+ * So this one is full-bleed: the background covers 100% of the square and the
+ * launcher crops it to whatever shape it likes.
+ *
+ * ⚠ **0.80, derived from THIS mark rather than from a bounding box.** A
+ * maskable icon's safe zone is the centre circle of 80% diameter; anything
+ * outside it can be cropped. The obvious sum is to fit the mark's whole
+ * rectangle inside that circle — `h x sqrt(1 + 0.670^2)` = `h x 1.204`, so
+ * `h <= 0.664` — and **that is wrong here, by a lot.** It assumes artwork in
+ * the rectangle's corners, and this mark has none: its two extreme points are
+ * the roof's apex and the field's point, both dead on the vertical
+ * centreline. So the real constraint is just `h/2 <= 0.40`, i.e. `h <= 0.80`,
+ * and the widest part of the mark (the eaves, at mid-height) sits only
+ * `0.335 x h` = 0.27 from the centre, nowhere near the 0.40 limit.
+ *
+ * Checked by eye at both crops before being believed — a circle and a
+ * squircle, side by side in the browser — because this is exactly the sum
+ * that is easy to do confidently and wrongly.
+ */
+writeFileSync(outPublic("icon-maskable.png"), await squareIcon(512, { fill: 0.8, background: paper }));
+
+// iOS composites a home-screen icon onto BLACK, so this one needs a
+// background. Its mask is a superellipse rather than a circle, so it crops
+// far less than the maskable safe zone and the mark can run bigger.
+writeFileSync(out("apple-icon.png"), await squareIcon(180, { fill: 0.86, background: paper }));
 
 // 16/32/48 for a direct /favicon.ico hit. Less padding: at 16px every pixel counts.
 writeFileSync(
@@ -147,4 +204,6 @@ const card = await linkCard();
 writeFileSync(out("opengraph-image.png"), card);
 writeFileSync(out("twitter-image.png"), card);
 
-console.log(`mark ${MW}x${MH} -> icon.png, apple-icon.png, favicon.ico, opengraph-image.png, twitter-image.png`);
+console.log(
+  `mark ${MW}x${MH} -> icon.png, icon-maskable.png, apple-icon.png, favicon.ico, opengraph-image.png, twitter-image.png`,
+);
