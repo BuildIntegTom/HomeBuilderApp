@@ -15,6 +15,7 @@ import {
   buildNailer,
   plumbEndedSlopedBoardCornersIn,
   cutRingGirtsAroundVerticals,
+  girtRowTopAboveCentreIn,
 } from "./panelMemberHelpers";
 
 /**
@@ -66,18 +67,56 @@ export interface GableGirtPlan {
  * of that stud, which is his *"from bottom of panel to top tip of shorter
  * stud member"* less the bottom skin he measures from.
  */
-export function gableGirtPlan(shortStudSpanIn: number): GableGirtPlan {
+export interface GableGirtClearance {
+  /**
+   * The highest z any member of the row may reach — the underside of the
+   * sloped top plate at its own LOW end, which is the lowest point of the
+   * lowest board above the girt.
+   */
+  maxRowTopZIn: number;
+  /** How far the row's tallest member stands above its centre, per style —
+   *  see `girtRowTopAboveCentreIn`. */
+  rowTopAboveCentreIn: number;
+}
+
+export function gableGirtPlan(shortStudSpanIn: number, clearance?: GableGirtClearance): GableGirtPlan {
   /* His measurement starts at the BOTTOM OF THE PANEL, which is the outside
      of the bottom skin, while the stud starts on top of it. */
   const fromPanelBottomIn = SKIN_THICKNESS_IN + shortStudSpanIn;
   if (!(shortStudSpanIn > 0)) return { rowCount: 0, centerZsIn: null };
   if (fromPanelBottomIn < GABLE_GIRT_NONE_BELOW_IN) return { rowCount: 0, centerZsIn: null };
   if (fromPanelBottomIn <= GABLE_GIRT_SINGLE_MAX_IN) {
-    /* ⚠ Solved backwards from the TOP, because that is what he specified.
-       A row's top face is its web's, and the web rests on the bars — so
-       centre = (that top) less half a bar less the web's own thickness. */
-    const rowTopZIn = SKIN_THICKNESS_IN + shortStudSpanIn;
-    const centerZIn = rowTopZIn - PLATE_2X4_THICKNESS_IN / 2 - GIRT_WEB_THICKNESS_IN;
+    /* ⚠ Solved backwards from the TOP, because that is what he specified. */
+    const studTopZIn = SKIN_THICKNESS_IN + shortStudSpanIn;
+    /**
+     * ⚠ **THE ROW DROPS TO CLEAR THE SLOPED TOP PLATE — his call, 2026-11-14.**
+     *
+     * Flush with the short stud's butt corner put the row's top exactly where
+     * the plate's own low end already is: the plate descends into that same
+     * corner, so the two were in the same place for every tile whose short
+     * edge is under about 3ft, in BOTH gable orientations and in all three
+     * girt styles. The 96in overlap gate never sampled a tile that short.
+     *
+     * > *"It doesn't necessarily matter where girts are. As long as they are
+     * > spaced every 3 ft or less they most certainly can be less to
+     * > accommodate space for the top."* — Tommy, 2026-11-14
+     *
+     * So the flush rule gives way and the spacing rule governs, which costs
+     * nothing: one row inside a span of 3ft or less leaves both gaps under
+     * 3ft wherever it sits. The drop is the plate's own vertical thickness
+     * plus the skin's, measured rather than named, so it follows the pitch.
+     *
+     * ⚠ The 3ft-and-up branch below needs no clamp and is deliberately not
+     * given one: `ceil(span / 36) − 1` rows spread evenly put the topmost row
+     * at least 18in below the stud top, against a drop of under 2in at any
+     * pitch. A clamp there could only bunch rows for no reason.
+     */
+    const rowTopZIn = Math.min(studTopZIn, clearance?.maxRowTopZIn ?? Infinity);
+    /* A row's top face is its own tallest member's, which the plywood web,
+       the 2x6 blocking and the ring each reach differently. Defaults to the
+       web — what this app built before girts had styles. */
+    const topAboveCentreIn = clearance?.rowTopAboveCentreIn ?? PLATE_2X4_THICKNESS_IN / 2 + GIRT_WEB_THICKNESS_IN;
+    const centerZIn = rowTopZIn - topAboveCentreIn;
     /* A row cannot hang below the bottom skin. Below ~2.75in of stud there
        is no room for one at all, and that is already inside the "no girts"
        band — this is a floor, not a second rule. */
@@ -553,7 +592,15 @@ export function buildGablePanelMembers(
     ...(() => {
       /* ⚠ By the SHORT edge, per `gableGirtPlan` — it replaced a flat two
          rows, which bunched girts inches apart on a short tile. */
-      const plan = gableGirtPlan(shorterStudSpanIn);
+      /* ⚠ The LOW end's plate underside, whichever end that is. The sweep
+         only ever built a left-low gable, so the mirror-image overlap on a
+         right-low tile was pinned nowhere — it is swept in both directions
+         now. */
+      const lowEndPlateXIn = leftHeightIn <= rightHeightIn ? PLATE_END_CLEARANCE_IN : widthIn - PLATE_END_CLEARANCE_IN;
+      const plan = gableGirtPlan(shorterStudSpanIn, {
+        maxRowTopZIn: topUndersideAtXIn(lowEndPlateXIn) - plateVerticalThicknessIn,
+        rowTopAboveCentreIn: girtRowTopAboveCentreIn(girtStyle),
+      });
       return buildGirtRows(plan.rowCount, widthIn, depthIn, shorterStudSpanIn, plan.centerZsIn ?? undefined, girtStyle);
     })(),
   ];

@@ -8,6 +8,7 @@ import {
   headerWebAngleDeg,
   buildWindowHeaderSchema,
   HEADER_MAX_ANGLE_DEG,
+  headerWebPlan,
 } from "./headerMembers";
 import { computeTrussWebPeakCount, memberBoxSizeIn, SKIN_THICKNESS_IN, TRUSS_WEB_MIN_ANGLE_DEG } from "./panelMemberHelpers";
 
@@ -83,13 +84,80 @@ describe("buildWindowHeaderMembers", () => {
 
   it("⚠ every web segment clears the 30deg floor, at any width", () => {
     /* The point of adding peaks. Swept rather than spot-checked, because the
-       floor is the one half of his 30-45 that still binds. */
+       floor is the one half of his 30-45 that still binds.
+
+       ⚠ **A header with NO web is skipped rather than asserted against,
+       and that is the 2026-11-14 change.** `headerWebAngleDeg` reports 0deg
+       for a blocked header — `computeTrussWebAngleDeg` divides the width
+       by twice the peak count, so no peaks gives an infinite bay and a flat
+       angle. Asserting 30deg against it would be asserting the floor against
+       a truss that is not there; the blocked cases get their own test below. */
     for (const widthIn of [24, 30, 36, 48, 60, 72, 96, 120, 180, 240]) {
       for (const heightIn of [10, 14, 18, 24, 40]) {
+        if (headerWebPlan(widthIn, heightIn).kind === "blocking") continue;
         const angle = headerWebAngleDeg(widthIn, heightIn);
         expect(angle, `${widthIn}x${heightIn}`).toBeGreaterThanOrEqual(TRUSS_WEB_MIN_ANGLE_DEG);
       }
     }
+  });
+
+  /**
+   * ⚠ **THE EXACT HEIGHT EACH WIDTH STARTS WEBBING AT, measured not
+   * chosen.** `trussWebFitsIn` derives it from the brace board's own level-cut
+   * footprint against the run one web bay leaves, and the answer is **not
+   * monotonic in width** because the peak count is an integer: 24in wide
+   * needs 11.5in of header, 32in needs only 9.75in, 40in needs 10.5in again.
+   *
+   * Pinned so a change to the brace stock, the end inset or the 30deg floor
+   * reads as a moved band rather than as nothing. Stepped in 1/4in because
+   * header heights here are not integers.
+   */
+  it("⚠ the first height each width can carry a buildable web at", () => {
+    const firstFitting = (widthIn: number) => {
+      for (let heightIn = 4.5; heightIn <= 48; heightIn += 0.25) {
+        /* The first height from which it fits AND keeps fitting — a lone
+           fitting height inside the band would be a different finding. */
+        if (headerWebPlan(widthIn, heightIn).kind !== "web") continue;
+        let holds = true;
+        for (let h = heightIn; h <= 48; h += 0.25) {
+          if (headerWebPlan(widthIn, h).kind !== "web") holds = false;
+        }
+        if (holds) return heightIn;
+      }
+      return null;
+    };
+    expect([24, 32, 40, 48, 72, 120, 240].map((w) => `${w}:${firstFitting(w)}`)).toEqual([
+      "24:11.5",
+      "32:9.75",
+      "40:10.5",
+      "48:9.75",
+      "72:9.75",
+      "120:9.5",
+      "240:9.5",
+    ]);
+  });
+
+  /**
+   * ⚠ **WHAT A HEADER TOO SHALLOW TO WEB ACTUALLY GETS.** Tommy,
+   * 2026-11-14, choosing solid blocking over relaxing the 30deg rule or
+   * refusing the opening: *"3a sounds good."*
+   */
+  it("⚠ a header too shallow for a web gets solid blocking instead of nothing", () => {
+    const members = buildWindowHeaderMembers(40, DEPTH_IN, 9);
+    expect(members.filter((m) => m.role === "brace")).toHaveLength(0);
+    const blocks = members.filter((m) => m.role === "blocking");
+    /* One block (a 40in header leaves 34in of clear span, so one keeps every
+       gap under 24in), built once per wythe. */
+    expect(blocks.map((m) => m.memberId)).toEqual(["web_block_1_ext", "web_block_1_int"]);
+    /* It stands between the chord faces, exactly as an end stud does. */
+    const endStud = members.find((m) => m.memberId === "left_end_stud_ext")!;
+    for (const block of blocks) {
+      expect(block.actualDimsIn).toEqual(endStud.actualDimsIn);
+      expect(block.position.zIn).toBeCloseTo(endStud.position.zIn, 9);
+    }
+    /* And a narrow one legitimately gets none — chords and end studs over
+       a span already under 24in are a solid built-up beam. */
+    expect(buildWindowHeaderMembers(24, DEPTH_IN, 9).filter((m) => m.role === "blocking")).toHaveLength(0);
   });
 
   it("⚠ a DEEP header stays steep, and no peak count can fix that", () => {
@@ -256,6 +324,26 @@ describe("buildDoorHeaderSchema / buildWindowHeaderSchema", () => {
     expect(headerPeakCount(400, 5)).toBe(0);
     /* And nothing is drawn where 924 slivers used to be. */
     expect(buildDoorHeaderMembers(400, DEPTH_IN, 5).filter((m) => m.memberId.includes("truss_brace"))).toEqual([]);
+    /* ⚠ The sheet also has to say what IS there, not only what is not:
+       since 2026-11-14 a header with no web is a solid beam, and a note that
+       stops at "no diagonal bracing" reads as a hole in the drawing. */
+    expect(warning!.text).toMatch(/SOLID BEAM/);
+    expect(warning!.text).toMatch(/blocking at 24in on centre or less/);
+  });
+
+  it("⚠ the two reasons a header has no web are named apart on the sheet", () => {
+    /* Too thin for a board to exist in the gap at all … */
+    const noRise = buildDoorHeaderSchema(40, DEPTH_IN, 5)
+      .notes.find((n) => n.type === "warning")!
+      .text;
+    expect(noRise).toMatch(/less than the 1\.5in thickness of a brace board/);
+    /* … versus a board that fits but cannot hold 30deg and its own ends
+       inside one bay. Different sentence, same answer. */
+    const tooDense = buildDoorHeaderSchema(40, DEPTH_IN, 9)
+      .notes.find((n) => n.type === "warning")!
+      .text;
+    expect(tooDense).toMatch(/enough for a diagonal to exist but not enough/);
+    expect(tooDense).toMatch(/30deg/);
   });
 
   it("⚠ does NOT flag a wide header that is deep enough to web — peaks do solve that", () => {

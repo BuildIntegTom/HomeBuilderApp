@@ -54,8 +54,15 @@ is cut, what sets the radius) was answering the wrong question.
    panel editor and the right-click menu in the 3D view. One piece, two
    surfaces; building it twice is how they come to disagree about what you
    clicked.
-4. **Starter templates** — the single highest-value idea out of the PBM
-   teardown; see `pbm-designer-teardown-2026-11-05.md`.
+4. ~~**Starter templates**~~ — **DONE, U3 2026-11-07.**
+5. **Export for Tip4urTime** — queued 2026-11-14. A per-project CSV of every
+   PHYSICAL panel (not assembly types) for the crew time-clock and
+   profit-sharing app, with a **stable panel code** that never renumbers.
+   The stability question is **answered**: the code is stamped at first
+   export and stored from then on, so nothing is stored until a project
+   actually goes to a crew, and it is a join key rather than a panel name —
+   his derived-identity rule is untouched. Three smaller questions remain.
+   Full brief and the conflicts: `Claude outputs/tip4urtime-export-queued-2026-11-14.md`.
 
 ## D. Open questions that are not blocking anything
 

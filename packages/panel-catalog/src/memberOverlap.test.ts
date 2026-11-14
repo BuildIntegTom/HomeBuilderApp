@@ -7,7 +7,7 @@ import { buildCrossTiltPanelMembers, crossTiltMinimumLowHeightIn } from "./cross
 import { buildColumnPanelMembers, buildColumnStyleMembers } from "./columnPanelMembers";
 import { buildCornerPanelMembers } from "./cornerPanelMembers";
 import { buildSafetyGapMembers } from "./safetyGapMembers";
-import { buildGablePanelMembers } from "./gablePanelMembers";
+import { buildGablePanelMembers, GABLE_PANEL_MIN_HEIGHT_IN } from "./gablePanelMembers";
 import { buildDoorHeaderMembers, buildWindowHeaderMembers } from "./headerMembers";
 import { buildJackStudMembers } from "./jackStudMembers";
 import { buildTrussPlateMembers } from "./trussPlateMembers";
@@ -353,6 +353,45 @@ const HEIGHT_CASES: HeightCase[] = [
   /* Sweeps the LOW edge, keeping the 24in rise of the fixed case, so the
      anchor is its 48in low edge. */
   { name: "gable", at: (h) => buildGablePanelMembers(48, D, h, h + 24, false), loIn: WALL_LO, hiIn: WALL_HI, anchorIn: 48 },
+  /* ⚠ **THREE MORE GABLES, because one was not the gable anyone ships.**
+     2026-11-14: the sloped-plate-through-the-girt finding turned out to reach
+     every girt style and both orientations, while the case above builds only
+     the LEGACY plywood web on a LEFT-low tile. The project default is
+     `blocking`, whose 2x6 stands 1in higher above the row centre, and a
+     right-low tile mirrors the whole problem onto the other bar.
+     ⚠ And the band BELOW `WALL_LO`, which nothing had ever built: a gable
+     tile is allowed down to `GABLE_PANEL_MIN_HEIGHT_IN` — *"we can take
+     little gable end panels all the way to the end"* — and a sliver that
+     short has its own finding. */
+  {
+    name: "gable blocking",
+    at: (h) => buildGablePanelMembers(48, D, h, h + 24, false, "blocking"),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
+    anchorIn: 48,
+  },
+  {
+    name: "gable ring",
+    at: (h) => buildGablePanelMembers(48, D, h, h + 24, false, "ring"),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
+    anchorIn: 48,
+  },
+  /* The same tile mirrored: the swept edge is the RIGHT one now. */
+  {
+    name: "gable right-low",
+    at: (h) => buildGablePanelMembers(48, D, h + 24, h, false, "blocking"),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
+    anchorIn: 48,
+  },
+  {
+    name: "gable sliver",
+    at: (h) => buildGablePanelMembers(48, D, h, h + 24, false, "blocking"),
+    loIn: GABLE_PANEL_MIN_HEIGHT_IN,
+    hiIn: WALL_LO,
+    anchorIn: 48,
+  },
   /* ⚠ The headers start BELOW their own layer sum on purpose — that is
      where the singularity and the chord-through-chord case live. */
   { name: "door header", at: (h) => buildDoorHeaderMembers(40, D, h), loIn: 4, hiIn: 48, anchorIn: 24 },
@@ -425,39 +464,53 @@ function sweepFindings({ at, loIn, hiIn }: HeightCase): string[] {
  * answer.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * ⚠ FOUR findings here are NEW — invisible at 96in — and none is fixed in
- * this commit, because each is two of Tommy's own numbers in conflict, and
- * choosing which gives way is his call. That is the rule `BASELINE` is
- * already written under.
+ * ⚠ **THE FOUR FINDINGS THIS SWEEP FOUND ON 2026-11-13/14, AND WHAT TOMMY
+ * DECIDED ABOUT EACH ON 2026-11-14.** Each was two of his own numbers in
+ * conflict, which is the rule `BASELINE` is written under; he settled all
+ * four, and the lists below are what is left.
  *
- * **1. A gable with a 32–36.5in low edge** runs its sloped top plate through
- * the first girt bar, in both wythes. A 5in band, and the only one of the
- * four that is not a header.
+ * **1. A gable with a short low edge** ran its sloped top plate through the
+ * first girt bar. FIXED. The row drops to the plate's underside instead of
+ * being flush with the short stud's butt corner — *"It doesn't necessarily
+ * matter where girts are. As long as they are spaced every 3 ft or less they
+ * most certainly can be less to accommodate space for the top."* ⚠ The
+ * finding was bigger than this file had pinned: it reached all three girt
+ * styles (the project default `blocking` stands 1in higher above the row's
+ * centre than the legacy web this case builds) and BOTH gable orientations.
+ * Three more gable cases were added rather than trusting the one.
  *
- * **2. A header shallower than its own layers** draws its two chords through
- * each other: at 4in for a door/window header (its layers come to 4.5in) and
- * at 8in for a Big Header (8.5in, its chords being rotated to 3.5in). The
- * assembly is thinner than the parts it is made of. The precedent for exactly
- * this is the cross-tilted panel, which **refuses** rather than building
- * something that interferes with itself — but a header's height is DERIVED
- * from the wall and the opening, so a refusal here throws inside a render,
- * which is how the gable-window crash took the viewport down on 2026-10-31.
- * It wants a Review Log entry, not an exception.
+ * **2. A header shallower than its own layers** drew its two chords through
+ * each other — 4in for a door/window (layers 4.5in), 8in for a Big Header
+ * (8.5in, its chords rotated to 3.5in). FLOORED, not refused:
+ * `computeHeaderHeightIn` now returns at least `HEADER_MIN_HEIGHT_IN` and
+ * `computeOpeningGeometry` drops the rough opening's top by the shortfall, so
+ * the opening gives way rather than the header being drawn thinner than its
+ * boards. A refusal was the obvious alternative and was rejected for a
+ * specific reason: the height is DERIVED inside a render, which is how the
+ * gable-window crash took the viewport down on 2026-10-31. The chord pair
+ * therefore still appears below, at a height nothing in the app can ask for.
  *
- * **3. The shallow-web band**, which is the one to read twice: door/window
- * 6–10in, Big Header 10–14in, Mid-Wall Beam 6–9in. The braces collide with
- * each other, with the end studs, and in the Big Header with its own jack
- * studs. Each band begins exactly at `layer sum + 1 1/2in` — the moment the
- * new guard in `computeTrussWebPeakCount` permits a web at all — and runs
- * about 4in up. So that guard's threshold (a gap at least as thick as the
- * brace board) stops the hang but still admits a web too dense to build:
- * `TRUSS_WEB_MIN_ANGLE_DEG = 30` and a 1 1/2in brace cannot both be honoured
- * until the rise reaches about 5 1/2in. Relaxing the angle, refusing the
- * header, or giving a short header solid blocking instead of a web are all
- * his calls.
+ * **3. The shallow-web band** — door/window 6–10in, Big Header 10–14in,
+ * Mid-Wall Beam 6–9in, where braces lapped each other, the end studs and the
+ * Big Header's jacks. FIXED, and the diagnosis was the interesting part:
+ * `computeTrussWebPeakCount`'s guard (a gap at least as thick as a brace
+ * board) stopped the hang but still admitted a web whose own LEVEL-CUT
+ * footprint — `boardWidth / sin α`, twice the board's width at 30deg —
+ * does not fit the run one web bay leaves once the end inset is taken off.
+ * `trussWebFitsIn` derives that, `planHeaderWeb` decides, and a header that
+ * fails it is built as a SOLID BEAM: chords, end studs and blocking at 24in
+ * on centre or less. Tommy's pick over relaxing the 30deg floor or refusing
+ * the opening: *"3a sounds good."*
  *
- * **4. Nothing reports any of it.** A header that quietly has no web, or one
- * whose braces interfere, reaches the shop drawing looking finished.
+ * **4. Nothing reported any of it.** REPORTED. A no-web header is an ABSENCE,
+ * so it has no overlapping pairs to find and the Review Log's overlap entry
+ * could never see it; `headerWithoutWebReviewEntries` in `page.tsx` lists it
+ * by fabricated panel name, and the per-slot note says "solid blocking, no
+ * truss web" instead of printing 0 peaks at 0.0deg.
+ *
+ * ⚠ **ONE NEW FINDING, pinned not fixed** — see `gable sliver`. A gable tile
+ * under about 4 1/2in of low edge draws its sloped top plate through its own
+ * bottom plate. The band below `WALL_LO` had never been built by anything.
  * ──────────────────────────────────────────────────────────────────────────
  */
 const SWEEP_FINDINGS: Record<string, string[]> = {
@@ -493,99 +546,66 @@ const SWEEP_FINDINGS: Record<string, string[]> = {
     "diagonal_brace_upper_ext x brace_center_connector @ 32..144",
   ],
 
-  // ⚠ Finding 1 — the sloped top plate into the first girt bar.
-  gable: ["top_plate_2x4_ext x girt_N_bar_left @ 32..36.5", "top_plate_2x4_int x girt_N_bar_left @ 32..36.5"],
+  /* ⚠ **Finding 1 is FIXED**, in all three styles and both orientations: the
+     single girt row drops to the sloped top plate's own underside instead of
+     being flush with the short stud's butt corner. Tommy, 2026-11-14: *"It
+     doesn't necessarily matter where girts are. As long as they are spaced
+     every 3 ft or less they most certainly can be less to accommodate space
+     for the top."* Four empty lists where there were two findings. */
+  gable: [],
+  "gable blocking": [],
+  "gable ring": [],
+  "gable right-low": [],
+  /* ⚠ **A NEW finding, and it is NOT the girt.** Below about 4 1/2in of low
+     edge a gable tile's sloped top plate is drawn through its own BOTTOM
+     plate: the plate's plumb-cut low corner sits a skin plus a plate's
+     vertical thickness under the edge height, which at a 2in edge is below
+     the bottom of the panel. Reachable — a gable row ending at a shed's low
+     corner hands this builder a legitimate near-zero edge, which is why the
+     builder deliberately does not refuse one. Which gives way is his call:
+     refuse a tile this short, or let the two plates become one board. */
+  "gable sliver": [
+    "bottom_plate_2x4_ext x top_plate_2x4_ext @ 1.5..4",
+    "bottom_plate_2x4_ext x top_plate_skin @ 1.5..2",
+    "bottom_plate_2x4_int x top_plate_2x4_int @ 1.5..4",
+    "bottom_plate_2x4_int x top_plate_skin @ 1.5..2",
+    "bottom_plate_skin x top_plate_2x4_ext @ 1.5..2.5",
+    "bottom_plate_skin x top_plate_2x4_int @ 1.5..2.5",
+    /* At the geometric floor itself the two SKINS are the same board. */
+    "bottom_plate_skin x top_plate_skin @ 1.5..1.5",
+  ],
 
-  // ⚠ Findings 2 and 3.
+  /* ⚠ **Finding 3 is FIXED and finding 2 is now UNREACHABLE from the app.**
+     Every `brace x brace`, `brace x end_stud` and `brace x jack_stud` entry
+     these four lists carried is gone: a header with no room for a buildable
+     web gets solid blocking instead of a fan of overlapping slivers
+     (`planHeaderWeb` / `buildHeaderSolidBlocking`). Verified at every 1/4in
+     from each builder's floor to 60in and at widths from 12in to 400in, not
+     only at the 40in these cases build.
+
+     ⚠ What is LEFT is the chord-through-chord pair at exactly the layer sum
+     less 1/2in, and it is left deliberately. `computeHeaderHeightIn` now
+     floors a derived header at `HEADER_MIN_HEIGHT_IN` and a Big Header's own
+     range starts at 24in, so **nothing in the app can ask for these heights
+     any more** — only a direct call like this sweep's. The builders are left
+     able to express the degenerate case rather than throwing, because a
+     header's height is derived inside a render and that is exactly how the
+     gable-window crash took the viewport down on 2026-10-31. */
   "door header": [
     "bottom_chord_2x4_ext x top_chord_2x4_ext @ 4..4",
     "bottom_chord_2x4_int x top_chord_2x4_int @ 4..4",
-    "left_end_stud_ext x truss_brace_ext_N_fall @ 6..7",
-    "left_end_stud_ext x truss_brace_ext_N_rise @ 6..10",
-    "left_end_stud_int x truss_brace_int_N_fall @ 6..7",
-    "left_end_stud_int x truss_brace_int_N_rise @ 6..10",
-    "right_end_stud_ext x truss_brace_ext_N_fall @ 6..10",
-    "right_end_stud_ext x truss_brace_ext_N_rise @ 6..7",
-    "right_end_stud_int x truss_brace_int_N_fall @ 6..10",
-    "right_end_stud_int x truss_brace_int_N_rise @ 6..7",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_fall @ 6..7",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_rise @ 6..8.5",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_fall @ 6..9",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_rise @ 6..7",
-    "truss_brace_int_N_fall x truss_brace_int_N_fall @ 6..7",
-    "truss_brace_int_N_fall x truss_brace_int_N_rise @ 6..8.5",
-    "truss_brace_int_N_rise x truss_brace_int_N_fall @ 6..9",
-    "truss_brace_int_N_rise x truss_brace_int_N_rise @ 6..7",
   ],
   "window header": [
     "bottom_chord_2x4_ext x top_chord_2x4_ext @ 4..4",
     "bottom_chord_2x4_int x top_chord_2x4_int @ 4..4",
-    "left_end_stud_ext x truss_brace_ext_N_fall @ 6..7",
-    "left_end_stud_ext x truss_brace_ext_N_rise @ 6..10",
-    "left_end_stud_int x truss_brace_int_N_fall @ 6..7",
-    "left_end_stud_int x truss_brace_int_N_rise @ 6..10",
-    "right_end_stud_ext x truss_brace_ext_N_fall @ 6..10",
-    "right_end_stud_ext x truss_brace_ext_N_rise @ 6..7",
-    "right_end_stud_int x truss_brace_int_N_fall @ 6..10",
-    "right_end_stud_int x truss_brace_int_N_rise @ 6..7",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_fall @ 6..7",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_rise @ 6..8.5",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_fall @ 6..9",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_rise @ 6..7",
-    "truss_brace_int_N_fall x truss_brace_int_N_fall @ 6..7",
-    "truss_brace_int_N_fall x truss_brace_int_N_rise @ 6..8.5",
-    "truss_brace_int_N_rise x truss_brace_int_N_fall @ 6..9",
-    "truss_brace_int_N_rise x truss_brace_int_N_rise @ 6..7",
   ],
-  /* ⚠ The only one whose web also reaches the JACK STUDS, because a Big
-     Header carries its own pair inside its own width. */
   "big header": [
     "bottom_chord_2x4_ext x top_chord_2x4_ext @ 8..8",
     "bottom_chord_2x4_int x top_chord_2x4_int @ 8..8",
-    "left_end_stud_ext x truss_brace_ext_N_fall @ 10..11",
-    "left_end_stud_ext x truss_brace_ext_N_rise @ 10..14",
-    "left_end_stud_int x truss_brace_int_N_fall @ 10..11",
-    "left_end_stud_int x truss_brace_int_N_rise @ 10..14",
-    "right_end_stud_ext x truss_brace_ext_N_fall @ 10..14",
-    "right_end_stud_ext x truss_brace_ext_N_rise @ 10..11",
-    "right_end_stud_int x truss_brace_int_N_fall @ 10..14",
-    "right_end_stud_int x truss_brace_int_N_rise @ 10..11",
-    "truss_brace_ext_N_fall x jack_left_jack_stud_sheet @ 10..10.5",
-    "truss_brace_ext_N_fall x jack_right_jack_stud_sheet @ 10..13",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_fall @ 10..11",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_rise @ 10..12.5",
-    "truss_brace_ext_N_rise x jack_left_jack_stud_sheet @ 10..13",
-    "truss_brace_ext_N_rise x jack_right_jack_stud_sheet @ 10..10.5",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_fall @ 10..13.5",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_rise @ 10..11",
-    "truss_brace_int_N_fall x jack_left_jack_stud_sheet @ 10..10.5",
-    "truss_brace_int_N_fall x jack_right_jack_stud_sheet @ 10..13",
-    "truss_brace_int_N_fall x truss_brace_int_N_fall @ 10..11",
-    "truss_brace_int_N_fall x truss_brace_int_N_rise @ 10..12.5",
-    "truss_brace_int_N_rise x jack_left_jack_stud_sheet @ 10..13",
-    "truss_brace_int_N_rise x jack_right_jack_stud_sheet @ 10..10.5",
-    "truss_brace_int_N_rise x truss_brace_int_N_fall @ 10..13.5",
-    "truss_brace_int_N_rise x truss_brace_int_N_rise @ 10..11",
   ],
   "big header beam": [
     "bottom_chord_2x4_ext x top_chord_2x4_ext @ 4..4",
     "bottom_chord_2x4_int x top_chord_2x4_int @ 4..4",
-    "left_end_stud_ext x truss_brace_ext_N_fall @ 6..6.5",
-    "left_end_stud_ext x truss_brace_ext_N_rise @ 6..9",
-    "left_end_stud_int x truss_brace_int_N_fall @ 6..6.5",
-    "left_end_stud_int x truss_brace_int_N_rise @ 6..9",
-    "right_end_stud_ext x truss_brace_ext_N_fall @ 6..9",
-    "right_end_stud_ext x truss_brace_ext_N_rise @ 6..6.5",
-    "right_end_stud_int x truss_brace_int_N_fall @ 6..9",
-    "right_end_stud_int x truss_brace_int_N_rise @ 6..6.5",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_fall @ 6..6.5",
-    "truss_brace_ext_N_fall x truss_brace_ext_N_rise @ 6..8.5",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_fall @ 6..9",
-    "truss_brace_ext_N_rise x truss_brace_ext_N_rise @ 6..6.5",
-    "truss_brace_int_N_fall x truss_brace_int_N_fall @ 6..6.5",
-    "truss_brace_int_N_fall x truss_brace_int_N_rise @ 6..8.5",
-    "truss_brace_int_N_rise x truss_brace_int_N_fall @ 6..9",
-    "truss_brace_int_N_rise x truss_brace_int_N_rise @ 6..6.5",
   ],
 };
 

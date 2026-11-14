@@ -6,8 +6,9 @@ import {
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
   buildHeaderEndStuds,
+  buildHeaderSolidBlocking,
   buildHeaderTrussWebBraces,
-  computeTrussWebPeakCount,
+  planHeaderWeb,
 } from "./panelMemberHelpers";
 
 /**
@@ -107,12 +108,20 @@ export function buildBigHeaderBeamMembers(widthIn: number, depthIn: number, heig
   const bottomChordTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const topChordBottomZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const riseIn = bigHeaderBeamWebRiseIn(heightIn);
-  const peakCount = computeTrussWebPeakCount(widthIn, riseIn);
+  const plan = planHeaderWeb(widthIn, riseIn, PLATE_2X4_THICKNESS_IN);
 
   const members: PanelMember[] = [
     ...buildBigHeaderBeamChords(widthIn, depthIn, heightIn),
     ...buildHeaderEndStuds(widthIn, depthIn, bottomChordTopZIn, riseIn),
   ];
+  if (plan.kind === "blocking") {
+    /* Too shallow for a buildable web — a solid beam instead. A mid-wall
+       beam this shallow is the same part a short header is. */
+    members.push(
+      ...buildHeaderSolidBlocking(widthIn, depthIn, bottomChordTopZIn, topChordBottomZIn, PLATE_2X4_THICKNESS_IN),
+    );
+    return members;
+  }
   for (const [wythe, yIn] of [
     ["ext", PLATE_2X4_THICKNESS_IN / 2],
     ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
@@ -120,7 +129,7 @@ export function buildBigHeaderBeamMembers(widthIn: number, depthIn: number, heig
     members.push(
       /* The outermost feet stop against the 2x4 end stud, not a 3/4in sheet. */
       ...buildHeaderTrussWebBraces(
-        peakCount,
+        plan.peakCount,
         widthIn,
         bottomChordTopZIn,
         topChordBottomZIn,

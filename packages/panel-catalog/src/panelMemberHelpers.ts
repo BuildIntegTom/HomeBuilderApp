@@ -787,10 +787,18 @@ export const TRUSS_WEB_MIN_ANGLE_DEG = 30;
  * door/window header and h = 10in for a Big Header, and the Big Header's own
  * range starts at 24in.
  *
- * ⚠ A header too shallow to hold a web is still a FABRICATION problem that
- * nothing currently reports — it just quietly has no diagonals now. Belongs
- * in the Review Log next to the overlap entries (B32); not added here
- * because the wording is Tommy's call.
+ * ⚠ **This guard is NOT the whole answer, and on its own it left a worse
+ * problem than the hang.** For about 4in above the threshold the web it still
+ * admits cannot be built — the braces lap each other and the end studs. See
+ * `trussWebFitsIn` and `planHeaderWeb`, which is what every header-like
+ * builder actually calls; this function answers "how many peaks would hold
+ * 30deg", which turns out to be a different question from "does a web fit".
+ *
+ * ⚠ A header that ends up with no web is reported in two places now
+ * (2026-11-14, *"4a sounds good"*): on its own fabrication sheet via
+ * `angleNote`, and building-wide by `headerWithoutWebReviewEntries` in
+ * `page.tsx` — which exists because an ABSENCE has no overlapping pairs and
+ * so is invisible to the Review Log's overlap entry.
  */
 export function computeTrussWebPeakCount(widthIn: number, riseIn: number): number {
   /* Written as `!(… >= …)` so NaN is refused too, rather than falling
@@ -810,6 +818,169 @@ export function computeTrussWebPeakCount(widthIn: number, riseIn: number): numbe
 export function computeTrussWebAngleDeg(widthIn: number, riseIn: number, peakCount: number): number {
   const halfSegmentIn = widthIn / (2 * peakCount);
   return (Math.atan2(riseIn, halfSegmentIn) * 180) / Math.PI;
+}
+
+/**
+ * ⚠ **Whether the web `computeTrussWebPeakCount` just asked for can actually
+ * be BUILT — a different question from whether it holds 30deg, and the one
+ * nothing was asking.**
+ *
+ * Found 2026-11-14 by the height sweep: for about 4in above the point where
+ * `computeTrussWebPeakCount`'s guard first admits a web, the braces collide
+ * with each other, with the end studs, and (on a Big Header) with its own
+ * jack studs. The guard stopped the hang; it did not stop a web too dense to
+ * build. Tommy's call on it, 2026-11-14, was **solid blocking instead** —
+ * *"3a sounds good"* — because a truss needs depth to be a truss and a short
+ * header is a solid beam in the shop.
+ *
+ * The arithmetic, and it is all forced rather than chosen:
+ *
+ * - A web board is `boardWidthIn` wide measured PERPENDICULAR to its own
+ *   length, and both its ends are LEVEL cuts (see
+ *   `buildHeaderTrussWebBraces` — *"there are no plum[b] cuts on headers"*).
+ *   A level cut turns that perpendicular width into a HORIZONTAL footprint of
+ *   `boardWidthIn / sin α`, which at 30deg is exactly twice the board's width.
+ * - Each half-bay has `widthIn / (2 · peakCount)` of horizontal run.
+ * - The two OUTERMOST half-bays lose `endInsetIn` of that run to whatever
+ *   closes the panel's end, so they are the ones that fail first — which is
+ *   why the sweep's first collision is always `end_stud x brace`.
+ *
+ * So the web fits iff `halfRun − endInset ≥ boardWidth / sin α`, with
+ * `sin α = rise / hypot(rise, halfRun)`. No solution exists at all below
+ * `rise = boardWidth`, since the footprint is infinite at a plumb web.
+ *
+ * ⚠ **It is NOT a height threshold, and writing one down would have been
+ * wrong.** Measured door/window heights where the web first fits: 11.5in at
+ * 24in wide, 9.75in at 32in, 10.5in at 40in, 9.75in at 48in and 72in, 9.5in
+ * at 120in and up. The band is not monotonic in width, because `peakCount` is
+ * an integer and each step of it moves the available run discontinuously.
+ * `headerMembers.test.ts` pins that list.
+ */
+export function trussWebFitsIn(
+  widthIn: number,
+  riseIn: number,
+  peakCount: number,
+  endInsetIn: number,
+  boardWidthIn: number = PLATE_2X4_WIDTH_IN,
+): boolean {
+  if (!(peakCount >= 1) || !(riseIn > boardWidthIn) || !(widthIn > 0)) return false;
+  const halfRunIn = widthIn / (2 * peakCount);
+  const sinAlpha = riseIn / Math.hypot(riseIn, halfRunIn);
+  return halfRunIn - endInsetIn >= boardWidthIn / sinAlpha;
+}
+
+/**
+ * What goes between a header's two chords: a W-truss web, or solid blocking
+ * because no web fits. **The single place that decides it**, so the members,
+ * the fabrication note and the Review Log entry can never describe three
+ * different headers — the same reason `headerPeakCount` exists.
+ *
+ * Two distinct reasons end up at the same answer, and they are kept apart
+ * because the drawing should say which one happened:
+ *
+ * - `no_rise` — the gap between the chords is thinner than a brace board, so
+ *   no diagonal fits in any orientation. This is `computeTrussWebPeakCount`'s
+ *   own guard, and below it the rise goes negative.
+ * - `too_dense` — a diagonal fits, but not at `TRUSS_WEB_MIN_ANGLE_DEG` with
+ *   its own level-cut footprint inside one half-bay. See `trussWebFitsIn`.
+ */
+export type HeaderWebPlan =
+  | { kind: "web"; peakCount: number }
+  | { kind: "blocking"; peakCount: 0; reason: "no_rise" | "too_dense" };
+
+export function planHeaderWeb(widthIn: number, riseIn: number, endInsetIn: number): HeaderWebPlan {
+  const peakCount = computeTrussWebPeakCount(widthIn, riseIn);
+  if (peakCount < 1) return { kind: "blocking", peakCount: 0, reason: "no_rise" };
+  if (!trussWebFitsIn(widthIn, riseIn, peakCount, endInsetIn)) {
+    return { kind: "blocking", peakCount: 0, reason: "too_dense" };
+  }
+  return { kind: "web", peakCount };
+}
+
+/**
+ * ⚠ **His own number, not a new one.** The 24in module the floor and roof
+ * panels are already built on — *"so that load bears straight down"* — and
+ * the same 24in the vertical-nailer overlay (B21) guarantees across a wall. A
+ * header's blocking inherits it rather than inventing a spacing.
+ */
+export const HEADER_BLOCKING_MAX_SPACING_IN = 24;
+
+/**
+ * ⚠ **The thinnest a Door/Window Header can be and still be made of its own
+ * parts**: two flat 2x4 chords and the two plywood caps over them. Below it
+ * the two chords are drawn through each other — the assembly is thinner than
+ * the boards it is built from, which the height sweep found on 2026-11-14 at
+ * exactly 4in.
+ *
+ * Tommy's call was to FLOOR the derived height here rather than refuse the
+ * opening (*"let's go with option a"*): a header's height is derived from the
+ * wall and the opening, and throwing on a derived value inside a render is
+ * how the gable-window crash took the viewport down on 2026-10-31. The
+ * opening gives way instead — see `computeHeaderHeightIn` and
+ * `computeOpeningGeometry`.
+ *
+ * ⚠ **A Big Header's own minimum is larger** (8.5in — its chords are rotated
+ * to show a 3.5in face) and needs no floor: its height is clamped to
+ * `bigHeaderHeightInRange`, which starts at 24in.
+ */
+export const HEADER_MIN_HEIGHT_IN = 2 * PLATE_2X4_THICKNESS_IN + 2 * SKIN_THICKNESS_IN;
+
+/**
+ * Solid blocking between a header's chords, for the heights where no
+ * buildable web exists — Tommy, 2026-11-14, choosing it over relaxing the
+ * 30deg floor or refusing the header outright.
+ *
+ * Each block is the SAME member an end stud is (`buildHeaderEndStuds`): a 2x4
+ * standing between the two chords, its 3.5in face into the panel's depth so
+ * it bears on the chord's full width, one per wythe. That is deliberate — a
+ * block and an end stud do the same job at different X, and giving them
+ * different cross-sections would put two stocks on the cut list for one part.
+ *
+ * ⚠ **The count can be 0, and that is a real answer rather than a failure.**
+ * Blocks go in the clear span BETWEEN the two end studs, spaced so no gap
+ * exceeds `HEADER_BLOCKING_MAX_SPACING_IN`; a header narrow enough that its
+ * clear span already meets that needs none, and is then chords and end studs
+ * alone — a solid built-up beam over a short span, which is what it is.
+ */
+export function buildHeaderSolidBlocking(
+  widthIn: number,
+  depthIn: number,
+  bottomZIn: number,
+  topZIn: number,
+  endInsetIn: number,
+): PanelMember[] {
+  const lengthIn = topZIn - bottomZIn;
+  const clearLeftXIn = endInsetIn + PLATE_2X4_THICKNESS_IN;
+  const clearRightXIn = widthIn - endInsetIn - PLATE_2X4_THICKNESS_IN;
+  const clearSpanIn = clearRightXIn - clearLeftXIn;
+  if (!(lengthIn > 0) || !(clearSpanIn > 0)) return [];
+  const count = Math.max(0, Math.ceil(clearSpanIn / HEADER_BLOCKING_MAX_SPACING_IN) - 1);
+  const members: PanelMember[] = [];
+  for (let i = 0; i < count; i++) {
+    const centreXIn = clearLeftXIn + (clearSpanIn * (i + 1)) / (count + 1);
+    for (const [wythe, yIn] of [
+      ["ext", 0],
+      ["int", depthIn - PLATE_2X4_WIDTH_IN],
+    ] as const) {
+      members.push({
+        memberId: `web_block_${i + 1}_${wythe}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
+        orientation: "vertical",
+        position: { xIn: centreXIn - PLATE_2X4_THICKNESS_IN / 2, yIn, zIn: bottomZIn, rotationDeg: 0 },
+        role: "blocking",
+        qty: 1,
+        notes:
+          `block ${i + 1} of ${count}, ${wythe} wythe — square cut both ends, standing between the two chords ` +
+          `exactly as an end stud does. This header is too shallow for a buildable truss web, so it is a solid ` +
+          `beam: blocks at ${HEADER_BLOCKING_MAX_SPACING_IN}in on centre or less instead of diagonals.`,
+      });
+    }
+  }
+  return members;
 }
 
 /**
@@ -1653,6 +1824,42 @@ export function buildHeaderTrussWebBraces(
  */
 export function girtRowCentreZsIn(rowCount: number, studSpanIn: number): number[] {
   return Array.from({ length: rowCount }, (_, i) => SKIN_THICKNESS_IN + (studSpanIn * (i + 1)) / (rowCount + 1));
+}
+
+/**
+ * ⚠ **How far the TALLEST member of a girt row stands above that row's own
+ * centre — and it is a different number for each style.**
+ *
+ * Every style shares the two bars, and every style's bars sit with their top
+ * `PLATE_2X4_THICKNESS_IN / 2` above the centre. What differs is what bridges
+ * them: a 1/2in plywood web resting on the bars, a 1 1/2in 2x6 laid flat
+ * resting on the bars, or a ring whose own rails stand on edge straddling the
+ * centre.
+ *
+ * ⚠ **This exists because a gable's single girt is placed against a FEATURE
+ * rather than at a fraction** (*"it's top height flush with the lower butt
+ * corner of that shorter stud"*), and that placement was solved as though the
+ * infill were always the 1/2in plywood web. With the project default
+ * (`blocking`) the row's real top therefore stood 1in higher than the line he
+ * named — invisible on a rectangular panel, where rows are evenly spread and
+ * nothing is measured off their tops, and the reason the sloped top plate ran
+ * through the row at every style, not just the one the sweep happened to
+ * build. See `gableGirtPlan`.
+ */
+export function girtRowTopAboveCentreIn(style: GirtStyle): number {
+  switch (style) {
+    /* On edge, straddling the centre — `buildRingGirtRow` places every member
+       of the ring at `centre − 3.5/2`. */
+    case "ring":
+      return PLATE_2X4_WIDTH_IN / 2;
+    /* A 2x6 laid flat ON TOP of the bars, so the bar's half-thickness plus
+       the 2x6's own 1 1/2in. */
+    case "blocking":
+      return PLATE_2X4_THICKNESS_IN / 2 + PLATE_2X4_THICKNESS_IN;
+    /* The plywood web, also resting on the bars. */
+    case "web":
+      return PLATE_2X4_THICKNESS_IN / 2 + GIRT_WEB_THICKNESS_IN;
+  }
 }
 
 export function buildGirtRows(

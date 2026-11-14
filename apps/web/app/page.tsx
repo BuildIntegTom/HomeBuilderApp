@@ -4680,15 +4680,22 @@ export default function LayoutEditor() {
   // zone-banding pipeline Building3DView/allPanelInstances already run at
   // render time, not something worth re-deriving for a quick per-edit
   // check.
-  const resolveHeaderHeightIn = (story: "ground" | "second", slot: PanelSlot): number => {
+  const resolveHeaderHeightIn = (story: "ground" | "second", slot: PanelSlot): { depthIn: number; shortfallIn: number } => {
     const storyWallHeightIn = (story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)) * 12;
-    if (slot.type === "door") {
-      const roHeightIn = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
-      return computeHeaderHeightIn(storyWallHeightIn, roHeightIn);
-    }
-    const windowSillHeightIn = slot.sillHeightIn ?? sillDefaultHeightIn.value;
-    const windowRoHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
-    return computeHeaderHeightIn(storyWallHeightIn, windowSillHeightIn + windowRoHeightIn);
+    const roTopZIn =
+      slot.type === "door"
+        ? computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value)
+        : (slot.sillHeightIn ?? sillDefaultHeightIn.value) + (slot.heightIn ?? standardWindowHeightDefaultIn.value);
+    const depthIn = computeHeaderHeightIn(storyWallHeightIn, roTopZIn);
+    /* ⚠ **What the OPENING pays for the header's own minimum.** A derived
+       header thinner than 4 1/2in is thinner than the two chords and two caps
+       it is made of, so `computeHeaderHeightIn` floors it and the rough
+       opening's top drops by the difference — see `computeOpeningGeometry`,
+       which does the same arithmetic for every renderer. Non-zero means the
+       window or door on screen is shorter than the one that was asked for,
+       which is worth a sentence rather than a silent resize. */
+    const shortfallIn = depthIn > 0 ? Math.max(0, roTopZIn - (storyWallHeightIn - depthIn)) : 0;
+    return { depthIn, shortfallIn };
   };
 
   /**
@@ -4708,15 +4715,28 @@ export default function LayoutEditor() {
    *
    * Returns null for a slot with no header at all.
    */
-  const headerFigureFor = (story: "ground" | "second", slot: PanelSlot): { depthIn: number; peaks: number; angleDeg: number } | null => {
+  const headerFigureFor = (
+    story: "ground" | "second",
+    slot: PanelSlot,
+  ): { depthIn: number; peaks: number; angleDeg: number; shortfallIn: number } | null => {
     if (slot.type === "big-header") {
       const depthIn = slot.heightIn ?? bigHeaderDefaultHeightIn.value;
-      return { depthIn, peaks: bigHeaderPeakCount(slot.widthIn, depthIn), angleDeg: bigHeaderWebAngleDeg(slot.widthIn, depthIn) };
+      return {
+        depthIn,
+        peaks: bigHeaderPeakCount(slot.widthIn, depthIn, jackStudConfig),
+        angleDeg: bigHeaderWebAngleDeg(slot.widthIn, depthIn),
+        shortfallIn: 0,
+      };
     }
     if (slot.type !== "window" && slot.type !== "door") return null;
-    const depthIn = resolveHeaderHeightIn(story, slot);
+    const { depthIn, shortfallIn } = resolveHeaderHeightIn(story, slot);
     if (!(depthIn > 0)) return null;
-    return { depthIn, peaks: headerPeakCount(slot.widthIn, depthIn), angleDeg: headerWebAngleDeg(slot.widthIn, depthIn) };
+    return {
+      depthIn,
+      peaks: headerPeakCount(slot.widthIn, depthIn),
+      angleDeg: headerWebAngleDeg(slot.widthIn, depthIn),
+      shortfallIn,
+    };
   };
 
   /* ⚠ **`applyBigHeaderAutoUpgrade` WAS DELETED HERE — 2026-11-03.** It ran
@@ -11491,6 +11511,68 @@ export default function LayoutEditor() {
   }, [panelFabricationGroups]);
 
   /**
+   * **Every header in this building that has no truss web.**
+   *
+   * ⚠ **This is the ABSENCE the overlap entry above cannot see.** A header
+   * built without diagonals has zero overlapping pairs by construction, so it
+   * reaches the shop drawing looking finished — which is exactly how the
+   * height sweep found it on 2026-11-14 and why Tommy asked for it reported:
+   * *"4a sounds good."* It was already on the header's own fabrication sheet
+   * as a note, and a sheet note is only read by someone who opens that sheet.
+   *
+   * Two different headers end up here, both deliberate:
+   *
+   * - too shallow for a diagonal to exist at all (under 6in for a door or
+   *   window, under 10in for a Big Header), and
+   * - deep enough for one to exist but not for one to hold 30deg and still
+   *   fit its own level-cut ends inside a web bay — the band `trussWebFitsIn`
+   *   derives rather than names.
+   *
+   * Both are built as a SOLID BEAM instead: chords, end studs and blocking at
+   * 24in on centre or less. The blocks are counted in the entry because a
+   * narrow header legitimately gets none, and "no web and no blocks" should
+   * not read as a bug.
+   *
+   * ⚠ Detected from the MEMBERS rather than re-deriving the plan: a group
+   * with chord 2x4s and not one member in a brace role. Re-solving
+   * `planHeaderWeb` here would be a second opinion that could disagree with
+   * the panel on screen, which is the thing `headerWebPlan`'s own comment
+   * exists to prevent.
+   */
+  const headerWithoutWebReviewEntries = useMemo(() => {
+    const affected = panelFabricationGroups
+      .filter(
+        (group) =>
+          group.members.some((m) => m.memberId.includes("_chord_2x4_")) &&
+          !group.members.some((m) => m.role === "brace"),
+      )
+      .map((group) => ({
+        name: group.distinctName,
+        /* One block is two members, one per wythe — see
+           `buildHeaderSolidBlocking`. */
+        blocks: group.members.filter((m) => m.memberId.startsWith("web_block_")).length / 2,
+      }));
+    if (affected.length === 0) return [];
+    const LIST_LIMIT = 8;
+    const listed = affected
+      .slice(0, LIST_LIMIT)
+      .map((h) => `${h.name} (${h.blocks} block${h.blocks === 1 ? "" : "s"})`);
+    const moreCount = affected.length - listed.length;
+    return [
+      {
+        label: `⚠ ${affected.length} header type${affected.length === 1 ? "" : "s"} built with no truss web — solid blocking instead`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `A header this shallow cannot hold a diagonal: either the gap between its chords is thinner than a brace board, or a brace would fit but not at the 30° floor with its own level-cut ends inside one web bay. ` +
+          `Rather than a dense fan of overlapping slivers — which is what this app drew until 2026-11-14 — each is built as a solid beam: top and bottom chords, end studs, and blocking at 24in on centre or less in place of the web. Tommy chose that over relaxing the 30° rule or refusing the opening. ` +
+          `By unique fabricated panel: ${listed.join(" · ")}${moreCount > 0 ? ` · and ${moreCount} more` : ""}. ` +
+          `A count of 0 blocks is correct for a header whose clear span is already under 24in — it is then chords and end studs alone, which over that span is a solid built-up beam. ` +
+          `⚠ The 24in spacing is inherited from the project's own 24in module and the vertical-nailer guarantee, not independently engineered for a header, and the blocking's shear capacity is not computed anywhere. That is what this entry is asking to be checked.`,
+      },
+    ];
+  }, [panelFabricationGroups]);
+
+  /**
    * One Review Log entry per wall carrying an unbuilt span.
    *
    * **A wall that stops short is by definition an incomplete design**, and
@@ -11845,6 +11927,10 @@ export default function LayoutEditor() {
       // outranks every material assumption below. His 2026-11-06 condition for
       // leaving the brace/ring collision alone was that this log says so.
       ...memberOverlapReviewEntries,
+      // Beside the overlap entry, because it is the same question asked the
+      // other way round: that one reports two parts in one place, this one
+      // reports a part that is not there at all.
+      ...headerWithoutWebReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
       // One line, above the material assumptions because it is about THIS file
@@ -12039,6 +12125,7 @@ export default function LayoutEditor() {
     zeroBracingReviewEntries,
     squareBaleMergedCornerReviewEntries,
     memberOverlapReviewEntries,
+    headerWithoutWebReviewEntries,
     // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
     // values, and the notice is derived inline rather than in its own memo
     // precisely so that no MEMO joins this array.
@@ -15429,13 +15516,28 @@ export default function LayoutEditor() {
                            stacked in it. */
                         const header = headerFigureFor(story, slot);
                         if (!header) return null;
-                        const steep = header.angleDeg > HEADER_MAX_ANGLE_DEG;
+                        const steep = header.peaks > 0 && header.angleDeg > HEADER_MAX_ANGLE_DEG;
+                        /* ⚠ 0 peaks is a real answer since 2026-11-14 — too
+                           shallow for a buildable web, so solid blocking
+                           instead. Printing "0 peaks · web at 0.0°" would be
+                           three true numbers describing nothing. */
+                        const blocked = header.peaks === 0;
                         return (
-                          <p className={styles.note} style={steep ? { color: "#a67c00" } : undefined}>
+                          <p className={styles.note} style={steep || blocked ? { color: "#a67c00" } : undefined}>
                             Header {formatLengthIn(header.depthIn, unitSystem)} deep ·{" "}
-                            {header.peaks} {header.peaks === 1 ? "peak" : "peaks"} · web at {header.angleDeg.toFixed(1)}°
+                            {blocked ? (
+                              <>solid blocking, no truss web — too shallow for a diagonal to fit at this depth</>
+                            ) : (
+                              <>
+                                {header.peaks} {header.peaks === 1 ? "peak" : "peaks"} · web at{" "}
+                                {header.angleDeg.toFixed(1)}°
+                              </>
+                            )}
                             {steep
                               ? ` — steeper than the ${HEADER_MAX_ANGLE_DEG}° target. This header is deep for its width; more peaks would only steepen it. Reported, not corrected.`
+                              : ""}
+                            {header.shortfallIn > 0
+                              ? ` ⚠ This opening is ${formatLengthIn(header.shortfallIn, unitSystem)} shorter than asked for: the header had reached its own minimum depth (two chords and two plywood caps), so the rough opening gave way rather than the header being drawn thinner than the boards in it.`
                               : ""}
                           </p>
                         );

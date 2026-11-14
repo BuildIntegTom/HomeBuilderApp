@@ -1,5 +1,11 @@
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
-import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, SKIN_PLY_SPEC } from "./panelMemberHelpers";
+import {
+  HEADER_MIN_HEIGHT_IN,
+  LUMBER_SPECIES_GRADE,
+  PLATE_2X4_THICKNESS_IN,
+  PLATE_2X4_WIDTH_IN,
+  SKIN_PLY_SPEC,
+} from "./panelMemberHelpers";
 
 /**
  * Jack stud construction (Tommy: "RO's depend on jack studs, which i want
@@ -60,7 +66,18 @@ export function computeDoorRoughOpeningHeightIn(selectedDoorRoHeightIn: number, 
  * `standardWindowHeightsIn`/`standardWindowHeightDefaultIn` in data.ts.
  */
 export function computeHeaderHeightIn(wallHeightIn: number, roTopZIn: number): number {
-  return Math.max(0, wallHeightIn - roTopZIn);
+  const rawIn = wallHeightIn - roTopZIn;
+  /* ⚠ Zero still means NO HEADER, and that is a different answer from a thin
+     one. An opening as tall as its wall (or taller) has nowhere for a header
+     to go, which is its own reading in the Review Log and is deliberately
+     left as it was. */
+  if (!(rawIn > 0)) return 0;
+  /* ⚠ **FLOORED AT ITS OWN LAYER SUM — his call, 2026-11-14.** A derived
+     height can land under 4.5in, and under 4.5in the two chords are drawn
+     through each other: the assembly is thinner than the boards in it.
+     `computeOpeningGeometry` drops the rough opening's top by the shortfall
+     so the two stay consistent, and reports it. See `HEADER_MIN_HEIGHT_IN`. */
+  return Math.max(rawIn, HEADER_MIN_HEIGHT_IN);
 }
 
 /** Jack stud material `qty: 1` here is one side's jack stud (matching the

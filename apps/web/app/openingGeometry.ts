@@ -15,6 +15,12 @@ export interface OpeningGeometry {
   jackThicknessIn: number;
   /** Empty for a door (no sill). */
   sillWidthsIn: number[];
+  /**
+   * How much height the rough opening LOST to the header's own minimum —
+   * 0 for every ordinary opening. Non-zero means the drawing is not the size
+   * that was asked for, which is a Review Log reading, not a silent fix.
+   */
+  roShortfallIn: number;
 }
 
 /**
@@ -38,10 +44,34 @@ export function computeOpeningGeometry(
   jackStudConfig: JackStudConfig,
   standardWidthIn: number,
 ): OpeningGeometry {
-  const roTopZIn = sillHeightIn + jackStudSpanIn;
-  const headerHeightIn = computeHeaderHeightIn(wallHeightIn, roTopZIn);
+  const requestedRoTopZIn = sillHeightIn + jackStudSpanIn;
+  const headerHeightIn = computeHeaderHeightIn(wallHeightIn, requestedRoTopZIn);
+  /**
+   * ⚠ **THE OPENING GIVES WAY WHEN THE HEADER HITS ITS OWN MINIMUM.**
+   *
+   * `computeHeaderHeightIn` floors at `HEADER_MIN_HEIGHT_IN` (4 1/2in — two
+   * chords and two caps), because below that the header is thinner than the
+   * boards it is made of. Flooring the header alone would leave it hanging
+   * into the rough opening, so the RO's top drops by the same shortfall and
+   * the window or door loses that much height. Tommy, 2026-11-14, choosing
+   * this over refusing the opening: *"let's go with option a."*
+   *
+   * ⚠ A header of 0 means there is NO header — an opening as tall as its wall
+   * — and that case is untouched: the RO keeps the top it asked for, exactly
+   * as it did before, and is reported elsewhere rather than silently resized.
+   */
+  const roTopZIn = headerHeightIn > 0 ? Math.min(requestedRoTopZIn, wallHeightIn - headerHeightIn) : requestedRoTopZIn;
+  const builtJackStudSpanIn = Math.max(0, roTopZIn - sillHeightIn);
   const roWidthIn = computeRoughOpeningWidthIn(slotWidthIn, jackStudConfig);
   const jackThicknessIn = (slotWidthIn - roWidthIn) / 2;
   const sillWidthsIn = isDoor ? [] : computeSillRunWidths(roWidthIn, standardWidthIn);
-  return { sillHeightIn, jackStudSpanIn, roTopZIn, headerHeightIn, jackThicknessIn, sillWidthsIn };
+  return {
+    sillHeightIn,
+    jackStudSpanIn: builtJackStudSpanIn,
+    roTopZIn,
+    headerHeightIn,
+    jackThicknessIn,
+    sillWidthsIn,
+    roShortfallIn: Math.max(0, requestedRoTopZIn - roTopZIn),
+  };
 }

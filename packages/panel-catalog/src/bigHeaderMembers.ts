@@ -8,9 +8,11 @@ import {
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
   buildHeaderEndStuds,
+  buildHeaderSolidBlocking,
   buildHeaderTrussWebBraces,
   computeTrussWebAngleDeg,
-  computeTrussWebPeakCount,
+  planHeaderWeb,
+  type HeaderWebPlan,
 } from "./panelMemberHelpers";
 import { buildSillPanelMembers } from "./sillPanelMembers";
 
@@ -137,11 +139,36 @@ export function bigHeaderWebRiseIn(heightIn: number): number {
   return heightIn - 2 * ROTATED_CHORD_VISIBLE_IN - 2 * SKIN_THICKNESS_IN;
 }
 
+/**
+ * ⚠ **A Big Header's web feet clear its JACK STUD as well as its end stud**,
+ * so its end inset is bigger than a Door/Window Header's and it needs more
+ * rise before a web fits. The jack is inside the assembly's own width —
+ * *"RO's take into account these jack studs"* — so this is read from the
+ * jack config rather than assumed.
+ */
+function bigHeaderEndInsetIn(jackStudConfig: JackStudConfig): number {
+  return jackStudThicknessIn(jackStudConfig) + PLATE_2X4_THICKNESS_IN;
+}
+
+/** What goes between this Big Header's chords — a web, or solid blocking at
+ *  the heights where no buildable web exists. Same decision a window or door
+ *  header makes (`headerWebPlan`), differing only in the rise a rotated chord
+ *  leaves and in the jack stud its feet have to clear. */
+export function bigHeaderWebPlan(widthIn: number, heightIn: number, jackStudConfig: JackStudConfig): HeaderWebPlan {
+  return planHeaderWeb(widthIn, bigHeaderWebRiseIn(heightIn), bigHeaderEndInsetIn(jackStudConfig));
+}
+
 /** How many peaks this Big Header's web gets, and at what angle - the same
  *  pair `headerPeakCount`/`headerWebAngleDeg` give for a window or door
- *  header, differing only in the rise a rotated chord leaves. */
-export function bigHeaderPeakCount(widthIn: number, heightIn: number): number {
-  return computeTrussWebPeakCount(widthIn, bigHeaderWebRiseIn(heightIn));
+ *  header, differing only in the rise a rotated chord leaves.
+ *  ⚠ `jackStudConfig` defaults to `"plywood"`, the app's own default, so the
+ *  pre-existing two-argument callers (notes and tests) keep their answer. */
+export function bigHeaderPeakCount(
+  widthIn: number,
+  heightIn: number,
+  jackStudConfig: JackStudConfig = "plywood",
+): number {
+  return bigHeaderWebPlan(widthIn, heightIn, jackStudConfig).peakCount;
 }
 
 export function bigHeaderWebAngleDeg(widthIn: number, heightIn: number): number {
@@ -193,30 +220,38 @@ export function buildBigHeaderMembers(
   const bottomChordTopZIn = SKIN_THICKNESS_IN + ROTATED_CHORD_VISIBLE_IN;
   const topChordBottomZIn = heightIn - SKIN_THICKNESS_IN - ROTATED_CHORD_VISIBLE_IN;
   const riseIn = bigHeaderWebRiseIn(heightIn);
-  const peakCount = computeTrussWebPeakCount(widthIn, riseIn);
+  const plan = bigHeaderWebPlan(widthIn, heightIn, jackStudConfig);
 
   const jackInsetIn = jackStudThicknessIn(jackStudConfig);
   const members: PanelMember[] = [
     ...buildBigHeaderChords(widthIn, depthIn, heightIn, jackInsetIn),
     ...buildHeaderEndStuds(widthIn, depthIn, bottomChordTopZIn, riseIn, jackInsetIn),
   ];
-  for (const [wythe, yIn] of [
-    ["ext", PLATE_2X4_THICKNESS_IN / 2],
-    ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
-  ] as const) {
+  if (plan.kind === "blocking") {
+    /* Too shallow for a buildable web — a solid beam instead, blocked
+       between the chords. See `buildHeaderSolidBlocking`. */
     members.push(
-      /* ⚠ The outermost feet clear the jack AND the edge stud inboard of it,
-         not a 3/4in sheet. */
-      ...buildHeaderTrussWebBraces(
-        peakCount,
-        widthIn,
-        bottomChordTopZIn,
-        topChordBottomZIn,
-        yIn,
-        `truss_brace_${wythe}`,
-        jackInsetIn + PLATE_2X4_THICKNESS_IN,
-      ),
+      ...buildHeaderSolidBlocking(widthIn, depthIn, bottomChordTopZIn, topChordBottomZIn, jackInsetIn),
     );
+  } else {
+    for (const [wythe, yIn] of [
+      ["ext", PLATE_2X4_THICKNESS_IN / 2],
+      ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
+    ] as const) {
+      members.push(
+        /* ⚠ The outermost feet clear the jack AND the edge stud inboard of it,
+           not a 3/4in sheet. */
+        ...buildHeaderTrussWebBraces(
+          plan.peakCount,
+          widthIn,
+          bottomChordTopZIn,
+          topChordBottomZIn,
+          yIn,
+          `truss_brace_${wythe}`,
+          bigHeaderEndInsetIn(jackStudConfig),
+        ),
+      );
+    }
   }
 
   // Exactly 2 jack studs (Tommy: "they come... with two jack studs"), each

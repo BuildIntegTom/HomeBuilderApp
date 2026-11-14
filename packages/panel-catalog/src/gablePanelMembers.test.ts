@@ -376,19 +376,68 @@ describe("\u26a0 how many girts a gable panel gets", () => {
     }
   });
 
-  it("\u26a0 that one girt's TOP is flush with the short stud's lower butt corner", () => {
-    /* The one placement in the whole rule that is NOT a fraction of the
-       span. A row's top face is its WEB's, since the web rests on the bars
-       \u2014 so asserting the bar's top would pass while the real top stood
-       1/2in proud of the stud it is meant to be flush with. */
+  /**
+   * ⚠ **FLUSH WITH THE STUD GAVE WAY TO CLEARING THE PLATE — 2026-11-14.**
+   *
+   * The short stud's butt corner is also where the sloped top plate descends
+   * to, so a row flush with the one was inside the other: the plate ran
+   * through the first girt bar on every tile with a short edge under about
+   * 3ft, in both gable orientations and in all three girt styles, and the
+   * 96in overlap gate never sampled a tile that short.
+   *
+   * > *"It doesn't necessarily matter where girts are. As long as they are
+   * > spaced every 3 ft or less they most certainly can be less to
+   * > accommodate space for the top."* — Tommy, 2026-11-14
+   *
+   * So the row drops to the plate's own underside. This asserts the TOP of
+   * the row — the web's, since the web rests on the bars — lands
+   * there exactly, rather than asserting a number: the drop follows the pitch.
+   */
+  it("⚠ that one girt's TOP sits under the sloped top plate, not flush with the stud", () => {
     const shortEdgeIn = edgeForMeasure(30);
     const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, shortEdgeIn, 96, false);
     const web = members.find((m) => m.role === "girt_web")!;
-    const studTopZIn = shortEdgeIn - SKIN_THICKNESS_IN; // bottom skin, then the stud
-    expect(web.position.zIn + web.actualDimsIn.thicknessIn).toBeCloseTo(studTopZIn, 9);
-    // And the bars sit under it, not through it.
+    const rowTopZIn = web.position.zIn + web.actualDimsIn.thicknessIn;
+
+    /* The lowest point of the plate above it, read off the built member
+       rather than re-derived — the low end's bottom corner. */
+    const plate = members.find((m) => m.memberId === "top_plate_2x4_ext")!;
+    const plateLowZIn = Math.min(...plate.position.trapezoidCornersIn!.map((c) => c.zIn));
+    expect(rowTopZIn).toBeCloseTo(plateLowZIn, 9);
+
+    /* And it really did drop: flush with the stud would have been higher. */
+    expect(rowTopZIn).toBeLessThan(shortEdgeIn - SKIN_THICKNESS_IN);
+
+    // The bars still sit under the web, not through it.
     for (const bar of members.filter((m) => m.role === "girt")) {
       expect(bar.position.zIn + bar.actualDimsIn.thicknessIn).toBeCloseTo(web.position.zIn, 9);
+    }
+  });
+
+  /**
+   * ⚠ **The same drop, for the style the PROJECT actually defaults to.**
+   *
+   * `buildGablePanelMembers` defaults to the legacy plywood web, so the test
+   * above and the overlap sweep both describe a panel nobody is shipping. The
+   * 2x6 blocking stands 1in higher above the row's centre than the 1/2in web
+   * does, which is why the drop is solved per style
+   * (`girtRowTopAboveCentreIn`) rather than once.
+   */
+  it("⚠ every girt style's tallest member clears the plate, not just the legacy web", () => {
+    const shortEdgeIn = edgeForMeasure(30);
+    for (const style of ["web", "blocking", "ring"] as const) {
+      for (const [leftIn, rightIn] of [
+        [shortEdgeIn, 96],
+        [96, shortEdgeIn],
+      ] as const) {
+        const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, leftIn, rightIn, false, style);
+        const rowMembers = members.filter((m) => m.role === "girt" || m.role === "girt_web");
+        expect({ style, leftIn, hasRow: rowMembers.length > 0 }).toEqual({ style, leftIn, hasRow: true });
+        const rowTopZIn = Math.max(...rowMembers.map((m) => m.position.zIn + memberBoxSizeIn(m).zIn));
+        const plate = members.find((m) => m.memberId === "top_plate_2x4_ext")!;
+        const plateLowZIn = Math.min(...plate.position.trapezoidCornersIn!.map((c) => c.zIn));
+        expect({ style, leftIn, proudIn: rowTopZIn > plateLowZIn + 1e-9 }).toEqual({ style, leftIn, proudIn: false });
+      }
     }
   });
 

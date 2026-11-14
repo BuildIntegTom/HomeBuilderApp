@@ -7,10 +7,13 @@ import {
   SKIN_THICKNESS_IN,
   TRUSS_WEB_MIN_ANGLE_DEG,
   buildHeaderEndStuds,
+  buildHeaderSolidBlocking,
   buildHeaderTrussWebBraces,
   computeBraceEndCutAngleDeg,
   computeTrussWebAngleDeg,
-  computeTrussWebPeakCount,
+  planHeaderWeb,
+  type HeaderWebPlan,
+  HEADER_BLOCKING_MAX_SPACING_IN,
 } from "./panelMemberHelpers";
 
 /**
@@ -147,7 +150,7 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number):
   // thickness inboard of the header's own outer face on each side.
   const bottomChordTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const topChordBottomZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
-  const peakCount = headerPeakCount(widthIn, heightIn);
+  const plan = headerWebPlan(widthIn, heightIn);
 
   const members: PanelMember[] = [
     ...buildHeaderChords(widthIn, depthIn, heightIn),
@@ -155,6 +158,15 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number):
        `buildHeaderEndStuds`, which every header-like assembly shares. */
     ...buildHeaderEndStuds(widthIn, depthIn, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN, headerWebRiseIn(heightIn)),
   ];
+  if (plan.kind === "blocking") {
+    /* ⚠ **Not per wythe.** A block is the same member an end stud is and
+       stands the full chord width, so one call places both wythes — unlike a
+       brace, which is 1 1/2in deep and is built twice. */
+    members.push(
+      ...buildHeaderSolidBlocking(widthIn, depthIn, bottomChordTopZIn, topChordBottomZIn, HEADER_END_INSET_IN),
+    );
+    return members;
+  }
   for (const [wythe, yIn] of [
     ["ext", PLATE_2X4_THICKNESS_IN / 2],
     ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
@@ -164,13 +176,13 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number):
          sheet's — his *"this may bring that tip and angle of the diagonal
          towards the center of the header panel a little bit."* */
       ...buildHeaderTrussWebBraces(
-        peakCount,
+        plan.peakCount,
         widthIn,
         bottomChordTopZIn,
         topChordBottomZIn,
         yIn,
         `truss_brace_${wythe}`,
-        PLATE_2X4_THICKNESS_IN,
+        HEADER_END_INSET_IN,
       ),
     );
   }
@@ -190,12 +202,29 @@ export function buildWindowHeaderMembers(widthIn: number, depthIn: number, heigh
 }
 
 /**
- * How many peaks this header's web gets. **The single place that decides it**,
- * so the members, the peak-count note and the angle note can never describe
- * three different trusses.
+ * ⚠ **What closes a Door/Window Header's ends, and therefore how far in from
+ * each end the outermost web foot has to stop.** A 2x4 stud since 2026-11-01
+ * — *"The 3/4\" plywood skins on the side I don't think are necessary, and
+ * should be replaced with regular 2x4 studs vertically like a standard
+ * panel"* — and re-confirmed 2026-11-14: *"I don't think we need plywood
+ * skins on either side."*
  */
+const HEADER_END_INSET_IN = PLATE_2X4_THICKNESS_IN;
+
+/**
+ * What this header gets between its chords — a web, or solid blocking because
+ * no buildable web exists at this height. **The single place that decides
+ * it**, so the members, the peak-count note and the angle note can never
+ * describe three different headers. See `planHeaderWeb`.
+ */
+export function headerWebPlan(widthIn: number, heightIn: number): HeaderWebPlan {
+  return planHeaderWeb(widthIn, headerWebRiseIn(heightIn), HEADER_END_INSET_IN);
+}
+
+/** How many peaks this header's web gets — 0 when it is blocked solid
+ *  instead. Derived from `headerWebPlan`, never solved a second time. */
 export function headerPeakCount(widthIn: number, heightIn: number): number {
-  return computeTrussWebPeakCount(widthIn, headerWebRiseIn(heightIn));
+  return headerWebPlan(widthIn, heightIn).peakCount;
 }
 
 /** The web angle this header actually gets built at. */
@@ -210,32 +239,41 @@ export function headerWebAngleDeg(widthIn: number, heightIn: number): number {
  * header, which no peak count can shallow out, and which Tommy chose to build
  * rather than refuse.
  *
- * ⚠ **A THIRD case since 2026-11-14: a header with no web at all.** Until
- * then the shallow branch below carried the text *"which should not be
- * reachable: the peak count is solved for exactly that floor"*, and that was
- * true only because the solver would return ANY number of peaks, however
- * absurd, to hold the 30deg floor — 231 of them for the 400 x 5in header
- * `headerMembers.test.ts` used to assert was fine, and 57,735 for a
- * thousandth of an inch of rise. It held the floor by generating slivers.
+ * ⚠ **A THIRD case since 2026-11-14: a header with no web at all**, which now
+ * carries SOLID BLOCKING in its place (*"3a sounds good"*) rather than a void.
+ * Two different things get a header here, and the note says which:
  *
- * `computeTrussWebPeakCount` now returns 0 when the gap between the chords is
- * thinner than a brace board, so the header is built with chords and end
- * studs and no diagonals. That is the honest geometry, and this is where the
- * drawing says so out loud instead of printing "0.0deg at 0 peaks" and
- * blaming a floor that no longer applies.
+ * - **No rise.** Until 2026-11-14 the shallow branch below carried the text
+ *   *"which should not be reachable: the peak count is solved for exactly
+ *   that floor"*, and that was true only because the solver would return ANY
+ *   number of peaks, however absurd, to hold the 30deg floor — 231 of them
+ *   for the 400 x 5in header `headerMembers.test.ts` used to assert was fine,
+ *   and 57,735 for a thousandth of an inch of rise. It held the floor by
+ *   generating slivers.
+ * - **Too dense.** `computeTrussWebPeakCount`'s guard stopped that, but for
+ *   about 4in above it the web it asks for still cannot be built: the braces
+ *   lap each other and the end studs. See `trussWebFitsIn`, which derives the
+ *   threshold from the brace board's own level-cut footprint rather than
+ *   naming a height.
  */
-function angleNote(widthIn: number, heightIn: number, peakCount: number): { type: "warning"; text: string } | null {
+function angleNote(widthIn: number, heightIn: number, plan: HeaderWebPlan): { type: "warning"; text: string } | null {
   const riseIn = headerWebRiseIn(heightIn);
-  if (peakCount === 0) {
+  if (plan.kind === "blocking") {
+    const why =
+      plan.reason === "no_rise"
+        ? `leaves ${riseIn.toFixed(2)}in between its chords, less than the ${PLATE_2X4_THICKNESS_IN}in thickness of a ` +
+          "brace board, so no diagonal fits in any orientation"
+        : `leaves ${riseIn.toFixed(2)}in between its chords, enough for a diagonal to exist but not enough for one ` +
+          `to hold ${TRUSS_WEB_MIN_ANGLE_DEG}deg and still fit its own level-cut ends inside a single web bay`;
     return {
       type: "warning",
       text:
-        `No truss web: a ${heightIn}in header leaves ${riseIn.toFixed(2)}in between its chords, less than the ` +
-        `${PLATE_2X4_THICKNESS_IN}in thickness of a brace board, so no diagonal fits in any orientation. Built as ` +
-        `chords and end studs only — this header carries no diagonal bracing. Reported, not auto-corrected.`,
+        `No truss web: a ${heightIn}in header ${why}. Built as a SOLID BEAM instead — chords, end studs and ` +
+        `blocking at ${HEADER_BLOCKING_MAX_SPACING_IN}in on centre or less, which is what a shop builds over a ` +
+        "short span. This header carries no diagonal bracing. Reported, not auto-corrected.",
     };
   }
-  const angleDeg = computeTrussWebAngleDeg(widthIn, riseIn, peakCount);
+  const angleDeg = computeTrussWebAngleDeg(widthIn, riseIn, plan.peakCount);
   if (angleDeg >= TRUSS_WEB_MIN_ANGLE_DEG && angleDeg <= HEADER_MAX_ANGLE_DEG) return null;
   const which =
     angleDeg > HEADER_MAX_ANGLE_DEG
@@ -243,7 +281,7 @@ function angleNote(widthIn: number, heightIn: number, peakCount: number): { type
       : `shallower than the ${TRUSS_WEB_MIN_ANGLE_DEG}deg floor of the target range`;
   return {
     type: "warning",
-    text: `Web brace angle ${angleDeg.toFixed(1)}deg at ${peakCount} peak${peakCount === 1 ? "" : "s"} — ${which}. Reported, not auto-corrected.`,
+    text: `Web brace angle ${angleDeg.toFixed(1)}deg at ${plan.peakCount} peak${plan.peakCount === 1 ? "" : "s"} — ${which}. Reported, not auto-corrected.`,
   };
 }
 
@@ -294,14 +332,17 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
         "— see computeHeaderHeightIn.",
     },
   ];
-  const doorPeaks = headerPeakCount(widthIn, heightIn);
+  const doorPlan = headerWebPlan(widthIn, heightIn);
   notes.push({
     type: "deviation",
-    text: `${doorPeaks} truss web peak${doorPeaks === 1 ? "" : "s"} — solved so every web segment clears ${TRUSS_WEB_MIN_ANGLE_DEG}deg (see computeTrussWebPeakCount). A door at any ordinary width comes back with the single upside-down V.`,
+    text:
+      doorPlan.kind === "web"
+        ? `${doorPlan.peakCount} truss web peak${doorPlan.peakCount === 1 ? "" : "s"} — solved so every web segment clears ${TRUSS_WEB_MIN_ANGLE_DEG}deg (see planHeaderWeb). A door at any ordinary width comes back with the single upside-down V.`
+        : `No truss web at this height — solid blocking at ${HEADER_BLOCKING_MAX_SPACING_IN}in on centre or less in its place (see planHeaderWeb).`,
   });
   const cutAngle = braceCutAngleNote(members);
   if (cutAngle) notes.push(cutAngle);
-  const angle = angleNote(widthIn, heightIn, doorPeaks);
+  const angle = angleNote(widthIn, heightIn, doorPlan);
   if (angle) notes.push(angle);
   return {
     schemaVersion: "0.1",
@@ -319,7 +360,7 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
 }
 
 export function buildWindowHeaderSchema(widthIn: number, depthIn: number, heightIn: number): PanelComponentSchema {
-  const peakCount = headerPeakCount(widthIn, heightIn);
+  const plan = headerWebPlan(widthIn, heightIn);
   const members = buildWindowHeaderMembers(widthIn, depthIn, heightIn);
   const notes: PanelComponentSchema["notes"] = [
     {
@@ -330,12 +371,15 @@ export function buildWindowHeaderSchema(widthIn: number, depthIn: number, height
     },
     {
       type: "deviation",
-      text: `${peakCount} truss web peak${peakCount === 1 ? "" : "s"} at this opening's width/height — solved so every web segment clears ${TRUSS_WEB_MIN_ANGLE_DEG}deg (see computeTrussWebPeakCount). This is the same rule a Big Header uses; the two are the same assembly.`,
+      text:
+        plan.kind === "web"
+          ? `${plan.peakCount} truss web peak${plan.peakCount === 1 ? "" : "s"} at this opening's width/height — solved so every web segment clears ${TRUSS_WEB_MIN_ANGLE_DEG}deg (see planHeaderWeb). This is the same rule a Big Header uses; the two are the same assembly.`
+          : `No truss web at this opening's width/height — solid blocking at ${HEADER_BLOCKING_MAX_SPACING_IN}in on centre or less in its place (see planHeaderWeb). A Big Header this shallow is treated the same way.`,
     },
   ];
   const cutAngle = braceCutAngleNote(members);
   if (cutAngle) notes.push(cutAngle);
-  const angle = angleNote(widthIn, heightIn, peakCount);
+  const angle = angleNote(widthIn, heightIn, plan);
   if (angle) notes.push(angle);
   return {
     schemaVersion: "0.1",
