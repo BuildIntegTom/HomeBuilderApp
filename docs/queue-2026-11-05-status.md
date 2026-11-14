@@ -55,15 +55,17 @@ is cut, what sets the radius) was answering the wrong question.
    surfaces; building it twice is how they come to disagree about what you
    clicked.
 4. ~~**Starter templates**~~ — **DONE, U3 2026-11-07.**
-5. **Export for Tip4urTime** — queued 2026-11-14. A per-project CSV of every
-   PHYSICAL panel (not assembly types) for the crew time-clock and
+5. ~~**Export for Tip4urTime**~~ — **DONE 2026-11-14.** A per-project CSV of
+   every PHYSICAL panel (not assembly types) for the crew time-clock and
    profit-sharing app, with a **stable panel code** that never renumbers.
    The stability question is **answered**: the code is stamped at first
    export and stored from then on, so nothing is stored until a project
    actually goes to a crew, and it is a join key rather than a panel name —
    his derived-identity rule is untouched. Three smaller questions remain.
-   Panel type is now the app's own dozen names, not a coarse bucket.
-   Full brief and the conflicts: `Claude outputs/tip4urtime-export-queued-2026-11-14.md`.
+   Panel type is the app's own dozen names, not a coarse bucket. Measured on
+   a Tiny House: 84 panels, 84 unique codes, re-export byte-identical.
+   Two questions left (a Safety Gap tile's claimability; per-company ledgers)
+   in `Claude outputs/tip4urtime-export-queued-2026-11-14.md`.
 6. **Jack studs take optional 2x4s** — queued 2026-11-14. The plywood jack
    sheet stays the default (I had read his "no plywood skins on either side"
    as covering it; it does not). Two toggles add a 2x4 at the exterior and

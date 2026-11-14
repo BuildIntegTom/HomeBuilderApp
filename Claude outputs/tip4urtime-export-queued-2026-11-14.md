@@ -1,8 +1,15 @@
-# Export for Tip4urTime — queued 2026-11-14
+# Export for Tip4urTime — BUILT 2026-11-14
 
-**Status: QUEUED. Nothing built.** This is his brief, recorded verbatim in
-substance, plus the conflicts I can already see so they get answered before
-code rather than during it.
+> **Status: shipped.** The button is in the Print view beside Export PDF /
+> CSV / DXF. What follows is the brief as given, with each decision marked
+> where it was settled. Two questions are still open and are called out at the
+> bottom.
+
+---
+
+
+This is his brief, recorded verbatim in substance, plus the conflicts that
+needed answering before code rather than during it. All but two are answered.
 
 ---
 
@@ -176,3 +183,36 @@ download button and, later, the route handler both call it.
 
 *Related: `export_seam.md`, `panel_identity_is_derived.md`,
 `share_links_and_signup.md`, `tip4urtime_app.md`.*
+
+---
+
+## What shipped, and what it measured
+
+`packages/panel-catalog/src/tip4urTimeCsv.ts` is the one pure function —
+no DOM, no React, input type carrying only the project name, the id and the
+rows — so serving it from a sync link later is a route handler calling it.
+
+The per-instance rows come off the existing export seam rather than a second
+walk of the six pipelines: `ExportableAssembly` gained `typeName` (the app's
+own descriptive name) and `instanceNames` (**uncapped**, beside the capped
+`usedAt` it already had). Its length always equals `copies`, so the row count
+is the panel count by construction.
+
+**Measured in the browser on a 16 x 24 Tiny House:** 84 panels, 84 unique
+codes, every square footage above 0, a minted project id, and the file opening
+`Project,…` with no BOM. Exported again after navigating away and back: **byte
+identical — 0 new codes, 84 kept.**
+
+⚠ **Two files landed in his Downloads folder** from that check:
+`Untitled-Project-tip4urtime-panels.csv`, written twice.
+
+## ⚠ Still open
+
+1. **Does a Safety Gap tile count as a panel a crew claims?** The real export
+   above contains `P-0084,Tilted Gable Panel,T6,0.75,64,0.33` — a 3/4in filler
+   strip, 0.33 sq ft. It passes "every Sq ft above 0" and it is a real part
+   someone installs, so it is included; whether a crew should be able to claim
+   one is his call, not an arithmetic question.
+2. **Project-wide ledger vs per-company.** The codes live in the project file.
+   If two companies ever export the same project they get the same codes,
+   which is almost certainly right, but it has not been asked.

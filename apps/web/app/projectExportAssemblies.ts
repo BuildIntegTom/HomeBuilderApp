@@ -35,6 +35,9 @@ export interface AssemblyDescriptor<T extends GroupLike> {
   /** The family, for grouping and for the CSV's first column. */
   panelType: string;
   groups: readonly T[];
+  /** The app's own descriptive name for this kind of panel, without its
+   *  size — see `ExportableAssembly.typeName`. */
+  typeName: (group: T) => string;
   label: (group: T) => string;
   widthIn: (group: T) => number;
   heightIn: (group: T) => number;
@@ -64,11 +67,17 @@ export function toExportableAssemblies<T extends GroupLike>(descriptor: Assembly
     .filter((group) => group.instances.length > 0 && group.members.length > 0)
     .map((group) => ({
       panelType: descriptor.panelType,
+      typeName: descriptor.typeName(group),
       label: descriptor.label(group),
       widthIn: descriptor.widthIn(group),
       heightIn: descriptor.heightIn(group),
       copies: group.instances.length,
       usedAt: describeUsedAt(group.instances),
+      /* ⚠ Uncapped on purpose — see `ExportableAssembly.instanceNames`. An
+         instance with no name of its own still takes a slot here, so the
+         list length always equals `copies` and a per-panel export cannot
+         quietly come up short. */
+      instanceNames: group.instances.map((i) => i.name ?? ""),
       members: group.members,
     }));
 }

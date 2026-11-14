@@ -40,8 +40,17 @@ describe("what counts as the document", () => {
     // project is made up — two 2x4 bars with a plywood web, or the same bars
     // with a 2x6 laid flat. Classified `document`: it changes the members, the
     // cut list, the plywood order and the fabrication sheets.
-    expect(all.length).toBe(80);
-    // ...and 74 -> 75 document keys.
+    // 80 -> 82 on 2026-11-14: `tip4urTimeProjectId` and
+    // `tip4urTimePanelCodes`, the permanent id and the panel codes the crew
+    // app matches on. Both `transient`, and that one is NOT about tidiness:
+    // they are stamped as a side effect of EXPORTING, and the whole promise
+    // of a panel code is that it never changes. If undo could remove them, a
+    // Ctrl+Z after an export would hand the next export a blank ledger, which
+    // would mint fresh codes for the very same panels and detach a crew's
+    // claims from the panels they built. A code records something that has
+    // already left the building; it is not part of the drawing.
+    expect(all.length).toBe(82);
+    // ...and still 75 document keys: neither of the two is one.
     expect(DOCUMENT_KEYS.length).toBe(75);
   });
 

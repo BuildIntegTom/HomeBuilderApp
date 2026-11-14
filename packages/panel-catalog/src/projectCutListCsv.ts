@@ -17,6 +17,18 @@ import { computePanelCutList } from "./panelCutList";
 export interface ExportableAssembly {
   /** "Standard", "Floor Panel", "Truss Plate" — the family, for grouping. */
   panelType: string;
+  /**
+   * ⚠ **The app's own descriptive name for this KIND of panel** — "Standard
+   * Panel", "Corner Panel", "Window Header (Lintel)", "Box Beam", "Floor
+   * Panel" — as distinct from `panelType`, which is the coarse family the cut
+   * list groups by, and from `label`, which also carries the size.
+   *
+   * Added 2026-11-14 for the Tip4urTime export, whose own type column Tommy
+   * asked to carry these rather than four buckets: *"I really like where
+   * we're headed with the current naming scheme with the apps dozen
+   * descriptive names."*
+   */
+  typeName: string;
   /** What its own Shop Fabrication sheet is titled. */
   label: string;
   widthIn: number;
@@ -25,6 +37,16 @@ export interface ExportableAssembly {
   copies: number;
   /** Where they go, as the sheet names them: "N1, N3, E2". */
   usedAt: string;
+  /**
+   * ⚠ **Every copy's own stencilled name, UNCAPPED** — the same names
+   * `usedAt` summarises, before it truncates them for a readable spreadsheet
+   * cell.
+   *
+   * `usedAt` is a locator for a person; this is the list. An export that
+   * needs a row PER PHYSICAL PANEL rather than per drawing reads this, and
+   * truncating it would silently drop panels from a crew's pay.
+   */
+  instanceNames: readonly string[];
   members: PanelMember[];
 }
 

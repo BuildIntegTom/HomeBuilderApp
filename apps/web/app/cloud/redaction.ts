@@ -162,6 +162,11 @@ export const MONEY_CLASSIFICATION = {
   tilingBasis: "not-money",
   gableEndsFullHeight: "not-money",
   wallBracePattern: "not-money",
+  /* A permanent project id and a set of opaque join keys. Neither is a price
+     and neither names a client — which is the point of the Tip4urTime export
+     being panel data only, so a sync link can serve it later. */
+  tip4urTimeProjectId: "not-money",
+  tip4urTimePanelCodes: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 
 /** The keys classified `money`, as a literal union. Derived, never restated. */

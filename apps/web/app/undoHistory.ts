@@ -128,6 +128,19 @@ export const UNDO_CLASSIFICATION = {
      it is part of the document and belongs under undo. */
   gableEndsFullHeight: "document",
   wallBracePattern: "document",
+  /**
+   * ⚠ **TRANSIENT, and this one is NOT a judgement call about tidiness.**
+   *
+   * These are stamped as a side effect of exporting to Tip4urTime, and the
+   * whole promise of a panel code is that it never changes. If undo could
+   * remove them, a Ctrl+Z after an export would hand the next export a blank
+   * ledger, which would mint FRESH codes for the very same panels — the
+   * re-import would then see every panel as new and a crew's claims would
+   * detach from the panels they built. A code is a record of something that
+   * already left the building, not part of the drawing.
+   */
+  tip4urTimeProjectId: "transient",
+  tip4urTimePanelCodes: "transient",
 } as const satisfies Record<keyof ProjectState, "document" | "transient">;
 
 export const DOCUMENT_KEYS = (Object.keys(UNDO_CLASSIFICATION) as (keyof ProjectState)[]).filter(

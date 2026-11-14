@@ -174,6 +174,13 @@ import {
 import {
   bomWidthMismatchWarning,
   buildProjectCutListCsv,
+  buildTip4urTimeCsv,
+  EMPTY_PANEL_CODE_LEDGER,
+  stampPanelCodes,
+  tip4urTimeExportProblems,
+  tip4urTimePanelKeys,
+  tip4urTimePanels,
+  type PanelCodeLedger,
   CSV_MIME_TYPE,
   DXF_MIME_TYPE,
   bracedPanelDisplayLabel,
@@ -1261,6 +1268,26 @@ export default function LayoutEditor() {
   // project, site, date, etc.") — projectName is the only genuinely new
   // input; site label and date are derived from state that already exists.
   const [projectName, setProjectName] = useState("Untitled Project");
+  /**
+   * ⚠ **THE TIP4URTIME JOIN KEYS — stamped at the first export, never before.**
+   *
+   * Tip4urTime (the crew time clock and profit-sharing app) matches panels on
+   * a code that has to survive edits, and no derivation does: a panel's
+   * stencilled name is sequential along its wall, so inserting one upstream
+   * shifts every name below it. The code is therefore remembered — but only
+   * from the moment a project actually goes to a crew, which is his own
+   * reasoning about when a design stops moving:
+   *
+   * > *"Once we start building a project there shouldn't be any edits that
+   * > happen... If we're building a project that means it's been approved."*
+   *
+   * So a design that is never exported never grows either field, and nothing
+   * migrates. Both are OPTIONAL in the file for the same reason, and
+   * therefore not a `PROJECT_FILE_VERSION` bump. See `stampPanelCodes`.
+   */
+  const [tip4urTimeProjectId, setTip4urTimeProjectId] = useState<string | null>(null);
+  const [tip4urTimePanelCodes, setTip4urTimePanelCodes] = useState<PanelCodeLedger>(EMPTY_PANEL_CODE_LEDGER);
+  const [tip4urTimeNotice, setTip4urTimeNotice] = useState<string | null>(null);
   // Shipping (Tommy: "which truck bed size are we using... how many trucks
   // will be needed... a changeable equation for how many trucks x how many
   // miles x a changeable dollars per hour that defaults at $6/mile one
@@ -2707,6 +2734,8 @@ export default function LayoutEditor() {
       squareBaleStudConfig,
       bracingStyle,
       projectName,
+      tip4urTimeProjectId,
+      tip4urTimePanelCodes,
       wallsEnabled,
       floorsEnabled,
       roofEnabled,
@@ -2933,6 +2962,11 @@ export default function LayoutEditor() {
     setSquareBaleStudConfig(s.squareBaleStudConfig);
     setBracingStyle(s.bracingStyle);
     setProjectName(s.projectName);
+    /* Optional, so a file saved before this existed loads with no id and no
+       codes — exactly the state a project that has never been exported is
+       in, which is the right answer rather than a default to invent. */
+    setTip4urTimeProjectId(s.tip4urTimeProjectId ?? null);
+    setTip4urTimePanelCodes(s.tip4urTimePanelCodes ?? EMPTY_PANEL_CODE_LEDGER);
     setWallsEnabled(s.wallsEnabled);
     setFloorsEnabled(s.floorsEnabled);
     setRoofEnabled(s.roofEnabled);
@@ -10489,6 +10523,7 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Wall panel",
         groups: panelFabricationGroups,
+        typeName: (g) => g.panelType.label,
         label: (g) => `${g.panelType.label} ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.heightIn,
@@ -10496,6 +10531,7 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Roof bearing",
         groups: roofBearingFabricationGroups,
+        typeName: (g) => (g.kind === "box-beam" ? "Box Beam" : "Truss Plate"),
         label: (g) => `${g.kind === "box-beam" ? "Box Beam" : "Truss Plate"} ${formatLengthIn(g.lengthIn, unitSystem)}`,
         widthIn: (g) => g.lengthIn,
         heightIn: (g) => g.heightIn,
@@ -10503,6 +10539,7 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Mid-wall beam",
         groups: midWallBondBeamFabricationGroups,
+        typeName: () => "Mid-Wall Beam",
         label: (g) => `Mid-Wall Beam ${formatLengthIn(g.lengthIn, unitSystem)}`,
         widthIn: (g) => g.lengthIn,
         heightIn: (g) => g.heightIn,
@@ -10510,6 +10547,7 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Spanning header",
         groups: spanningHeaderFabricationGroups,
+        typeName: () => "Spanning Header",
         label: (g) => `Spanning Header ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.heightIn,
@@ -10517,6 +10555,7 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Deck panel",
         groups: floorRoofPanelFabricationGroups,
+        typeName: (g) => (g.kind === "floor" ? "Floor Panel" : "Roof Panel"),
         label: (g) => `${g.kind === "floor" ? "Floor" : "Roof"} Panel ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.spanIn,
@@ -10524,6 +10563,7 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Tilted gable",
         groups: crossTiltFabricationGroups,
+        typeName: () => "Tilted Gable Panel",
         label: (g) => `Tilted Gable Panel ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.highHeightIn,
@@ -10565,6 +10605,59 @@ export default function LayoutEditor() {
       assemblies: exportableAssemblies,
     });
     downloadExport(text, "cut-list.csv", CSV_MIME_TYPE);
+  };
+
+  /**
+   * ⚠ **THE PANEL LIST TIP4URTIME READS — one row per PHYSICAL panel, and
+   * the one export in this app that is not per drawing.**
+   *
+   * Crews claim panels as they build them and are paid by square footage, so
+   * *"a design with 12 copies of one assembly is 12 rows with 12 different
+   * codes."* Everything else here exports unique assemblies, because that is
+   * what a shop builds from; collapsing copies in this file would collapse
+   * somebody's pay.
+   *
+   * ⚠ **Exporting STAMPS, and the stamp is the point.** Any panel without a
+   * code gets the next one and the ledger is saved with the project, so the
+   * same panel exports with the same code forever after and a re-import
+   * matches on it. See `stampPanelCodes` for why the first export is the
+   * right moment and why `nextSeq` never goes backwards.
+   *
+   * ⚠ **It reports rather than trusting itself.** `tip4urTimeExportProblems`
+   * is his own acceptance check as code — every code unique and present,
+   * every square footage above zero — and a failure is shown instead of a
+   * file being handed to an app that pays people from it.
+   */
+  const handleExportTip4urTime = () => {
+    const keys = tip4urTimePanelKeys(exportableAssemblies);
+    const ledger = stampPanelCodes(keys, tip4urTimePanelCodes);
+    /* Minted here for the same reason the codes are: a project that never
+       goes to a crew never needs one. Never re-minted, so renaming the
+       project cannot break a re-import. */
+    const projectId = tip4urTimeProjectId ?? crypto.randomUUID();
+    const input = {
+      projectName: projectName || "Untitled Project",
+      projectId,
+      panels: tip4urTimePanels(exportableAssemblies, ledger),
+    };
+    const problems = tip4urTimeExportProblems(input);
+    if (problems.length > 0) {
+      /* ⚠ Nothing is stamped and nothing is downloaded. Stamping on the way
+         to a refused export would burn codes on panels that never left. */
+      setTip4urTimeNotice(
+        `Not exported — ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.slice(0, 3).join(" ")}`,
+      );
+      return;
+    }
+    if (ledger !== tip4urTimePanelCodes) setTip4urTimePanelCodes(ledger);
+    if (projectId !== tip4urTimeProjectId) setTip4urTimeProjectId(projectId);
+    const newCodes = keys.filter((key) => tip4urTimePanelCodes.codesByKey[key] === undefined).length;
+    setTip4urTimeNotice(
+      `${input.panels.length} panel${input.panels.length === 1 ? "" : "s"} exported · ` +
+        `${newCodes} new code${newCodes === 1 ? "" : "s"} · ${input.panels.length - newCodes} kept from a previous export. ` +
+        "Save the project so the codes survive.",
+    );
+    downloadExport(buildTip4urTimeCsv(input), "tip4urtime-panels.csv", CSV_MIME_TYPE);
   };
 
   /**
@@ -14853,6 +14946,17 @@ export default function LayoutEditor() {
                 >
                   Export DXF{exportableAssemblies.length > 0 ? ` (${exportableAssemblies.length})` : ""}
                 </button>
+                {/* ⚠ One row per PHYSICAL panel, not per drawing — the crew
+                    app pays by the panel. Exporting stamps each panel with a
+                    permanent code, so save the project afterwards. */}
+                <button
+                  type="button"
+                  title="Download this project's panel list for Tip4urTime — one row per physical panel with a permanent code, so crews can claim panels and square footage. Exporting stamps any new panel with its code; save the project afterwards."
+                  disabled={exportableAssemblies.length === 0}
+                  onClick={handleExportTip4urTime}
+                >
+                  Export for Tip4urTime
+                </button>
                 <button
                   type="button"
                   aria-expanded={exportPickerOpen}
@@ -14936,6 +15040,19 @@ export default function LayoutEditor() {
                   </div>
                 )}
               </div>
+              {tip4urTimeNotice !== null && (
+                /* ⚠ It says how many codes are NEW, which is the number that
+                   tells him whether a re-export behaved: an unrelated edit
+                   should mint none. And it asks for a save, because the codes
+                   live in the project file and an unsaved export would hand
+                   the next one a blank ledger. */
+                <p style={{ fontSize: 11, margin: 0, maxWidth: 520 }}>
+                  {tip4urTimeNotice}{" "}
+                  <button type="button" style={{ fontSize: 11 }} onClick={() => setTip4urTimeNotice(null)}>
+                    Dismiss
+                  </button>
+                </p>
+              )}
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
                 Page size{" "}
                 <select

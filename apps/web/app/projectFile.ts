@@ -453,6 +453,26 @@ export interface ProjectState {
    * already in this file (zipCode, current date), so only the project name
    * itself needs to round-trip here. */
   projectName: string;
+  /**
+   * ⚠ **Tip4urTime's permanent id for this project, and the panel codes it
+   * matches on.** Both are **OPTIONAL, and therefore NOT a
+   * `PROJECT_FILE_VERSION` bump** — a design that has never been exported to
+   * the crew app has neither, which is the honest state rather than a default
+   * to invent, and an older build reading them simply ignores them.
+   *
+   * ⚠ **The id never changes, including when the project is renamed** — his
+   * requirement, because the name is what a client sees and the id is what a
+   * re-import matches.
+   *
+   * ⚠ **Spelled out rather than importing `PanelCodeLedger`.** This is a FILE
+   * SCHEMA; importing a package's type would make a rename there a silent
+   * change to what old projects mean, which is the rule the fields above
+   * already follow. `stampPanelCodes` in panel-catalog is the authority on
+   * what these DO — in particular that `nextSeq` never goes backwards, so a
+   * deleted panel's number is never reissued to a different panel.
+   */
+  tip4urTimeProjectId?: string | null;
+  tip4urTimePanelCodes?: { codesByKey: Record<string, string>; nextSeq: number };
   /** Panelizer's own "keyhole" scope-of-work checkboxes (Tommy: "I want
    * this tab to be the keyhole to getting down to what editor tools are
    * needed for this user's project") — gate which of the Wall/Floor/Roof
