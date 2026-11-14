@@ -739,10 +739,63 @@ export const TRUSS_WEB_MIN_ANGLE_DEG = 30;
  * needs more, narrower peaks to stay in a sane bracing angle instead of
  * one shallow, wide one. `riseIn` is the (possibly conservative/shortest)
  * vertical rise available to a peak; `widthIn` is the full span being
- * webbed. Always returns at least 1 (an isolated call site — e.g. a door
- * header — can force exactly 1 regardless of this).
+ * webbed. Returns at least 1 whenever a web can be built at all (an isolated
+ * call site — e.g. a door header — can force exactly 1 regardless of this),
+ * and **0 when it cannot** — see the guard below.
+ *
+ * ⚠ **`riseIn` DIVIDES, so a rise of zero returned `Infinity` PEAKS and hung
+ * the browser tab.** Found 2026-11-14 by sweeping panel heights instead of
+ * sampling one.
+ *
+ * Every caller derives `riseIn` by subtracting the two chords and the two
+ * skins from the assembly's height, so each has a height at which the rise is
+ * exactly 0:
+ *
+ * | builder | rise | singular at |
+ * |---|---|---|
+ * | `headerWebRiseIn` (door/window) | `h − 2(1.5) − 2(0.75)` | **h = 4.5in** |
+ * | `bigHeaderBeamWebRiseIn` | `h − 2(1.5) − 2(0.75)` | **h = 4.5in** |
+ * | `bigHeaderWebRiseIn` (rotated chords) | `h − 2(3.5) − 2(0.75)` | **h = 8.5in** |
+ *
+ * At the singular height `ceil(w·tan30 / 0)` is `Infinity`, `Math.max(1, …)`
+ * passed it straight through, and `buildHeaderTrussWebBraces` looped on it
+ * until the heap died — about 20 seconds to a hard OOM, no error the app
+ * could catch.
+ *
+ * ⚠ **It is reachable, and not through a field anyone types.** A Big Header's
+ * height is clamped to `bigHeaderHeightInRange` (24–48in), but a door or
+ * window header's is DERIVED:
+ * `computeHeaderHeightIn = Math.max(0, wallHeightIn − roTopZIn)`, clamped at
+ * the top end only. A 55 1/2in window on a 36in sill in a 96in wall leaves
+ * exactly 4.5in of header. Below the singular height the rise goes NEGATIVE
+ * and the old `Math.max(1, n)` accepted that too — one peak built upside
+ * down, which is where a 4in header's 20 reported overlaps came from.
+ *
+ * The guard is HERE, in the one helper all three builders route through,
+ * rather than at the call sites — the gable-window crash (2026-10-31) was
+ * fixed at its call site and the builder's own fix therefore never covered
+ * the path that actually crashed.
+ *
+ * **The threshold is the brace board itself, not a chosen number.** A web
+ * member is `PLATE_2X4_THICKNESS_IN` thick, so a gap thinner than that
+ * cannot contain a diagonal in any orientation: there is no web, and the
+ * honest answer is no members rather than a dense fan of slivers. That also
+ * removes the near-zero blow-up without a magic cap — at a 1/2in rise the
+ * old formula wanted 24 peaks in a 40in header.
+ *
+ * No real header loses a web to this: it bites only below h = 6in for a
+ * door/window header and h = 10in for a Big Header, and the Big Header's own
+ * range starts at 24in.
+ *
+ * ⚠ A header too shallow to hold a web is still a FABRICATION problem that
+ * nothing currently reports — it just quietly has no diagonals now. Belongs
+ * in the Review Log next to the overlap entries (B32); not added here
+ * because the wording is Tommy's call.
  */
 export function computeTrussWebPeakCount(widthIn: number, riseIn: number): number {
+  /* Written as `!(… >= …)` so NaN is refused too, rather than falling
+     through to `ceil(NaN)` and a count nothing can loop over. */
+  if (!(riseIn >= PLATE_2X4_THICKNESS_IN)) return 0;
   const minAngleRad = (TRUSS_WEB_MIN_ANGLE_DEG * Math.PI) / 180;
   const n = Math.ceil((widthIn * Math.tan(minAngleRad)) / (2 * riseIn));
   return Math.max(1, n);

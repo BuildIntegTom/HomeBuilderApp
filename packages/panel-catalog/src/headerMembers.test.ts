@@ -230,13 +230,41 @@ describe("buildDoorHeaderSchema / buildWindowHeaderSchema", () => {
     expect(schema.notes.some((n) => n.text.includes("truss web peak"))).toBe(true);
   });
 
-  it("⚠ no longer flags a wide, shallow header — it adds peaks instead", () => {
-    /* This asserted the opposite until 2026-11-03: a 400x5 door header was
-       the canonical "outside 30-45deg" warning. Peaks solve it now, so the
-       warning would be a lie. */
+  /**
+   * ⚠ **This case has now flipped TWICE, and the middle answer was wrong.**
+   *
+   * - Before 2026-11-03 a 400 x 5in door header warned that its web was
+   *   outside 30–45deg.
+   * - On 2026-11-03 peaks became derived rather than forced to 1, and this
+   *   test was rewritten to assert **no warning** — "peaks solve it now, so
+   *   the warning would be a lie."
+   * - They did not solve it. A 5in header has `5 − 2(1.5) − 2(0.75)` = **1/2in**
+   *   between its chords, and the solver held the 30deg floor by putting
+   *   **231 peaks** in 400in: 924 brace slivers in a half-inch gap, every one
+   *   of them overlapping its neighbours. The angle came back ≥ 30deg, so the
+   *   warning stayed silent and the lie was the silence.
+   *
+   * It warns again, for the true reason this time: no diagonal fits at all.
+   * A 400 x 5in header is not a header, and the drawing now says so.
+   */
+  it("⚠ flags a wide, shallow header as having NO web — peaks do not solve it", () => {
     const schema = buildDoorHeaderSchema(400, DEPTH_IN, 5);
+    const warning = schema.notes.find((n) => n.type === "warning");
+    expect(warning).toBeDefined();
+    expect(warning!.text).toMatch(/No truss web/);
+    expect(warning!.text).toMatch(/carries no diagonal bracing/);
+    expect(headerPeakCount(400, 5)).toBe(0);
+    /* And nothing is drawn where 924 slivers used to be. */
+    expect(buildDoorHeaderMembers(400, DEPTH_IN, 5).filter((m) => m.memberId.includes("truss_brace"))).toEqual([]);
+  });
+
+  it("⚠ does NOT flag a wide header that is deep enough to web — peaks do solve that", () => {
+    /* The 2026-11-03 change was right about the case it was aimed at: width
+       alone is handled by adding peaks, and only the shallow gap defeats it. */
+    const schema = buildDoorHeaderSchema(400, DEPTH_IN, 24);
     expect(schema.notes.some((n) => n.type === "warning")).toBe(false);
-    expect(headerWebAngleDeg(400, 5)).toBeGreaterThanOrEqual(TRUSS_WEB_MIN_ANGLE_DEG);
+    expect(headerWebAngleDeg(400, 24)).toBeGreaterThanOrEqual(TRUSS_WEB_MIN_ANGLE_DEG);
+    expect(headerPeakCount(400, 24)).toBeGreaterThan(1);
   });
 
   it("⚠ DOES still report a header too deep for its width", () => {

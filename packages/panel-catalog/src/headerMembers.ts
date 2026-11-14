@@ -204,19 +204,43 @@ export function headerWebAngleDeg(widthIn: number, heightIn: number): number {
 }
 
 /**
- * ⚠ **Reports, never corrects, and since 2026-11-03 only the STEEP side can
- * reach it.** `computeTrussWebPeakCount` adds peaks until every web clears
- * `TRUSS_WEB_MIN_ANGLE_DEG`, so a shallow web is now fixed rather than
- * flagged; a web past `HEADER_MAX_ANGLE_DEG` is a deep header, which no peak
- * count can shallow out, and which Tommy chose to build rather than refuse.
+ * ⚠ **Reports, never corrects.** `computeTrussWebPeakCount` adds peaks until
+ * every web clears `TRUSS_WEB_MIN_ANGLE_DEG`, so an ordinary shallow web is
+ * fixed rather than flagged; a web past `HEADER_MAX_ANGLE_DEG` is a deep
+ * header, which no peak count can shallow out, and which Tommy chose to build
+ * rather than refuse.
+ *
+ * ⚠ **A THIRD case since 2026-11-14: a header with no web at all.** Until
+ * then the shallow branch below carried the text *"which should not be
+ * reachable: the peak count is solved for exactly that floor"*, and that was
+ * true only because the solver would return ANY number of peaks, however
+ * absurd, to hold the 30deg floor — 231 of them for the 400 x 5in header
+ * `headerMembers.test.ts` used to assert was fine, and 57,735 for a
+ * thousandth of an inch of rise. It held the floor by generating slivers.
+ *
+ * `computeTrussWebPeakCount` now returns 0 when the gap between the chords is
+ * thinner than a brace board, so the header is built with chords and end
+ * studs and no diagonals. That is the honest geometry, and this is where the
+ * drawing says so out loud instead of printing "0.0deg at 0 peaks" and
+ * blaming a floor that no longer applies.
  */
 function angleNote(widthIn: number, heightIn: number, peakCount: number): { type: "warning"; text: string } | null {
-  const angleDeg = computeTrussWebAngleDeg(widthIn, headerWebRiseIn(heightIn), peakCount);
+  const riseIn = headerWebRiseIn(heightIn);
+  if (peakCount === 0) {
+    return {
+      type: "warning",
+      text:
+        `No truss web: a ${heightIn}in header leaves ${riseIn.toFixed(2)}in between its chords, less than the ` +
+        `${PLATE_2X4_THICKNESS_IN}in thickness of a brace board, so no diagonal fits in any orientation. Built as ` +
+        `chords and end studs only — this header carries no diagonal bracing. Reported, not auto-corrected.`,
+    };
+  }
+  const angleDeg = computeTrussWebAngleDeg(widthIn, riseIn, peakCount);
   if (angleDeg >= TRUSS_WEB_MIN_ANGLE_DEG && angleDeg <= HEADER_MAX_ANGLE_DEG) return null;
   const which =
     angleDeg > HEADER_MAX_ANGLE_DEG
       ? `steeper than the ${HEADER_MAX_ANGLE_DEG}deg top of the target range — this header is deep for its width, and adding peaks would only steepen it further`
-      : `shallower than the ${TRUSS_WEB_MIN_ANGLE_DEG}deg floor of the target range, which should not be reachable: the peak count is solved for exactly that floor`;
+      : `shallower than the ${TRUSS_WEB_MIN_ANGLE_DEG}deg floor of the target range`;
   return {
     type: "warning",
     text: `Web brace angle ${angleDeg.toFixed(1)}deg at ${peakCount} peak${peakCount === 1 ? "" : "s"} — ${which}. Reported, not auto-corrected.`,

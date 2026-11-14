@@ -10,6 +10,7 @@ import {
   computeBraceEndCutAngleDeg,
   formatPlySpecLabel,
   GIRT_WEB_PLY_SPEC,
+  PLATE_2X4_THICKNESS_IN,
   SKIN_PLY_SPEC,
   computeBraceTrapezoidCornersIn,
   computeHeaderBraceTrapezoidCornersIn,
@@ -81,8 +82,36 @@ describe("computeTrussWebPeakCount / computeTrussWebAngleDeg", () => {
     expect(computeTrussWebAngleDeg(120, rise, wide)).toBeGreaterThanOrEqual(30 - 1e-6);
   });
 
-  it("never returns fewer than 1 peak even for a very short rise", () => {
-    expect(computeTrussWebPeakCount(200, 0.001)).toBeGreaterThanOrEqual(1);
+  /**
+   * ⚠ **This test used to assert the bug.** It read:
+   *
+   *     it("never returns fewer than 1 peak even for a very short rise", () =>
+   *       expect(computeTrussWebPeakCount(200, 0.001)).toBeGreaterThanOrEqual(1));
+   *
+   * which passed, because the answer was **57,735 peaks** in a 200in header.
+   * It was written to guard the FLOOR and never asked about the ceiling, so a
+   * near-zero rise looked tested while being unbounded — and at a rise of
+   * exactly zero the same expression is `Infinity`, which hung the browser
+   * tab until the heap died (found 2026-11-14 by sweeping panel heights).
+   *
+   * Both halves of the real contract are asserted now.
+   */
+  it("gives no web at all when the gap is thinner than a brace board", () => {
+    // The hang itself: a rise of exactly 0, which divided.
+    expect(computeTrussWebPeakCount(200, 0)).toBe(0);
+    // And the absurd-but-finite neighbourhood it sat in.
+    expect(computeTrussWebPeakCount(200, 0.001)).toBe(0);
+    expect(computeTrussWebPeakCount(200, 1.49)).toBe(0);
+    // A negative rise — a header shallower than its own chords — is refused
+    // rather than built upside down, which `Math.max(1, n)` used to allow.
+    expect(computeTrussWebPeakCount(200, -3)).toBe(0);
+    expect(computeTrussWebPeakCount(200, Number.NaN)).toBe(0);
+  });
+
+  it("still never returns fewer than 1 peak once a brace board does fit", () => {
+    expect(computeTrussWebPeakCount(200, PLATE_2X4_THICKNESS_IN)).toBeGreaterThanOrEqual(1);
+    expect(computeTrussWebPeakCount(36, 18)).toBeGreaterThanOrEqual(1);
+    expect(computeTrussWebPeakCount(400, 40)).toBeGreaterThanOrEqual(1);
   });
 });
 
