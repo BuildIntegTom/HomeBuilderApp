@@ -55,7 +55,8 @@ import {
   columnStorySegments,
   divideRingFacet,
   buildTaperedPanelMembers,
-  GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN,
+  buildGablePeakPanelMembers,
+  gablePeakBeamTopBelowRooflineForPitchIn,
   ROOF_CATCHER_BEAM_DEPTH_IN,
   STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
@@ -1814,34 +1815,65 @@ export default function Building3DView({
         const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn, apexLocalIn ?? Number.NEGATIVE_INFINITY);
         let members: PanelMember[];
         if (tile.isColumn) {
-          // Real, fabricable structural Column Panel (Tommy: "panels/beam"
-          // mode) — reuses the SAME builder a normal ground-level column
-          // already uses, just at this tile's own local height (flat top,
-          // leftLocalIn === rightLocalIn by construction — see
-          // computeGableTiledRow's own columnReservationWidthIn doc
-          // comment) instead of a full story height.
+          // The real, fabricable structural panel under the ridge (Tommy:
+          // "panels/beam" mode), at this tile's own local height rather than a
+          // full story height.
+          //
+          // ⚠ This comment used to end "flat top, leftLocalIn ===
+          // rightLocalIn by construction", and that stopped being true on
+          // 2026-11-13: the ridge column is the one tile that STRADDLES the
+          // peak, so its two edges follow the real roofline and the ridge
+          // rises between them.
           /* ⚠ `tile.widthIn`, not the nominal 25.5in — the same correction
              the wall-slot column case above carries. A gable column's
              reservation comes from `columnReservationWidthIn`, which the
              caller supplies; building a fixed width inside it would leave
              the same open strip. */
-          /* ⚠ **STILL THE FLAT-TOPPED COLUMN, AND DELIBERATELY SO FOR NOW.**
-             `tallerLocalIn` now includes the apex, so this builds to exactly
-             the height it always did and this view is unchanged by the tile
-             gaining a ridge — which is the point: the apex lands as DATA
-             first, and the five-sided part that consumes it
-             (`buildGablePeakTopMembers`, built and tested beside the Gable
-             Peak Panel) is wired in once its seam with the body is right.
+          /* ⚠ **THE GABLE PEAK PANEL, five-sided when the ridge is inside it.**
+             Stage 2, 2026-11-13 — the seam this comment used to describe as
+             open is closed: there is now ONE shared top assembly spanning the
+             whole panel, and the body brings none of its own (see
+             `ColumnRakedTop`). The three rises below are what makes the top a
+             tent instead of a flat lid.
 
-             ⚠ The seam, stated so the next pass does not rediscover it: a
-             five-sided panel composed from a column body plus a sloped cap
-             gives either TWO stacked skins or a 3/4in void at their joint,
-             because each prefab piece carries its own. The fix is one shared
-             top assembly — the body built without its own top plate and skin,
-             the cap supplying them across the full width — which is a change
-             to a builder that ordinary wall columns also use, and belongs in
-             a stride of its own rather than at the end of this one. */
-          members = buildColumnStyleMembers(tile.widthIn, thicknessIn, tallerLocalIn, includeNailer);
+             ⚠ **This was `buildColumnStyleMembers`, and that was a second
+             defect of its own.** A column in the gable row IS a Gable Peak
+             Panel — page.tsx has built it as one, with its furring box and its
+             two 2x6 packs, since 2026-11-12 — so this view was drawing a plain
+             Column Panel for a part the shop sheet described with a box and
+             four 2x6s in it, and drawing it with the LEGACY girt style while
+             every other panel in this same function honours the project's.
+             Both follow from calling the same builder page.tsx calls.
+
+             ⚠ `appliedLiftIn` is this view's own "how far below the panel's top
+             the roofline sits": these heights are the LIFTED ones, and the
+             ridge beam belongs under the roof deck rather than up inside its
+             thickness. page.tsx derives the same number from the roof's pitch
+             (`gablePeakRooflineBelowTopIn`); here the lift that was actually
+             applied is the honest answer, clamping included. */
+          const edgeTopLocalIn = Math.min(leftLocalIn, rightLocalIn);
+          const gablePeakTop =
+            apexLocalIn === undefined || tile.apexXIn === undefined
+              ? undefined
+              : {
+                  apexOffsetXIn: tile.apexXIn - tile.xStartIn,
+                  leftRiseIn: leftLocalIn - edgeTopLocalIn,
+                  apexRiseIn: apexLocalIn - edgeTopLocalIn,
+                  rightRiseIn: rightLocalIn - edgeTopLocalIn,
+                };
+          members = buildGablePeakPanelMembers(
+            thicknessIn,
+            /* ⚠ The EDGE, not the ridge, once there is a ridge to carry: the
+               profile above holds the rest of the shape. With no apex the two
+               are the same number and this is the flat-topped panel exactly as
+               before. */
+            gablePeakTop ? edgeTopLocalIn : tallerLocalIn,
+            includeNailer,
+            girtStyle,
+            tile.widthIn,
+            appliedLiftIn,
+            gablePeakTop,
+          );
         } else if (tile.isWindow) {
           // Gable window (Tommy: "add an option to click-edit gable end
           // panels to become window gable end panels... this is just a
@@ -2286,15 +2318,24 @@ export default function Building3DView({
      * ridge is the panel's top and the beam hangs below it by the box's lid
      * and his quarter inch of clearance.
      *
-     * ⚠ Read from `gablePeakSlotIn` rather than written out again here. The
-     * box's own geometry decides where the beam lands, and a second copy of
-     * that arithmetic in the renderer is how the view and the shop drawings
-     * come to describe different buildings — which is the exact fault B9 was
-     * fixing when it found the beam floating 0.75in on nominal-versus-actual.
+     * ⚠ Read from the panel's own box rather than written out again here. The
+     * box's geometry decides where the beam lands, and a second copy of that
+     * arithmetic in the renderer is how the view and the shop drawings come to
+     * describe different buildings — which is the exact fault B9 was fixing
+     * when it found the beam floating 0.75in on nominal-versus-actual.
+     *
+     * ⚠ **IT IS NO LONGER A CONSTANT, because the peak is five-sided.** The
+     * drop was 3 1/4in at every pitch while the panel's top was flat. Under
+     * his two sloped planes the box hangs lower, twice over: the shared top
+     * assembly is `(3/4 + 1 1/2) / cos θ` thick rather than 2.25in, and over
+     * the 6 1/2in the box is wide that assembly is lower at the box's edges
+     * than it is at the ridge. 4.455in at 4:12, against 3.25in flat — so
+     * holding the old constant here would have driven the drawn beam up
+     * through the lid of the box it sits in.
      */
     const beamUnderFt =
       plane.highHeightFt -
-      (GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN + ROOF_CATCHER_BEAM_DEPTH_IN) / IN_PER_FT;
+      (gablePeakBeamTopBelowRooflineForPitchIn(roofPitchIn12) + ROOF_CATCHER_BEAM_DEPTH_IN) / IN_PER_FT;
 
     for (const segment of layout.segments) {
       out.push({

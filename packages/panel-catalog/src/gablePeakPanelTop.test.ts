@@ -55,12 +55,13 @@ describe("⚠ the five-sided Gable Peak Panel's top", () => {
      > outside faces. The top lid would be very weird and two pieces and
      > that's fine."* — Tommy, 2026-11-13
 
-     ⚠ **Built and tested, NOT yet wired into the app.** See the seam note on
-     `buildGablePeakTopMembers`: composing one five-sided panel out of a
-     column body plus this cap leaves either two stacked skins or a 3/4in void
-     at their joint, and the fix is a shared top assembly rather than anything
-     in here. These tests hold the geometry so that stride starts from
-     something known-good. */
+     ⚠ **WIRED 2026-11-13.** These tests were written while the top was built
+     and unwired, and they hold the SHAPE — the ridge's position at every
+     pitch, the band's `1/cos`, the two lids, the off-centre case. They
+     outlived the composition they were written against: the cap no longer
+     brings a bottom assembly of its own, because the body stopped bringing a
+     top one. The joint itself, the raked body and the shop sheet are in
+     `gablePeakSharedTop.test.ts`. */
 
   it("⚠ it is TWO pieces — one lid per slope, which is what he asked for", () => {
     const cap = buildGablePeakTopMembers(WIDTH_IN, DEPTH_IN, EDGE_TOP_IN, symmetricTop(4));

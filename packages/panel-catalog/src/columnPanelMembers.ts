@@ -1,5 +1,6 @@
-import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./componentSchema";
 import { ROOF_CATCHER_BEAM_DEPTH_IN } from "./roofCatcherBeamMembers";
+import { buildGableCornerStuds } from "./gablePanelMembers";
 import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
@@ -220,6 +221,93 @@ export function buildColumnPanelMembers(
 }
 
 /**
+ * ⚠ **A COLUMN BODY WHOSE TOP IS NOT FLAT — one shared top assembly, supplied
+ * by the caller.**
+ *
+ * This exists for exactly one part: the five-sided Gable Peak Panel, whose top
+ * is two sloped planes meeting at a ridge. That panel cannot be composed from
+ * a finished column plus a finished cap, because **each prefab piece carries
+ * its own skins**: stack them and the joint has two 3/4in sheets of plywood in
+ * it; drop the cap's and it has a 3/4in void. Both were measured.
+ *
+ * So the body stops bringing a top assembly at all and the caller's spans the
+ * whole panel. What the body still needs to know is where that assembly sits:
+ *
+ *   - `topSurfaceAtXIn` — the panel's finished top FACE, which the two side
+ *     plywood faces are cut to. (On a flat column the side ply runs to the
+ *     panel's full height and is flush with the top skin; raked, it is the
+ *     same sheet with a raked top edge.)
+ *   - `undersideAtXIn` — the BOTTOM of that assembly, which the corner studs
+ *     are cut to, the way a gable panel's are.
+ *   - `lowestUndersideZIn` — the lowest that underside gets anywhere across
+ *     the panel. Girts and blocking are laid out to clear it, which is the
+ *     same answer `gableGirtPlan` gives by spacing a gable's girts off its
+ *     SHORT edge.
+ *
+ * ⚠ **`lowestUndersideZIn` is what resolves the 0.12in nobody should accept.**
+ * A sloped skin-and-plate assembly cut plumb stands `(3/4 + 1 1/2) / cos θ`
+ * tall — 2.372in at 4:12, not 2.25in. Simply filtering the body's three top
+ * members out would leave its studs stopping at `height - 2.25` while the
+ * assembly above them wants `height - 2.372`: a 0.122in gap, small and
+ * perfectly real. Reading the studs off `undersideAtXIn` lands them on the
+ * assembly exactly, at every pitch.
+ *
+ * Both x arguments are in FULL-PANEL coordinates (0 at the left side ply's
+ * outer face), not the 24in core's.
+ */
+export interface ColumnRakedTop {
+  topSurfaceAtXIn: (xIn: number) => number;
+  undersideAtXIn: (xIn: number) => number;
+  lowestUndersideZIn: number;
+}
+
+/** The two side plywood faces, cut to a raked top edge instead of a square
+ * one. Same sheet, same thickness, same role — `trapezoidCornersIn` carries
+ * the rake, exactly as a gable's corner studs and top boards do. */
+function buildRakedColumnSidePly(depthIn: number, coreWidthIn: number, rakedTop: ColumnRakedTop): PanelMember[] {
+  return (["left", "right"] as const).map((side) => {
+    const nearXIn = side === "left" ? 0 : coreWidthIn + COLUMN_SIDE_PLY_THICKNESS_IN;
+    const farXIn = nearXIn + COLUMN_SIDE_PLY_THICKNESS_IN;
+    const nearTopZIn = rakedTop.topSurfaceAtXIn(nearXIn);
+    const farTopZIn = rakedTop.topSurfaceAtXIn(farXIn);
+    return {
+      memberId: `side_ply_${side}`,
+      material: "plywood" as const,
+      speciesGrade: null,
+      plySpec: COLUMN_SIDE_PLY_SPEC,
+      nominalSize: null,
+      /* The LONG POINT, like every other angle-cut member in this app. */
+      actualDimsIn: {
+        thicknessIn: COLUMN_SIDE_PLY_THICKNESS_IN,
+        widthIn: depthIn,
+        lengthIn: Math.max(nearTopZIn, farTopZIn),
+      },
+      orientation: "vertical" as const,
+      position: {
+        xIn: nearXIn,
+        /* The CENTRE of the depth — `trapezoidDepthIn`'s own convention. */
+        yIn: depthIn / 2,
+        zIn: 0,
+        rotationDeg: 0,
+        trapezoidCornersIn: [
+          { xIn: nearXIn, zIn: 0 },
+          { xIn: farXIn, zIn: 0 },
+          { xIn: farXIn, zIn: farTopZIn },
+          { xIn: nearXIn, zIn: nearTopZIn },
+        ] as [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D],
+        trapezoidDepthIn: depthIn,
+      },
+      role: "skin" as const,
+      qty: 1,
+      notes:
+        `${side} face, panel thickness x full height, top edge cut to the roof rake so it finishes flush with the ` +
+        `shared top assembly. Long point ${Math.max(nearTopZIn, farTopZIn).toFixed(3)}in, short point ${Math.min(nearTopZIn, farTopZIn).toFixed(3)}in.`,
+    };
+  });
+}
+
+
+/**
  * The same construction at a GIVEN overall width — the Corner Panel's builder
  * (see `buildCornerPanelMembers`), and the only reason this is separate from
  * `buildColumnPanelMembers`.
@@ -267,8 +355,23 @@ export function buildColumnStyleMembers(
    * this app built before girts had styles — never to the project default,
    * so an un-taught call site draws a stale panel rather than a wrong one. */
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  /** ⚠ **Off by default, and ordinary wall columns must keep it that way.**
+   * See `ColumnRakedTop`. Omitted, every member below is byte-identical to
+   * what this builder has always returned — `columnPanelMembers.test.ts`
+   * holds that, because a Column Panel and a Corner Panel both come through
+   * here and neither has any business changing shape for the Gable Peak. */
+  rakedTop?: ColumnRakedTop,
 ): PanelMember[] {
-  const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
+  /* ⚠ **The span girts and blocking are laid out in, which a raked top
+     SHORTENS.** On a flat panel it is skin face to skin face. Raked, the top
+     assembly hangs lower than a flat one at its lowest point, so the
+     equivalent flat panel is the one whose top plate's underside sits there —
+     `lowestUndersideZIn + PLATE + SKIN` tall, giving this span. That is what
+     keeps `computeColumnBlockingRowCount`'s own "does the last row clear the
+     top plate" check honest under a slope; it only ever removes a row. */
+  const studSpanIn = rakedTop
+    ? rakedTop.lowestUndersideZIn + PLATE_2X4_THICKNESS_IN - SKIN_THICKNESS_IN
+    : heightIn - 2 * SKIN_THICKNESS_IN;
   const coreWidthIn = totalWidthIn - 2 * COLUMN_SIDE_PLY_THICKNESS_IN;
   // A width at or under the two side faces leaves no core to build. Defensive
   // only — no caller can produce it today (the narrowest corner slot the tiler
@@ -276,13 +379,44 @@ export function buildColumnStyleMembers(
   // below 24in) — and it returns the faces that DO fit rather than lumber of
   // negative length, which would reach the cut list as a real part.
   if (coreWidthIn <= 0) return buildColumnSidePly(depthIn, heightIn, Math.max(0, coreWidthIn));
+  /* ⚠ **A RAKED BODY BRINGS NO TOP ASSEMBLY — the caller's spans the whole
+     panel.** Exactly three members go: the top skin and the two top plate
+     2x4s. Everything below them is unchanged, which is why the bottom
+     assembly still comes straight out of the shared helpers. */
   const core: PanelMember[] = [
-    ...buildSkins(coreWidthIn, depthIn, heightIn),
-    ...buildPlates(coreWidthIn, depthIn, heightIn),
-    ...buildCornerStuds(coreWidthIn, depthIn, heightIn),
+    ...buildSkins(coreWidthIn, depthIn, heightIn).filter((m) => !rakedTop || m.memberId !== "top_plate_skin"),
+    ...buildPlates(coreWidthIn, depthIn, heightIn).filter((m) => !rakedTop || !m.memberId.startsWith("top_plate_")),
+    /* ⚠ Cut to the rake, by the GABLE's own corner-stud builder — see
+       `ColumnRakedTop`. Its x is core-local and the profile's is full-panel,
+       so the function is composed with the side ply's thickness here and the
+       studs are shifted by the same amount with the rest of the core below. */
+    ...(rakedTop
+      ? buildGableCornerStuds(
+          coreWidthIn,
+          depthIn,
+          rakedTop.undersideAtXIn(COLUMN_SIDE_PLY_THICKNESS_IN) - SKIN_THICKNESS_IN,
+          rakedTop.undersideAtXIn(totalWidthIn - COLUMN_SIDE_PLY_THICKNESS_IN) - SKIN_THICKNESS_IN,
+          (xIn) => rakedTop.undersideAtXIn(xIn + COLUMN_SIDE_PLY_THICKNESS_IN),
+        )
+      : buildCornerStuds(coreWidthIn, depthIn, heightIn)),
     ...buildGirtRows(COLUMN_GIRT_ROW_COUNT, coreWidthIn, depthIn, studSpanIn, undefined, girtStyle),
   ];
-  if (includeNailer) core.push(buildNailer(coreWidthIn, heightIn));
+  /* A raked panel's nailer is sized off its SHORT point, the same answer
+     `buildGablePanelMembers` gives (`Math.min` of its two edges). No caller
+     asks for one today — the Gable Peak Panel refuses a centre nailer
+     outright, because the furring box stands where it would. */
+  if (includeNailer) {
+    core.push(
+      buildNailer(
+        coreWidthIn,
+        /* The flat panel this one is equivalent to at its SHORT point: the
+           nailer's length is taken off a panel height, and under a rake the
+           honest height is the one whose top plate sits on the lowest part of
+           the shared assembly. */
+        rakedTop ? rakedTop.lowestUndersideZIn + SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN : heightIn,
+      ),
+    );
+  }
 
   /* ⚠ Cut AFTER the shift, not before: the ring and the verticals it is cut
      around both move by the side ply's thickness, and the pass reads real
@@ -291,7 +425,9 @@ export function buildColumnStyleMembers(
     [
       ...shiftMembersX(core, COLUMN_SIDE_PLY_THICKNESS_IN),
       ...shiftMembersX(buildColumnBlocking(depthIn, studSpanIn, coreWidthIn), COLUMN_SIDE_PLY_THICKNESS_IN),
-      ...buildColumnSidePly(depthIn, heightIn, coreWidthIn),
+      ...(rakedTop
+        ? buildRakedColumnSidePly(depthIn, coreWidthIn, rakedTop)
+        : buildColumnSidePly(depthIn, heightIn, coreWidthIn)),
     ],
     depthIn,
   );

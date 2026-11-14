@@ -3,12 +3,18 @@ import {
   ROOF_CATCHER_BEAM_DEPTH_IN,
   ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN,
 } from "./roofCatcherBeamMembers";
-import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMembers";
-import { GABLE_PANEL_MIN_HEIGHT_IN, buildGablePanelMembers } from "./gablePanelMembers";
+import {
+  COLUMN_SIDE_PLY_THICKNESS_IN,
+  COLUMN_TOTAL_WIDTH_IN,
+  buildColumnStyleMembers,
+  type ColumnRakedTop,
+} from "./columnPanelMembers";
+import { buildGablePanelMembers } from "./gablePanelMembers";
 import {
   LUMBER_2X6_WIDTH_IN,
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
+  PLATE_END_CLEARANCE_IN,
   SKIN_THICKNESS_IN,
   LEGACY_GIRT_STYLE,
   type GirtStyle,
@@ -146,9 +152,21 @@ export function gablePeakSlotIn(
    * not close to the roof's top.
    */
   rooflineBelowTopIn = 0,
+  /**
+   * ⚠ **Where the plate the box hangs from actually is**, when it is not the
+   * flat one at `heightIn`.
+   *
+   * A five-sided peak has no flat top plate: one shared SLOPED assembly spans
+   * the whole panel (see `buildGablePeakTopMembers`), it is `1/cos θ` thick
+   * rather than 2.25in, and over the 6.5in the box is wide it is lower at the
+   * box's edges than at the ridge. Hanging the box from `heightIn - 2.25`
+   * under a slope would drive its lid up into that plate. Omitted, this is
+   * the flat panel's own top-plate underside, which is every other caller.
+   */
+  assemblyUndersideZIn?: number,
 ): GablePeakSlot {
-  const { topZIn: panelTopZIn } = gablePeakClearZIn(heightIn);
-  const topZIn = panelTopZIn - Math.max(0, rooflineBelowTopIn);
+  const { topZIn: flatTopPlateUndersideZIn } = gablePeakClearZIn(heightIn);
+  const topZIn = (assemblyUndersideZIn ?? flatTopPlateUndersideZIn) - Math.max(0, rooflineBelowTopIn);
   const centreXIn = widthIn / 2;
   const boxFromXIn = centreXIn - GABLE_PEAK_BOX_WIDTH_IN / 2;
   const boxToZIn = topZIn;
@@ -441,53 +459,237 @@ function shiftMembers(members: PanelMember[], deltaXIn: number, deltaZIn: number
  * 4:12 slope stand 2.37in tall, not 2.25in. The steeper of the two slopes
  * sets it, so neither side can poke through.
  */
-function capBandIn(runIn: number, riseIn: number): number {
+function topAssemblyVerticalIn(runIn: number, riseIn: number): number {
   const cosTheta = runIn > 0 ? runIn / Math.hypot(runIn, riseIn) : 1;
   return (SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN) / cosTheta;
 }
 
-/** One slope of the cap band. */
-function buildCapSlope(
-  prefix: string,
+/**
+ * The tent: this panel's finished top SURFACE at any x across its width.
+ *
+ * Two straight runs meeting at the ridge. Normally both edges are at
+ * `edgeTopZIn` (the body already reaches the roofline there) and only the
+ * ridge rises, but each edge carries its own rise so a tile whose two edges
+ * sit at different heights is expressed exactly rather than averaged.
+ */
+export function gablePeakTopSurfaceAtXIn(
   widthIn: number,
-  depthIn: number,
-  leftHeightIn: number,
-  rightHeightIn: number,
-  baseZIn: number,
-  xOffsetIn: number,
-  girtStyle: GirtStyle,
-): PanelMember[] {
-  if (widthIn <= 0) return [];
-  const slope = buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, false, girtStyle)
-    /* The body's own top skin is directly beneath, so the cap does not bring
-       a second sheet of plywood to lie on it. */
-    .filter((m) => m.memberId !== "bottom_plate_skin");
-  return shiftMembers(slope, xOffsetIn, baseZIn).map((m) => ({
-    ...m,
-    memberId: `${prefix}_${m.memberId}`,
-    notes: `${m.notes ?? ""}${m.notes ? " — " : ""}${prefix === "cap_left" ? "left" : "right"} slope of the five-sided peak, meeting its pair at the ridge`,
-  }));
+  edgeTopZIn: number,
+  top: GablePeakTopProfile,
+): (xIn: number) => number {
+  const { apexOffsetXIn, leftRiseIn, apexRiseIn, rightRiseIn } = top;
+  const rightRunIn = widthIn - apexOffsetXIn;
+  return (xIn: number) => {
+    if (xIn <= apexOffsetXIn) {
+      const t = apexOffsetXIn > 0 ? xIn / apexOffsetXIn : 1;
+      return edgeTopZIn + leftRiseIn + (apexRiseIn - leftRiseIn) * t;
+    }
+    const t = rightRunIn > 0 ? (xIn - apexOffsetXIn) / rightRunIn : 1;
+    return edgeTopZIn + apexRiseIn + (rightRiseIn - apexRiseIn) * t;
+  };
 }
 
 /**
- * How far below the roofline a five-sided peak's BODY has to stop, so the cap
- * band above it has room for its own sloped top assembly. The caller builds
- * the column body this much shorter than the tile's edge height.
+ * The UNDERSIDE of the shared top assembly at any x — the top surface less
+ * the assembly's own vertical thickness on whichever slope that x is on.
+ *
+ * ⚠ This is the one number the body's corner studs are cut to, and it is why
+ * the panel does not carry a 0.12in gap. Each slope's skin-and-plate stack is
+ * `(3/4 + 1 1/2) / cos θ` tall, not 2.25in, and the two slopes can have
+ * different θ, so there is no single band to subtract.
+ */
+export function gablePeakAssemblyUndersideAtXIn(
+  widthIn: number,
+  edgeTopZIn: number,
+  top: GablePeakTopProfile,
+): (xIn: number) => number {
+  const surfaceAtXIn = gablePeakTopSurfaceAtXIn(widthIn, edgeTopZIn, top);
+  const leftBandIn = topAssemblyVerticalIn(top.apexOffsetXIn, Math.abs(top.apexRiseIn - top.leftRiseIn));
+  const rightBandIn = topAssemblyVerticalIn(widthIn - top.apexOffsetXIn, Math.abs(top.apexRiseIn - top.rightRiseIn));
+  return (xIn: number) => surfaceAtXIn(xIn) - (xIn <= top.apexOffsetXIn ? leftBandIn : rightBandIn);
+}
+
+/**
+ * The lowest that underside gets anywhere across the panel — what girts and
+ * blocking have to clear.
+ *
+ * Read at the two outer edges and nowhere else, because that is provably
+ * where it is: the surface rises monotonically to the ridge on each slope and
+ * each slope's band is constant, so the underside is monotonic on each too.
+ */
+export function gablePeakLowestUndersideZIn(
+  widthIn: number,
+  edgeTopZIn: number,
+  top: GablePeakTopProfile,
+): number {
+  const undersideAtXIn = gablePeakAssemblyUndersideAtXIn(widthIn, edgeTopZIn, top);
+  return Math.min(undersideAtXIn(0), undersideAtXIn(widthIn));
+}
+
+/**
+ * ⚠ **Is there a five-sided top to build here at all?**
+ *
+ * Both answers are real parts. A ridge that does not land far enough inside
+ * this panel to give each slope its own top plate is a panel with a flat top,
+ * which is exactly what a peak landing on a tile's own EDGE is — and the row
+ * only reports an apex when the ridge falls strictly inside a tile anyway
+ * (see `GableTiledPanel.apexXIn`), with `page.tsx` dropping it again if
+ * capping flattens the tile.
+ *
+ * The floor is the plate's own end clearance: a slope shorter than that has
+ * no plate left once both ends are inset, and the shared assembly would be a
+ * lid with nothing under it. Asked of the CORE, since that is what the
+ * assembly spans.
+ */
+export function gablePeakHasFiveSidedTop(widthIn: number, top?: GablePeakTopProfile): top is GablePeakTopProfile {
+  if (!top) return false;
+  const coreFromXIn = COLUMN_SIDE_PLY_THICKNESS_IN;
+  const coreToXIn = widthIn - COLUMN_SIDE_PLY_THICKNESS_IN;
+  if (!(top.apexOffsetXIn - coreFromXIn > PLATE_END_CLEARANCE_IN)) return false;
+  if (!(coreToXIn - top.apexOffsetXIn > PLATE_END_CLEARANCE_IN)) return false;
+  /* A ridge that does not actually stand above its own edges is a flat top
+     however it got here, and two sloped assemblies of zero slope would be a
+     needlessly complicated way to draw one. */
+  return top.apexRiseIn - Math.max(top.leftRiseIn, top.rightRiseIn) > 1e-9;
+}
+
+/**
+ * ⚠ **The local height the slope is BUILT at before being dropped into
+ * place** — any comfortable number, because every member taken from the call
+ * is positioned off the top surface and the slope between its two ends, both
+ * of which a pure vertical shift leaves alone.
+ *
+ * It exists because the real assembly is about 2 1/2in tall and
+ * `buildGablePanelMembers` refuses a panel that cannot carry its own two
+ * skins, by THROWING — inside the 3D view's render, where a throw takes the
+ * whole viewport. Building tall and dropping the result sidesteps that
+ * entirely, which is better than teaching the gable builder about a case it
+ * has no business knowing.
+ */
+const SLOPE_BUILD_HEIGHT_IN = 12;
+
+/**
+ * One slope of the shared top assembly: its lid and the two plate 2x4s under
+ * it, and nothing else.
+ *
+ * ⚠ **Every one of these comes out of `buildGablePanelMembers`**, which is
+ * the whole design. A gable top is not a rectangle tilted over: its boards
+ * are cut with PLUMB ends, its skin and plate thicknesses are converted from
+ * perpendicular to vertical through `1/cos θ`, and its lengths are the LONG
+ * POINT a shop cuts to. Those corrections are worth 0.020in and 0.081in at
+ * 4:12 — small, and exactly the numbers that decide whether this panel
+ * finishes flush with the roof above it. They took four passes to get right
+ * once (see `gable_roof_flush_junction`), and a second hand-rolled copy here
+ * is how they would come undone.
+ *
+ * ⚠ **THE PLATES RUN ALL THE WAY TO THE RIDGE.** `buildGablePanelMembers`
+ * insets its top plates `PLATE_END_CLEARANCE_IN` at BOTH ends, which is right
+ * at a panel's outer end — the corner stud stands there — and wrong at the
+ * ridge, where nothing stands and the two slopes are supposed to meet. Left
+ * alone it opens a 3in unplated gap in the top plate directly over the
+ * furring box, which is the one place on this panel where the load from both
+ * roof planes arrives. So the plates are taken from a second call whose width
+ * is extended by exactly that clearance on the ridge side: the extension
+ * cancels the inset, the slope is unchanged (both ends move along the same
+ * line), and the plate's plumb cuts and long-point length are still the
+ * builder's own.
+ */
+function buildTopAssemblySlope(
+  prefix: "cap_left" | "cap_right",
+  fromXIn: number,
+  toXIn: number,
+  topAtFromIn: number,
+  topAtToIn: number,
+  /** Which end of this slope is the ridge — the end that gets no inset. */
+  ridgeEnd: "left" | "right",
+  depthIn: number,
+  girtStyle: GirtStyle,
+): PanelMember[] {
+  const runIn = toXIn - fromXIn;
+  if (!(runIn > 0)) return [];
+  const slopePerIn = (topAtToIn - topAtFromIn) / runIn;
+  const baseZIn = Math.min(topAtFromIn, topAtToIn) - SLOPE_BUILD_HEIGHT_IN;
+  const sideLabel = prefix === "cap_left" ? "left" : "right";
+
+  const take = (buildFromXIn: number, buildRunIn: number, ids: readonly string[]): PanelMember[] => {
+    if (!(buildRunIn > 0)) return [];
+    const leftHeightIn = topAtFromIn + slopePerIn * (buildFromXIn - fromXIn) - baseZIn;
+    const rightHeightIn = leftHeightIn + slopePerIn * buildRunIn;
+    const slope = buildGablePanelMembers(buildRunIn, depthIn, leftHeightIn, rightHeightIn, false, girtStyle).filter((m) =>
+      ids.includes(m.memberId),
+    );
+    return shiftMembers(slope, buildFromXIn, baseZIn).map((m) => ({
+      ...m,
+      memberId: `${prefix}_${m.memberId}`,
+      notes: `${m.notes ?? ""}${m.notes ? " — " : ""}${sideLabel} slope of the five-sided peak's one shared top assembly, meeting its pair at the ridge`,
+    }));
+  };
+
+  return [
+    ...take(fromXIn, runIn, ["top_plate_skin"]),
+    ...take(
+      ridgeEnd === "left" ? fromXIn - PLATE_END_CLEARANCE_IN : fromXIn,
+      runIn + PLATE_END_CLEARANCE_IN,
+      ["top_plate_2x4_ext", "top_plate_2x4_int"],
+    ),
+  ];
+}
+
+/**
+ * The vertical thickness of the shared top assembly on whichever of this
+ * peak's two slopes is steeper — the most the panel's finished top can hang
+ * below its own roofline anywhere.
+ *
+ * ⚠ The slope-by-slope numbers are what the panel is actually built to; this
+ * is the worst of the two, and nothing is positioned from it. It stays
+ * exported because it is the honest answer to "how thick is the top of this
+ * part", and because a reader reaching for a single band should find the one
+ * that cannot be poked through rather than inventing an average.
  */
 export function gablePeakCapBandIn(widthIn: number, top: GablePeakTopProfile): number {
   const leftRunIn = top.apexOffsetXIn;
   const rightRunIn = widthIn - top.apexOffsetXIn;
   return Math.max(
-    capBandIn(leftRunIn, Math.abs(top.apexRiseIn - top.leftRiseIn)),
-    capBandIn(rightRunIn, Math.abs(top.apexRiseIn - top.rightRiseIn)),
+    topAssemblyVerticalIn(leftRunIn, Math.abs(top.apexRiseIn - top.leftRiseIn)),
+    topAssemblyVerticalIn(rightRunIn, Math.abs(top.apexRiseIn - top.rightRiseIn)),
   );
 }
 
 /**
- * The cap band. `edgeTopZIn` is where the panel's own top surface sits at its
- * LOWER edge — i.e. the body height the caller would have used for a flat
- * top. The band hangs below it and rises to the ridge; the body underneath
- * must be built `gablePeakCapBandIn` shorter.
+ * ⚠ **THE FIVE-SIDED TOP: ONE SHARED ASSEMBLY, SPANNING THE WHOLE PANEL.**
+ *
+ * > *"this Gable column panel would be five-sided, or I guess technically
+ * > seven-sided including the inside and outside faces. The top lid would be
+ * > very weird and two pieces and that's fine."* — Tommy, 2026-11-13
+ *
+ * `edgeTopZIn` is the panel's own top surface at its LOWER edge; the profile's
+ * three rises carry the rest of the shape. What comes back is a lid and a pair
+ * of plate 2x4s per slope — six members, his two pieces of lid among them —
+ * and **nothing else**. The body below brings no top assembly of its own; see
+ * `ColumnRakedTop`, and the note on `buildGablePeakPanelMembers`.
+ *
+ * ⚠ **IT SPANS THE CORE, NOT THE FULL WIDTH, and that is not a shortcut.**
+ * A Column Panel's top skin covers its 24in core and the two 3/4in side
+ * plywood faces run PAST it to the panel's own top surface — that is how a
+ * flat column has always been built. Laying this assembly across the full
+ * 25.5in instead would put a lid on top of both those faces: 3/4in x the
+ * panel's depth of plywood in the same place twice, at each side, which is
+ * what `no_overlapping_members` exists to catch. The side faces are raked to
+ * the same roofline instead (`buildRakedColumnSidePly`), so the finished top
+ * is continuous across the whole width with each layer appearing once.
+ *
+ * ⚠ **No post under the ridge.** Two plates meeting is all this adds; it
+ * invents no vertical member he did not describe, and the furring box the
+ * ridge beam drops into is directly below that seam.
+ *
+ * ⚠ **Pending Building Integrity confirmation**: whether the peak wants a
+ * sloped plate per slope (what this builds — the same construction as every
+ * Gable End Panel in the app, and the lid is carried for its whole length) or
+ * one level plate right across under both slopes is a fabrication call, not a
+ * geometric one. A level plate would leave a wedge of air between itself and
+ * the lid — 4.25in deep at the ridge on a 25.5in panel at 4:12 — which would
+ * need blocking before the lid were supported, so this is the construction
+ * that stands up without inventing anything. Put to him 2026-11-13.
  */
 export function buildGablePeakTopMembers(
   widthIn: number,
@@ -496,24 +698,115 @@ export function buildGablePeakTopMembers(
   top: GablePeakTopProfile,
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
-  const { apexOffsetXIn, leftRiseIn, apexRiseIn, rightRiseIn } = top;
-  const bandIn = gablePeakCapBandIn(widthIn, top);
-  const baseZIn = edgeTopZIn - bandIn;
-  /* Heights within the band: every point is the band itself plus however far
-     this panel's top surface rises above its lower edge there. */
+  if (!gablePeakHasFiveSidedTop(widthIn, top)) return [];
+  const surfaceAtXIn = gablePeakTopSurfaceAtXIn(widthIn, edgeTopZIn, top);
+  const coreFromXIn = COLUMN_SIDE_PLY_THICKNESS_IN;
+  const coreToXIn = widthIn - COLUMN_SIDE_PLY_THICKNESS_IN;
+  const apexXIn = top.apexOffsetXIn;
   return [
-    ...buildCapSlope("cap_left", apexOffsetXIn, depthIn, bandIn + leftRiseIn, bandIn + apexRiseIn, baseZIn, 0, girtStyle),
-    ...buildCapSlope(
-      "cap_right",
-      widthIn - apexOffsetXIn,
+    ...buildTopAssemblySlope(
+      "cap_left",
+      coreFromXIn,
+      apexXIn,
+      surfaceAtXIn(coreFromXIn),
+      surfaceAtXIn(apexXIn),
+      "right",
       depthIn,
-      bandIn + apexRiseIn,
-      bandIn + rightRiseIn,
-      baseZIn,
-      apexOffsetXIn,
+      girtStyle,
+    ),
+    ...buildTopAssemblySlope(
+      "cap_right",
+      apexXIn,
+      coreToXIn,
+      surfaceAtXIn(apexXIn),
+      surfaceAtXIn(coreToXIn),
+      "left",
+      depthIn,
       girtStyle,
     ),
   ];
+}
+
+/**
+ * ⚠ **The furring box's position, derived ONCE.**
+ *
+ * The member builder and the 3D view that draws the beam both come through
+ * here. A second copy of this arithmetic in the renderer is exactly how the
+ * model and the shop drawings come to describe different buildings — the
+ * fault B9 was fixing when it found the beam floating 0.75in on
+ * nominal-versus-actual, and the fault `gablePeakSlotIn`'s own doc comment
+ * records as a 16.338in lift error.
+ *
+ * ⚠ **Under a slope the box hangs lower than 2.25in below the top, twice
+ * over**: the sloped assembly is `1/cos θ` thick rather than 2.25in, and it
+ * is lower at the box's two edges than it is at the ridge. The box is 6.5in
+ * wide and centred, so at 4:12 on a 25.5in panel that second term alone is
+ * 1.083in. Taken at whichever box edge the plate is lower over — which is an
+ * edge and not the middle, since the surface only rises towards the ridge.
+ */
+export function gablePeakSlotForPanel(
+  widthIn: number,
+  /** The panel's top surface at its LOWER edge — see `buildGablePeakTopMembers`. */
+  edgeTopZIn: number,
+  rooflineBelowTopIn: number,
+  top?: GablePeakTopProfile,
+): GablePeakSlot {
+  if (!gablePeakHasFiveSidedTop(widthIn, top)) {
+    return gablePeakSlotIn(widthIn, edgeTopZIn, rooflineBelowTopIn);
+  }
+  const undersideAtXIn = gablePeakAssemblyUndersideAtXIn(widthIn, edgeTopZIn, top);
+  const boxFromXIn = widthIn / 2 - GABLE_PEAK_BOX_WIDTH_IN / 2;
+  const hangZIn = Math.min(undersideAtXIn(boxFromXIn), undersideAtXIn(boxFromXIn + GABLE_PEAK_BOX_WIDTH_IN));
+  return gablePeakSlotIn(widthIn, edgeTopZIn, rooflineBelowTopIn, hangZIn);
+}
+
+/**
+ * ⚠ **How far below the ROOFLINE at the ridge the beam's top face lands** —
+ * the one number the 3D view needs to place the beam, and it is no longer a
+ * constant once the panel's top is five-sided.
+ *
+ * Measured off `gablePeakSlotForPanel` rather than written out again, so it
+ * cannot drift from the box the beam actually drops into.
+ * `GABLE_PEAK_BEAM_TOP_BELOW_PANEL_TOP_IN` remains the flat-topped answer
+ * (3 1/4in) and this returns exactly that when there is no ridge inside the
+ * panel.
+ */
+export function gablePeakBeamTopBelowRooflineIn(
+  widthIn: number = COLUMN_TOTAL_WIDTH_IN,
+  top?: GablePeakTopProfile,
+): number {
+  /* Any reference height: every term below is a difference, and the roofline
+     and the panel's top coincide at a lift of zero. */
+  const referenceEdgeTopZIn = 1000;
+  const slot = gablePeakSlotForPanel(widthIn, referenceEdgeTopZIn, 0, top);
+  const ridgeZIn = referenceEdgeTopZIn + (gablePeakHasFiveSidedTop(widthIn, top) ? top.apexRiseIn : 0);
+  return ridgeZIn - slot.beamToZIn;
+}
+
+/**
+ * The same number for a renderer that has the roof's PITCH in hand but not
+ * the gable tile — the 3D view draws the ridge beam off the roof plane, a
+ * memo away from the one that builds the panel.
+ *
+ * ⚠ **It takes the ridge at the panel's own centre, which is where the real
+ * placement path puts it.** Measured on 2026-11-13: `placeColumnUnderPeak`
+ * lands the apex at 50.0% of the column on every wall from 12ft to 40ft, with
+ * and without openings below. (The 26.5/38.0/67.7% figures that briefly said
+ * otherwise came from a synthetic test that made a whole 48in slot the
+ * column.) The panel's own box is built from its tile's real apex either way —
+ * only this drawn beam would sit off, and only if that ever stopped being
+ * true.
+ */
+export function gablePeakBeamTopBelowRooflineForPitchIn(
+  pitchIn12: number,
+  widthIn: number = COLUMN_TOTAL_WIDTH_IN,
+): number {
+  return gablePeakBeamTopBelowRooflineIn(widthIn, {
+    apexOffsetXIn: widthIn / 2,
+    leftRiseIn: 0,
+    apexRiseIn: (widthIn / 2) * (pitchIn12 / 12),
+    rightRiseIn: 0,
+  });
 }
 
 /**
@@ -543,23 +836,36 @@ export function buildGablePeakPanelMembers(
      the box takes its bearing off. Measuring from `heightIn` here would have
      hung the box up inside the cap, the same shape of fault as the 16.338in
      lift error that function's own doc comment records. */
-  const slotBandIn = top ? gablePeakCapBandIn(widthIn, top) : 0;
-  const slot = gablePeakSlotIn(widthIn, heightIn - slotBandIn, rooflineBelowTopIn);
+  const fiveSided = gablePeakHasFiveSidedTop(widthIn, top);
+  const slot = gablePeakSlotForPanel(widthIn, heightIn, rooflineBelowTopIn, top);
   /* ⚠ **Never a centre nailer on this panel.** A nailer stands at mid-width,
      which is exactly where the box is, so the two would occupy the same
      straw. The box is the thing the panel exists for. */
-  /* ⚠ **THE BODY STOPS SHORT WHEN THERE IS A CAP**, by exactly the band the
-     cap's own sloped top assembly needs — see `gablePeakCapBandIn`. Building
-     the body to the full edge height and putting the cap above it drove the
-     cap's plates 1.87in down through the body's top plate at 4:12. */
-  const bandIn = top ? gablePeakCapBandIn(widthIn, top) : 0;
-  const bodyHeightIn = heightIn - bandIn;
-  const column = buildColumnStyleMembers(widthIn, depthIn, bodyHeightIn, includeNailer && false, girtStyle);
-  const added = [...buildBoxMembers(slot, depthIn), ...buildStudPacks(slot, depthIn, bodyHeightIn)];
-  /* The cap is added AFTER the cut pass: it sits entirely above the body, so
-     nothing in it runs across the box or the packs. */
-  const cap = top ? buildGablePeakTopMembers(widthIn, depthIn, heightIn, top, girtStyle) : [];
-  return [...cutRowsAroundObstacles(column, added), ...added, ...cap];
+  /* ⚠ **ONE SHARED TOP ASSEMBLY — the body brings none of its own.**
+     This is the whole of stride 2, and three wrong answers came before it.
+     A five-sided panel cannot be composed from a finished column plus a
+     finished cap, because each prefab piece carries its own skins: stacked,
+     the joint holds two 3/4in sheets of plywood; with the cap's dropped, it
+     holds a 3/4in void. Both were measured, and the band version was worse
+     still — the cap's own bottom plate and its own sloped top plate landed in
+     the same 2.25in of space at each outer edge, a full overlap, with a
+     1.33in offcut of corner stud between them.
+     So the body is built to its real edge height with its top skin and top
+     plates omitted, its corner studs and its two side plywood faces cut to
+     the roofline, and the assembly above spans the whole panel exactly once. */
+  const rakedTop: ColumnRakedTop | undefined = fiveSided
+    ? {
+        topSurfaceAtXIn: gablePeakTopSurfaceAtXIn(widthIn, heightIn, top),
+        undersideAtXIn: gablePeakAssemblyUndersideAtXIn(widthIn, heightIn, top),
+        lowestUndersideZIn: gablePeakLowestUndersideZIn(widthIn, heightIn, top),
+      }
+    : undefined;
+  const column = buildColumnStyleMembers(widthIn, depthIn, heightIn, includeNailer && false, girtStyle, rakedTop);
+  const added = [...buildBoxMembers(slot, depthIn), ...buildStudPacks(slot, depthIn, heightIn)];
+  /* The top assembly is added AFTER the cut pass: it sits entirely above the
+     box and the packs, so nothing in it runs across them. */
+  const sharedTop = fiveSided ? buildGablePeakTopMembers(widthIn, depthIn, heightIn, top, girtStyle) : [];
+  return [...cutRowsAroundObstacles(column, added), ...added, ...sharedTop];
 }
 
 /** Wraps `buildGablePeakPanelMembers` in the full shared component schema. */

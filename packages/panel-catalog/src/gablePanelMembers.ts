@@ -132,7 +132,16 @@ export function computeGableRipCallout(
  * in rather than derived here, so the stud, the plates and the skin are all
  * reading one roofline.
  */
-function buildGableCornerStuds(
+/**
+ * ⚠ **Exported for the Gable Peak Panel, whose COLUMN body is raked to the
+ * same roofline.** A five-sided peak has no flat top assembly of its own —
+ * one shared sloped assembly spans the whole panel (see
+ * `buildGablePeakTopMembers`) — so its body's corner studs have to be cut to
+ * the rake exactly like a gable's. The rake cut is precisely the thing no
+ * second copy of should exist, so `buildColumnStyleMembers` reaches this
+ * through its `rakedTop` option rather than growing a hand-rolled twin.
+ */
+export function buildGableCornerStuds(
   widthIn: number,
   depthIn: number,
   leftStudSpanIn: number,
