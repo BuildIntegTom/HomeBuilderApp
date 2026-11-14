@@ -66,20 +66,25 @@ is cut, what sets the radius) was answering the wrong question.
    a Tiny House: 84 panels, 84 unique codes, re-export byte-identical.
    Two questions left (a Safety Gap tile's claimability; per-company ledgers)
    in `Claude outputs/tip4urtime-export-queued-2026-11-14.md`.
-6. **Jack studs take optional 2x4s** — queued 2026-11-14. The plywood jack
-   sheet stays the default (I had read his "no plywood skins on either side"
-   as covering it; it does not). Two toggles add a 2x4 at the exterior and
-   interior wythe, taking the jack from 3/4in to 2 1/4in in elevation.
-   ⚠ Not a toggle-sized job: `jackStudThicknessIn` feeds the clear rough
-   opening, a Big Header's chord lengths and its web's end inset, so an
-   opening gets 3in narrower unless the slot grows. One open question —
-   project-wide or per opening.
+6. ~~**Jack studs take optional 2x4s**~~ — **DONE 2026-11-14.** The plywood
+   jack sheet stays the default (I had read his "no plywood skins on either
+   side" as covering it; it does not). A five-option select in Settings →
+   Panelizer adds a 2x4 at the exterior wythe, the interior, or both, taking
+   the jack from 3/4in to 2 1/4in in elevation — both wythes share one band,
+   which is the only reading under which his 2 1/4in works. A 48in slot's
+   clear rough opening goes 46.5in -> 43.5in.
+   ⚠ It also turned out `jackStudConfig` was **never saved with the project
+   at all**, so a design drawn with 2x4 jack studs reopened as plywood and
+   quietly became a different building. Persisted now.
 7. **The shallow-shed cross-tilt hole** — his cross-tilt answer resolved to
    *no change* (the low edge is the roof plane; thickening it pushes the
    panel through the roof it carries). What is left is the other direction:
-   below the derived minimum the row is left UNDRAWN, which fails his own
-   "fills the entire space". Fix is the same move shallow headers just got —
-   a solid tapered filler instead of a framed panel. Both in
+   below the derived minimum the row is left UNDRAWN. ⚠ **Measured
+   2026-11-14 and I now recommend CLOSING it rather than building the
+   filler**: on a 24x16 Tiny House the low edge is 58.8in at the default
+   4:12 and still 14.7in at 1:12, against a ~7in minimum — the refusal needs
+   a near-flat roof on a tiny footprint, and when it fires it already names
+   both numbers as a disclaimer in the Roof section. His call. Numbers in
    `Claude outputs/jack-stud-2x4-option-and-cross-tilt-2026-11-14.md`.
 
 ## D. Open questions that are not blocking anything

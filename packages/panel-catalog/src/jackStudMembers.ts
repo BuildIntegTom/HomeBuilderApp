@@ -17,15 +17,102 @@ import {
  * opening framed this way needs backing at BOTH wythes, not one
  * continuous sheet spanning the depth.
  */
-export type JackStudConfig = "plywood" | "2x4-stud";
+/**
+ * ⚠ **THE SHEET IS RIGHT, AND THE 2x4s ARE AN ADDITION TO IT — 2026-11-14.**
+ *
+ * > *"I misunderstood the plywood. Jack stud question, those are definitely
+ * > supposed to be plywood. It would be nice if there was an option to change
+ * > or add 2x4s to the jack studs. Perhaps Jack studs should have editable
+ * > options to add a 2x4 to the inside and a 2x4 to the outside, making Jack
+ * > studs default 3/4 in horizontal elevation view with the option of adding
+ * > 2x4s to make them two and a quarter horizontal elevation view length."*
+ *
+ * His earlier *"I don't think we need plywood skins on either side"* was
+ * about a HEADER'S ENDS, which stopped being plywood on 2026-11-01. It never
+ * covered these, and reading it as if it did was my mistake.
+ *
+ * ⚠ **"Inside" and "outside" are the two WYTHES, not two sides along the
+ * wall, and that is the only reading under which his 2 1/4in works.** The
+ * sheet is panel-depth wide, so it already spans both wythes; a 2x4 added at
+ * each wythe sits beside it in the SAME 1 1/2in band of elevation length.
+ * 0.75 + 1.5 = 2.25 with one 2x4 or with both. End to end along the wall it
+ * would be 3.75in and contradict his own number.
+ *
+ * `"2x4-stud"` is the pre-existing REPLACE mode (*"change ... 2x4s"*) and is
+ * unchanged, so a design drawn with it still builds what it always did.
+ */
+export type JackStudConfig =
+  /** The default: one 3/4in sheet, panel-depth wide. */
+  | "plywood"
+  /** Studs INSTEAD of the sheet — pre-existing, unchanged. */
+  | "2x4-stud"
+  | "plywood+ext-2x4"
+  | "plywood+int-2x4"
+  /** The sheet plus a 2x4 at each wythe — his 2 1/4in. */
+  | "plywood+2x4";
 
 export const JACK_STUD_THICKNESS_IN = 0.75;
 
-/** In-plane (along-the-slot) thickness one jack stud eats into the slot's
- * own width — 0.75in for the plywood sheet, 1.5in (a 2x4's thickness) for
- * the stud pair. Used by `computeRoughOpeningWidthIn` below. */
+/** Every configuration, in the order the control offers them: the default
+ *  first, then the additions, then the replace mode. */
+export const JACK_STUD_CONFIGS: readonly JackStudConfig[] = [
+  "plywood",
+  "plywood+ext-2x4",
+  "plywood+int-2x4",
+  "plywood+2x4",
+  "2x4-stud",
+];
+
+/** Does this configuration include the plywood sheet? */
+export function jackStudHasSheet(config: JackStudConfig): boolean {
+  return config !== "2x4-stud";
+}
+
+/** Which wythes get a 2x4 beside (or instead of) the sheet. */
+export function jackStud2x4Wythes(config: JackStudConfig): readonly ("ext" | "int")[] {
+  switch (config) {
+    case "plywood":
+      return [];
+    case "plywood+ext-2x4":
+      return ["ext"];
+    case "plywood+int-2x4":
+      return ["int"];
+    case "2x4-stud":
+    case "plywood+2x4":
+      return ["ext", "int"];
+  }
+}
+
+/**
+ * In-plane (along-the-slot) thickness one jack stud eats into the slot's own
+ * width. Used by `computeRoughOpeningWidthIn` below — and by a Big Header's
+ * chord lengths and its web's end inset, so this number is not cosmetic: a
+ * thicker jack takes its difference out of the rough opening on BOTH sides.
+ *
+ * ⚠ Both wythes' 2x4s occupy the same band, so one or two costs the same
+ * 1 1/2in — see `JackStudConfig`'s own note on why that is the reading.
+ */
 export function jackStudThicknessIn(config: JackStudConfig): number {
-  return config === "plywood" ? JACK_STUD_THICKNESS_IN : PLATE_2X4_THICKNESS_IN;
+  return (
+    (jackStudHasSheet(config) ? JACK_STUD_THICKNESS_IN : 0) +
+    (jackStud2x4Wythes(config).length > 0 ? PLATE_2X4_THICKNESS_IN : 0)
+  );
+}
+
+/** What this configuration is called wherever it is shown — the control, the
+ *  two Rough Opening detail tables and the fastener notes all read this, so
+ *  they cannot describe three different jack studs. */
+export function jackStudConfigLabel(config: JackStudConfig): string {
+  const sheet = jackStudHasSheet(config) ? "3/4in plywood sheet" : "";
+  const wythes = jackStud2x4Wythes(config);
+  const studs =
+    wythes.length === 0
+      ? ""
+      : wythes.length === 2
+        ? "2x4 at both wythes"
+        : `2x4 at the ${wythes[0] === "ext" ? "exterior" : "interior"} wythe`;
+  if (sheet && studs) return `${sheet} + ${studs}`;
+  return sheet || studs;
 }
 
 /**
@@ -103,8 +190,20 @@ function buildPlywoodJackStud(depthIn: number, heightIn: number): PanelMember[] 
   ];
 }
 
-function build2x4JackStuds(depthIn: number, heightIn: number): PanelMember[] {
-  return (["ext", "int"] as const).map((wythe) => ({
+/**
+ * ⚠ **`xIn` is where they start, and it is NOT always 0.** Beside a sheet
+ * they stand INBOARD of it, toward the rough opening, because the sheet is
+ * the piece screwed to the adjacent wall panel — so the order across the
+ * slot edge is wall panel, sheet, 2x4, then the opening. Without the sheet
+ * they take its place at the edge, which is the pre-existing behaviour.
+ */
+function build2x4JackStuds(
+  depthIn: number,
+  heightIn: number,
+  wythes: readonly ("ext" | "int")[],
+  xIn: number,
+): PanelMember[] {
+  return wythes.map((wythe) => ({
     memberId: `jack_stud_2x4_${wythe}`,
     material: "dimensional_lumber",
     speciesGrade: LUMBER_SPECIES_GRADE,
@@ -112,12 +211,14 @@ function build2x4JackStuds(depthIn: number, heightIn: number): PanelMember[] {
     nominalSize: "2x4",
     actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: heightIn },
     orientation: "vertical",
-    position: { xIn: 0, yIn: wythe === "ext" ? 0 : depthIn - PLATE_2X4_WIDTH_IN, zIn: 0, rotationDeg: 0 },
+    position: { xIn, yIn: wythe === "ext" ? 0 : depthIn - PLATE_2X4_WIDTH_IN, zIn: 0, rotationDeg: 0 },
     role: "jack_stud",
     qty: 1,
     notes:
-      `${wythe}-wythe jack stud, one side of a pair (one each side of the rough opening) — positioned flush ` +
-      "with the adjacent wall panel's own corner/standard stud, right at the slot's perimeter.",
+      `${wythe}-wythe jack stud, one side of a pair (one each side of the rough opening) — ` +
+      (xIn > 0
+        ? "standing inboard of the 3/4in jack sheet, against its inside face, so the sheet still lands on the adjacent wall panel."
+        : "positioned flush with the adjacent wall panel's own corner/standard stud, right at the slot's perimeter."),
   }));
 }
 
@@ -129,7 +230,11 @@ function build2x4JackStuds(depthIn: number, heightIn: number): PanelMember[] {
  * placement mechanism yet).
  */
 export function buildJackStudMembers(depthIn: number, heightIn: number, config: JackStudConfig = "plywood"): PanelMember[] {
-  return config === "plywood" ? buildPlywoodJackStud(depthIn, heightIn) : build2x4JackStuds(depthIn, heightIn);
+  const hasSheet = jackStudHasSheet(config);
+  return [
+    ...(hasSheet ? buildPlywoodJackStud(depthIn, heightIn) : []),
+    ...build2x4JackStuds(depthIn, heightIn, jackStud2x4Wythes(config), hasSheet ? JACK_STUD_THICKNESS_IN : 0),
+  ];
 }
 
 /**
@@ -149,7 +254,7 @@ export function buildJackStudSchema(depthIn: number, heightIn: number, config: J
     // even though there's a real gap between them) — consistent with the
     // "not to exact scale" 3D-preview convention this schema shares with
     // every other draft component.
-    overallDimensions: { heightIn, widthIn: config === "plywood" ? JACK_STUD_THICKNESS_IN : PLATE_2X4_THICKNESS_IN, depthIn },
+    overallDimensions: { heightIn, widthIn: jackStudThicknessIn(config), depthIn },
     members: buildJackStudMembers(depthIn, heightIn, config),
     fasteners: [],
     notes: [
@@ -159,8 +264,8 @@ export function buildJackStudSchema(depthIn: number, heightIn: number, config: J
           "Height shown is the rough-opening-to-header span passed in by the caller — headers/sills/jack studs " +
           "don't have their own tracked placement mechanism yet, so a real design's actual sill-top-to-header-" +
           "bottom height isn't independently confirmed here." +
-          (config === "2x4-stud"
-            ? " The 2 studs (ext/int wythe) are shown at their real positions but not connected by any modeled blocking between them."
+          (jackStud2x4Wythes(config).length > 0
+            ? " The 2x4 jack stud(s) are shown at their real positions but not connected by any modeled blocking between them."
             : ""),
       },
     ],

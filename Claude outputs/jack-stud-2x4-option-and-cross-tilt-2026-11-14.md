@@ -2,7 +2,7 @@
 
 ---
 
-## A. Jack studs: plywood is right, and they should take optional 2x4s
+## A. Jack studs: plywood is right, and they take optional 2x4s — **BUILT**
 
 **I had this backwards and he corrected it.** I flagged that jack studs still
 default to a 3/4in plywood sheet, reading his *"I don't think we need plywood
@@ -55,13 +55,32 @@ either/or, and he is asking for **plywood PLUS optional 2x4s**. The honest
 shape is `{ sheet: true; ext2x4: boolean; int2x4: boolean }`, with the
 existing two values migrated onto it.
 
-### Open question
+### Decided: project-wide
 
-**Project-wide, or per opening?** Every other framing choice of this kind in
-the app is a project setting. Per-opening would mean a new stored field on the
-slot and a new reason for two visually identical openings to be different
-parts. My read is project-wide, under Settings → Panelizer, unless he says
-otherwise.
+Every other framing choice of this kind in the app is a project setting, and
+per-opening would mean a new stored field on the slot plus a new reason for
+two visually identical openings to be different parts. It lives in
+**Settings → Panelizer**, as a five-option select rather than the old pair of
+toggles — the choice stopped being either/or, and five toggles would read as
+five independent switches rather than one choice.
+
+### ⚠ And it was never saved at all
+
+`jackStudConfig` was **not in `ProjectState`**. A project saved with 2x4 jack
+studs reopened as plywood — silently a different building, since the setting
+moves the clear rough opening on both sides, a Big Header's chord lengths and
+its web's end inset. Persisted now as an optional field (so no
+`PROJECT_FILE_VERSION` bump, and an old file loads as plywood, which is what
+it was drawn with) and classified `document` for undo.
+
+### Measured
+
+`jackStudThicknessIn`: 0.75 → 2.25 with a 2x4 at either wythe or both, and
+the pre-existing `2x4-stud` replace mode still 1.5. A 48in slot's clear rough
+opening goes 46.5in → 43.5in. The 2x4 stands at x = 0.75, inboard of the
+sheet, and `overlappingMemberPairs` on the assembly is empty. Confirmed in the
+browser: the note under the control reads 1½" off the slot width at the
+default and 4½" with both 2x4s.
 
 ### Also closed
 
@@ -110,9 +129,31 @@ filler** — a board ripped to the taper, which fills the space, carries the
 bearing and is trivially buildable. Replace the refusal with that below the
 minimum, keep the framed panel above it.
 
-Not built here: it needs its own member builder, a shop sheet, a price bucket
-and an overlap pin, the same four things the Big Header needed.
+### ⚠ MEASURED 2026-11-14 — and it argues for NOT building the filler
 
-⚠ Worth knowing how reachable it is before spending the stride: a 16ft-deep
-shed at 4:12 gives a 58.8in interior low edge, nowhere near the ~7in minimum.
-It bites only on a small span, a very shallow pitch, or both.
+I measured how reachable the refusal actually is before spending a stride on
+it, on a 24 x 16 Tiny House:
+
+| pitch | minimum low edge | what the Tiny House actually gets |
+|---|---|---|
+| 1:12 | 7.71in | **14.7in** |
+| 2:12 | 7.43in | 29.4in |
+| 3:12 | 7.15in | 44.1in |
+| 4:12 (default) | 6.87in | **58.8in** |
+| 6:12 | 8.34in | 88.3in |
+| 12:12 | 6.81in | 176.5in |
+
+Even at the shallowest pitch the app will draw, an ordinary small building has
+**twice** the low edge it needs; at the default it has eight times. The
+refusal needs a near-flat roof on a tiny footprint.
+
+**And when it does fire it already says so in words** —
+`crossTiltTakeoff.refusal` is rendered as a disclaimer in the Roof section
+(`page.tsx:14361`), naming the two numbers. So the failure is reported rather
+than silent, which is the half of his "fills the entire space" that actually
+matters: the drawing never quietly omits the row.
+
+**Recommendation: close this, do not build the filler.** A new member builder,
+shop sheet, price bucket and overlap pin — the four things the Big Header
+needed — for a case that requires a roof almost flat enough to pond. If he
+disagrees the design above is ready to build.

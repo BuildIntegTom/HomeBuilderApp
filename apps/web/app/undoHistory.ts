@@ -139,6 +139,10 @@ export const UNDO_CLASSIFICATION = {
    * detach from the panels they built. A code is a record of something that
    * already left the building, not part of the drawing.
    */
+  /* It changes the clear rough opening, the members on every opening and a
+     Big Header's chord lengths, so it is part of the document and belongs
+     under undo. */
+  jackStudConfig: "document",
   tip4urTimeProjectId: "transient",
   tip4urTimePanelCodes: "transient",
 } as const satisfies Record<keyof ProjectState, "document" | "transient">;

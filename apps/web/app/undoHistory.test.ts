@@ -49,9 +49,16 @@ describe("what counts as the document", () => {
     // would mint fresh codes for the very same panels and detach a crew's
     // claims from the panels they built. A code records something that has
     // already left the building; it is not part of the drawing.
-    expect(all.length).toBe(82);
-    // ...and still 75 document keys: neither of the two is one.
-    expect(DOCUMENT_KEYS.length).toBe(75);
+    // 82 -> 83 on 2026-11-14: `jackStudConfig`, how a rough opening's jack
+    // studs are made up. ⚠ It was not persisted AT ALL until that day, which
+    // was a defect rather than an omission — it sets the clear rough opening
+    // on both sides, a Big Header's chord lengths and its web's end inset, so
+    // a project saved with 2x4 jack studs reopened as plywood and quietly
+    // became a different building. Classified `document`: it changes what is
+    // drawn and what is cut.
+    expect(all.length).toBe(83);
+    // ...75 -> 76 document keys. (The two Tip4urTime keys above are not.)
+    expect(DOCUMENT_KEYS.length).toBe(76);
   });
 
   it("where the user is standing is NOT the document", () => {

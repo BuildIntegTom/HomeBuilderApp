@@ -6,8 +6,11 @@ import {
   computeHeaderHeightIn,
   computeRoughOpeningWidthIn,
   jackStudThicknessIn,
+  jackStudConfigLabel,
+  JACK_STUD_CONFIGS,
   JACK_STUD_THICKNESS_IN,
 } from "./jackStudMembers";
+import { overlappingMemberPairs } from "./memberPrism";
 import { memberBoxSizeIn, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN } from "./panelMemberHelpers";
 
 const DEPTH_IN = 15.5;
@@ -106,5 +109,72 @@ describe("buildJackStudSchema", () => {
     const schema = buildJackStudSchema(DEPTH_IN, HEIGHT_IN, "2x4-stud");
     expect(schema.overallDimensions.widthIn).toBeCloseTo(PLATE_2X4_THICKNESS_IN, 6);
     expect(schema.members).toHaveLength(2);
+  });
+});
+
+/**
+ * ⚠ **THE SHEET PLUS OPTIONAL 2x4s — 2026-11-14.**
+ *
+ * > *"those are definitely supposed to be plywood. It would be nice if there
+ * > was an option to change or add 2x4s... making Jack studs default 3/4 in
+ * > horizontal elevation view with the option of adding 2x4s to make them two
+ * > and a quarter horizontal elevation view length."*
+ *
+ * His 2 1/4in is the whole test: it only comes out that way if "inside" and
+ * "outside" are the two WYTHES, so both 2x4s share one band of elevation
+ * length beside the sheet. End to end along the wall it would be 3 3/4in.
+ */
+describe("⚠ jack studs: the sheet, plus a 2x4 at either wythe", () => {
+  it("⚠ is 3/4in by default and 2 1/4in with 2x4s, one wythe or both", () => {
+    expect(jackStudThicknessIn("plywood")).toBeCloseTo(0.75, 9);
+    expect(jackStudThicknessIn("plywood+ext-2x4")).toBeCloseTo(2.25, 9);
+    expect(jackStudThicknessIn("plywood+int-2x4")).toBeCloseTo(2.25, 9);
+    expect(jackStudThicknessIn("plywood+2x4")).toBeCloseTo(2.25, 9);
+    /* The pre-existing replace mode is untouched. */
+    expect(jackStudThicknessIn("2x4-stud")).toBeCloseTo(PLATE_2X4_THICKNESS_IN, 9);
+  });
+
+  it("⚠ the 2x4 stands INBOARD of the sheet, not on top of it", () => {
+    /* The sheet is the piece screwed to the adjacent wall panel, so it keeps
+       the slot edge and the stud takes the space toward the opening. Two
+       solids cannot share a volume. */
+    const members = buildJackStudMembers(DEPTH_IN, HEIGHT_IN, "plywood+2x4");
+    const sheet = members.find((m) => m.memberId === "jack_stud_sheet")!;
+    expect(sheet.position.xIn).toBe(0);
+    for (const wythe of ["ext", "int"] as const) {
+      const stud = members.find((m) => m.memberId === `jack_stud_2x4_${wythe}`)!;
+      expect(stud.position.xIn).toBeCloseTo(JACK_STUD_THICKNESS_IN, 9);
+    }
+    /* Nothing overlaps, which is the standing rule. */
+    expect(overlappingMemberPairs(members)).toEqual([]);
+  });
+
+  it("builds exactly the members each configuration names", () => {
+    const ids = (config: Parameters<typeof buildJackStudMembers>[2]) =>
+      buildJackStudMembers(DEPTH_IN, HEIGHT_IN, config).map((m) => m.memberId);
+    expect(ids("plywood")).toEqual(["jack_stud_sheet"]);
+    expect(ids("plywood+ext-2x4")).toEqual(["jack_stud_sheet", "jack_stud_2x4_ext"]);
+    expect(ids("plywood+int-2x4")).toEqual(["jack_stud_sheet", "jack_stud_2x4_int"]);
+    expect(ids("plywood+2x4")).toEqual(["jack_stud_sheet", "jack_stud_2x4_ext", "jack_stud_2x4_int"]);
+    /* ⚠ The replace mode builds what it always did, in the same order and at
+       the same x — a project drawn with it is unchanged. */
+    expect(ids("2x4-stud")).toEqual(["jack_stud_2x4_ext", "jack_stud_2x4_int"]);
+    for (const m of buildJackStudMembers(DEPTH_IN, HEIGHT_IN, "2x4-stud")) expect(m.position.xIn).toBe(0);
+  });
+
+  it("⚠ a thicker jack takes its difference out of the rough opening, on BOTH sides", () => {
+    /* The reason this is not a cosmetic setting. A 48in slot loses 1 1/2in to
+       the sheet alone and 4 1/2in once both sides carry a 2x4. */
+    expect(computeRoughOpeningWidthIn(48, "plywood")).toBeCloseTo(46.5, 9);
+    expect(computeRoughOpeningWidthIn(48, "plywood+2x4")).toBeCloseTo(43.5, 9);
+  });
+
+  it("every configuration is offered by the control, and each one is named", () => {
+    expect(JACK_STUD_CONFIGS).toHaveLength(5);
+    for (const config of JACK_STUD_CONFIGS) {
+      expect({ config, label: jackStudConfigLabel(config).length > 0 }).toEqual({ config, label: true });
+    }
+    expect(jackStudConfigLabel("plywood+2x4")).toBe("3/4in plywood sheet + 2x4 at both wythes");
+    expect(jackStudConfigLabel("2x4-stud")).toBe("2x4 at both wythes");
   });
 });

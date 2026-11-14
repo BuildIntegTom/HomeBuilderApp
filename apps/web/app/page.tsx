@@ -231,6 +231,10 @@ import {
   computeRoughOpeningWidthIn,
   doorRoughOpeningSelectedHeightIn,
   jackStudThicknessIn,
+  jackStudHasSheet,
+  jackStud2x4Wythes,
+  jackStudConfigLabel,
+  JACK_STUD_CONFIGS,
   JACK_STUD_THICKNESS_IN,
   safetyGapSheetThicknessIn,
   PLATE_2X4_THICKNESS_IN,
@@ -2733,6 +2737,7 @@ export default function LayoutEditor() {
       nailerOffsetIn,
       squareBaleStudConfig,
       bracingStyle,
+      jackStudConfig,
       projectName,
       tip4urTimeProjectId,
       tip4urTimePanelCodes,
@@ -2961,6 +2966,9 @@ export default function LayoutEditor() {
     setNailerOffsetIn(s.nailerOffsetIn);
     setSquareBaleStudConfig(s.squareBaleStudConfig);
     setBracingStyle(s.bracingStyle);
+    /* Optional — a file saved before this was persisted at all loads as the
+       plywood sheet, which is what it was drawn with. */
+    setJackStudConfig(s.jackStudConfig ?? "plywood");
     setProjectName(s.projectName);
     /* Optional, so a file saved before this existed loads with no id and no
        codes — exactly the state a project that has never been exported is
@@ -8643,8 +8651,13 @@ export default function LayoutEditor() {
   // items (2 plywood sheets, or 4 real 2x4 sticks — ext + int wythe on each
   // side) rather than being left out of the truck-loadout calc entirely.
   const shippingJackStudRefs = useMemo(() => {
-    const studsPerOpening = jackStudConfig === "plywood" ? 2 : 4;
-    const crossSectionWidthIn = jackStudConfig === "plywood" ? thicknessIn : PLATE_2X4_WIDTH_IN;
+    /* ⚠ A configuration can carry BOTH now (2026-11-14), so the two are
+       counted separately rather than one or the other: a sheet each side of
+       the opening, plus a 2x4 each side for every wythe that takes one. They
+       ship as different items because they are different shapes — a
+       panel-depth sheet and a 3.5in stick. */
+    const sheetsPerOpening = jackStudHasSheet(jackStudConfig) ? 2 : 0;
+    const sticksPerOpening = jackStud2x4Wythes(jackStudConfig).length * 2;
     const refs: { id: string; widthIn: number; heightIn: number }[] = [];
     for (const inst of allInstances) {
       // A gable window's own reduced-height "gable" cap plays the same
@@ -8656,8 +8669,11 @@ export default function LayoutEditor() {
       const isGableWindowCap = inst.panelType === "gable" && inst.sourceSlotType === "window";
       if (inst.panelType !== "header" && !isGableWindowCap) continue;
       const spanIn = inst.sourceSlotType === "door" ? doorRoughOpeningHeightIn : (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value);
-      for (let i = 0; i < studsPerOpening; i++) {
-        refs.push({ id: `${inst.name}-JS${i + 1}`, widthIn: crossSectionWidthIn, heightIn: spanIn });
+      for (let i = 0; i < sheetsPerOpening; i++) {
+        refs.push({ id: `${inst.name}-JS${i + 1}`, widthIn: thicknessIn, heightIn: spanIn });
+      }
+      for (let i = 0; i < sticksPerOpening; i++) {
+        refs.push({ id: `${inst.name}-JX${i + 1}`, widthIn: PLATE_2X4_WIDTH_IN, heightIn: spanIn });
       }
     }
     return refs;
@@ -12776,31 +12792,34 @@ export default function LayoutEditor() {
         1/2in sheet. Tell me which is right and I&apos;ll change the one number.
       </p>
 
-      <div role="group" aria-label="Jack stud construction" className={styles.toolbar}>
-        <button
-          type="button"
-          title="3/4in plywood sheet, panel-depth wide"
-          aria-pressed={jackStudConfig === "plywood"}
-          className={jackStudConfig === "plywood" ? styles.toolActive : styles.tool}
-          onClick={() => setJackStudConfig("plywood")}
+      {/* ⚠ **A SELECT, NOT A PAIR OF BUTTONS, since 2026-11-14** — the
+          choice stopped being either/or. The sheet is the default and the
+          2x4s are an ADDITION to it (his *"option to change or add 2x4s"*),
+          so there are five real combinations and a toolbar of five toggles
+          would read as five independent switches rather than one choice. */}
+      <label className={styles.note} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        Jack stud construction{" "}
+        <select
+          aria-label="Jack stud construction"
+          value={jackStudConfig}
+          onChange={(e) => setJackStudConfig(e.target.value as JackStudConfig)}
         >
-          Plywood Jack Studs
-        </button>
-        <button
-          type="button"
-          title="Vertical 2x4 stud pair (ext + int wythe), flush with the adjacent wall's own studs"
-          aria-pressed={jackStudConfig === "2x4-stud"}
-          className={jackStudConfig === "2x4-stud" ? styles.toolActive : styles.tool}
-          onClick={() => setJackStudConfig("2x4-stud")}
-        >
-          2x4 Stud Jack Studs
-        </button>
-      </div>
+          {JACK_STUD_CONFIGS.map((option) => (
+            <option key={option} value={option}>
+              {jackStudConfigLabel(option)}
+            </option>
+          ))}
+        </select>
+      </label>
       <p className={styles.note}>
-        Rough Opening jack studs (each side of a window/door) — plywood is the original &quot;jack sheet&quot;;
-        2x4 studs sit right at the slot&apos;s perimeter, next to the adjacent panel&apos;s own studs. Either way,
-        jack studs narrow the actual clear Rough Opening below the full window/door slot width — see the Door/
-        Window Rough Opening Detail pages.
+        Rough Opening jack studs (each side of a window/door). The plywood &quot;jack sheet&quot; is the default and
+        the one screwed to the adjacent wall panel; adding a 2x4 stands it <strong>inboard</strong>{" "}
+        of the sheet, at one wythe or both. Both wythes&apos; 2x4s share the same band in elevation, so one or two
+        reads the same <strong>2¼in</strong> against the sheet&apos;s own <strong>¾in</strong>. ⚠ A thicker jack
+        takes its difference out of the clear Rough Opening on <em>both</em> sides —{" "}
+        {formatLengthIn(jackStudThicknessIn(jackStudConfig) * 2, unitSystem)}{" "}
+        off the slot width at this setting — and it shortens a Big Header&apos;s chords by the same. See the
+        Door/Window Rough Opening Detail pages.
       </p>
       <p className={styles.note}>
         Each window has its own Rough Opening height, set per-window by clicking it on the canvas and using the
@@ -17289,7 +17308,7 @@ export default function LayoutEditor() {
                     </tr>
                     <tr>
                       <td>Jack stud construction</td>
-                      <td>{jackStudConfig === "plywood" ? "3/4in plywood sheet" : "2x4 stud pair (ext + int wythe)"}</td>
+                      <td>{jackStudConfigLabel(jackStudConfig)}</td>
                     </tr>
                     <tr>
                       <td>Clear Rough Opening width</td>
@@ -17327,7 +17346,10 @@ export default function LayoutEditor() {
               "A door header is always a single upside-down-V truss web, on both interior and exterior wythes — see the Header Shop Drawing page.",
               `Rough Opening height = selected door RO (${doorRoughOpeningSelectedHeightIn.value}in) minus the toe-up height (${toeUpHeightIn.value}in) — a real formula, not illustrative. The door's jack studs span this full height (floor to header-bottom), since a door has no sill.`,
               `Header height = wall standard height (${(wallHeightFt * 12).toFixed(1)}in) minus the RO height (${doorRoughOpeningHeightIn.toFixed(1)}in) — the header fills everything above the RO up to the top plate.`,
-              jackStudConfig === "2x4-stud"
+              /* ⚠ The real question is whether there is a SHEET to fasten,
+                 not which preset is picked — a configuration can carry both
+                 since 2026-11-14. */
+              !jackStudHasSheet(jackStudConfig)
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
                 : `Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in (${doorJackStudFastenerResult.items[0]!.count} screws, ${doorJackStudFastenerResult.totalWeightLb.toFixed(2)} lb, for this one sheet at the real RO height).`,
             ]}
@@ -17379,7 +17401,7 @@ export default function LayoutEditor() {
                     </tr>
                     <tr>
                       <td>Jack stud construction</td>
-                      <td>{jackStudConfig === "plywood" ? "3/4in plywood sheet" : "2x4 stud pair (ext + int wythe)"}</td>
+                      <td>{jackStudConfigLabel(jackStudConfig)}</td>
                     </tr>
                     <tr>
                       <td>Clear Rough Opening width</td>
@@ -17422,7 +17444,10 @@ export default function LayoutEditor() {
               `A window ("long") header repeats as many peaks as needed to keep every truss web segment at or above a 30deg bracing angle — a door header is always exactly 1 peak. Both are on interior and exterior wythes.`,
               `A sill is a short Standard Panel (default ${sillHeightIn}in tall) — a window wider than one standard panel width (${standardWidthIn}in) gets multiple sill panels sharing the run instead of one oversized sill.`,
               `Window height (${windowHeightIn}in, selectable in Panelizer) is the window's own real Rough Opening height, sill-top to header-bottom — the jack studs span exactly this. Header height = wall standard height (${(wallHeightFt * 12).toFixed(1)}in) minus the RO's own top elevation (sill height + window height) — a real formula, not illustrative.`,
-              jackStudConfig === "2x4-stud"
+              /* ⚠ The real question is whether there is a SHEET to fasten,
+                 not which preset is picked — a configuration can carry both
+                 since 2026-11-14. */
+              !jackStudHasSheet(jackStudConfig)
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
                 : "Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in.",
             ]}
@@ -17974,7 +17999,7 @@ export default function LayoutEditor() {
                     <p className={styles.note}>
                       Preview only, at an illustrative default height (sill-top to header-bottom, {jackStudPreviewHeightIn.toFixed(1)}
                       &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
-                      {jackStudConfig === "plywood" ? (
+                      {jackStudHasSheet(jackStudConfig) ? (
                         <>
                           Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
                           {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening

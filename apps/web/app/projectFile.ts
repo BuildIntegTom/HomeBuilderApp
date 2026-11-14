@@ -452,6 +452,22 @@ export interface ProjectState {
    * see DocumentMetaContext.tsx. Site/date are derived from other state
    * already in this file (zipCode, current date), so only the project name
    * itself needs to round-trip here. */
+  /**
+   * ⚠ **How a rough opening's jack studs are made up** — and it was NOT
+   * SAVED AT ALL until 2026-11-14, which was a real defect rather than an
+   * omission: it changes the clear rough opening on both sides, a Big
+   * Header's chord lengths and its web's end inset, so a project saved with
+   * 2x4 jack studs reopened as plywood and quietly became a different
+   * building.
+   *
+   * ⚠ Spelled out rather than importing `JackStudConfig`, like every union
+   * in this file: a rename in panel-catalog must not silently change what an
+   * old project means. `jackStudMembers.ts` is the authority on what these
+   * DO. **OPTIONAL, so a file saved before it existed loads as `"plywood"`**
+   * — which is what those projects were drawn with, since nothing persisted
+   * anything else — and therefore not a `PROJECT_FILE_VERSION` bump.
+   */
+  jackStudConfig?: "plywood" | "2x4-stud" | "plywood+ext-2x4" | "plywood+int-2x4" | "plywood+2x4";
   projectName: string;
   /**
    * ⚠ **Tip4urTime's permanent id for this project, and the panel codes it

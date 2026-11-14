@@ -165,6 +165,8 @@ export const MONEY_CLASSIFICATION = {
   /* A permanent project id and a set of opaque join keys. Neither is a price
      and neither names a client — which is the point of the Tip4urTime export
      being panel data only, so a sync link can serve it later. */
+  /* A framing choice, not a price. */
+  jackStudConfig: "not-money",
   tip4urTimeProjectId: "not-money",
   tip4urTimePanelCodes: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
