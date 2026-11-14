@@ -14,6 +14,7 @@ import {
   type GirtStyle,
   clearRunsIn,
   memberBoxIn,
+  plumbEndedSlopedBoardCornersIn,
   shiftTrapezoidCorners,
 } from "./panelMemberHelpers";
 
@@ -373,148 +374,210 @@ export interface GablePeakTopProfile {
   rightRiseIn: number;
 }
 
-function shiftMembers(members: PanelMember[], deltaXIn: number, deltaZIn: number): PanelMember[] {
-  return members.map((m) => ({
-    ...m,
-    memberId: m.memberId,
-    position: {
-      ...m.position,
-      xIn: m.position.xIn + deltaXIn,
-      zIn: m.position.zIn + deltaZIn,
-      trapezoidCornersIn: shiftTrapezoidCorners(m.position.trapezoidCornersIn, deltaXIn, deltaZIn),
-    },
-  }));
-}
+
 
 /**
- * ⚠ **The cap has NO bottom plate of its own — it bears on the body's top
- * plate**, and the first version of this got that wrong in a way worth
- * recording.
+ * ⚠ **3 1/2in IS THE STOCK, NOT THE RISE, and on a 25.5in panel at 4:12 the
+ * two disagree.**
  *
- * A gable panel built by `buildGablePanelMembers` starts with a bottom plate
- * assembly: 3/4in skin then a 1 1/2in 2x4, `BOTTOM_PLATE_ASSEMBLY_IN` in all.
- * Stacking one whole gable panel on the column body therefore laid a plate
- * directly on the body's own unbroken top plate — two plates and a skin in a
- * sandwich no one asked for. At 4:12 that is 2 1/4in of invented material at
- * the seam; at **2:12 it is taller than the entire cap**, whose ridge rises
- * only 2.125in on a 25.5in panel, so the "cap" was pure bottom plate with its
- * top boards poking out above the ridge.
+ * > *"The long cut triangles are 3.5" in depth/cut from a 2x4. This is a
+ * > 1'7" panel."* — Tommy, 2026-11-13
  *
- * ⚠ **Only the SKIN is dropped, not the plate**, and the stack-up is why.
- * Read off the builder: `bottom_plate_skin` lies flat across the full width
- * at 0 -> 3/4; the two `bottom_plate_2x4`s sit on it at 3/4 -> 2 1/4, inset
- * a stud's width at each end; and the corner studs stand **beside** those
- * plates, from 3/4 up. So the panel's lowest layer is a sheet of plywood and
- * the body already has one of those at its top. Dropping the whole assembly
- * instead left the cap's studs bearing on the body's top skin with no plate
- * under them — and, measured, standing 1 1/2in BELOW the body's own top.
+ * A wedge that tapers to nothing has its depth FIXED by the geometry: it must
+ * equal the ridge's rise above the panel's edge, `(width / 2) x pitch/12`.
  *
- * So the slope is asked for `rise + SKIN_THICKNESS_IN`, dropped by the same,
- * and only its bottom skin discarded. The cap's bottom plate then lands
- * directly on the body's top skin — skin-then-plate, the same order every
- * other panel in this app is built in. The gable WINDOW cap already does
- * this same trick with the header it does not want
- * (`!m.memberId.startsWith("header_")`).
+ * | panel | pitch | rise needed | rips from |
+ * |---|---|---|---|
+ * | 19in (his sketch) | 4:12 | 3.17in | **2x4** ✓ |
+ * | 25.5in (today's column) | 3:12 | 3.19in | **2x4** ✓ |
+ * | 25.5in | 4:12 | **4.25in** | **2x6** — a 2x4 cannot do it |
+ * | 25.5in | 8:12 | 8.50in | 2x10 |
  *
- * ⚠ **Pending Building Integrity confirmation**: whether a five-sided peak
- * wants one shared plate under both slopes (what this builds) or its own
- * plate per slope is a fabrication call, not a geometric one.
- *
- * ## ⚠ THE CAP IS A BAND, NOT A HAT — and the second version of this was a hat
- *
- * A panel's top SURFACE is the top face of its top skin; the skin and the
- * top plate live **below** that surface, not above it. So a cap stacked on a
- * body that already reached the roofline had nowhere to put its own top
- * assembly at the panel's two outer edges, where the cap's height goes to
- * nothing: measured at 4:12, the sloped top plates hung **1.87in below the
- * body's own top**, straight through the top plate they were sitting on.
- * Silent in the render, and exactly the kind of thing his no-overlapping-
- * members rule exists to catch.
- *
- * So the body stops `CAP_BAND_IN` short of the roofline and the cap occupies
- * that band across the WHOLE width, rising to the ridge in the middle. At the
- * two edges the cap is exactly its own top assembly and nothing more, which
- * is what an ordinary gable tile is at its own eave edge too.
- *
- * ⚠ The band is a VERTICAL thickness, so it carries the `1/cos θ` the rest of
- * this file is careful about: a 3/4in skin and a 1 1/2in plate cut plumb on a
- * 4:12 slope stand 2.37in tall, not 2.25in. The steeper of the two slopes
- * sets it, so neither side can poke through.
+ * His 19in sketch and his 2x4 agree with each other at about 4:12. The 25.5in
+ * ridge column this app actually builds does not, by 3/4in, at the default
+ * pitch. **The geometry wins and the stock follows** — a wedge sized to
+ * anything but the real rise would put the lid off the roof plane, which is
+ * the defect this whole change exists to fix. So 3 1/2in is recorded as the
+ * point where a 2x4 stops being enough rather than silently becoming a 2x6.
  */
-function capBandIn(runIn: number, riseIn: number): number {
+export const GABLE_PEAK_WEDGE_MAX_STOCK_IN = 3.5;
+
+/** The nominal board a wedge of this depth has to be ripped from. */
+export function gablePeakWedgeStockFor(depthIn: number): string {
+  for (const [actualIn, nominal] of [
+    [3.5, "2x4"],
+    [5.5, "2x6"],
+    [7.25, "2x8"],
+    [9.25, "2x10"],
+    [11.25, "2x12"],
+  ] as const) {
+    if (depthIn <= actualIn + 1e-9) return nominal;
+  }
+  return "built-up";
+}
+
+/** ⚠ One wedge at each wythe face, directly over the 2x6 packs, so the lid's
+ * load runs wedge -> pack -> bottom plate instead of landing on straw. The
+ * COUNT and the placement are an interpretation of his drawing (it shows the
+ * members but not their spacing); the wedge's own profile is his.
+ * **Pending Building Integrity confirmation.** */
+const GABLE_PEAK_WEDGE_THICKNESS_IN = PLATE_2X4_THICKNESS_IN;
+
+/**
+ * ⚠ **How much lower the BODY sits than the panel's top surface: one lid.**
+ *
+ * The wedges feather to nothing at the panel's outer edge, so what is over
+ * the body's top deck there is the lid and nothing else. The body is an
+ * ordinary closed Column Panel — its own top plate and top skin untouched —
+ * and the lid is a roof deck laid over it, which is two sheets of plywood at
+ * the edge on purpose rather than by accident: one closes the straw, one is
+ * the roof.
+ *
+ * ⚠ Vertical, not perpendicular: a 3/4in sheet cut plumb on a 4:12 slope
+ * stands 0.79in tall. The rest of this file is careful about that `1/cos`
+ * and so is this.
+ */
+export function gablePeakLidVerticalThicknessIn(runIn: number, riseIn: number): number {
   const cosTheta = runIn > 0 ? runIn / Math.hypot(runIn, riseIn) : 1;
-  return (SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN) / cosTheta;
+  return SKIN_THICKNESS_IN / cosTheta;
 }
 
-/** One slope of the cap band. */
-function buildCapSlope(
-  prefix: string,
-  widthIn: number,
-  depthIn: number,
-  leftHeightIn: number,
-  rightHeightIn: number,
-  baseZIn: number,
-  xOffsetIn: number,
-  girtStyle: GirtStyle,
-): PanelMember[] {
-  if (widthIn <= 0) return [];
-  const slope = buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, false, girtStyle)
-    /* The body's own top skin is directly beneath, so the cap does not bring
-       a second sheet of plywood to lie on it. */
-    .filter((m) => m.memberId !== "bottom_plate_skin");
-  return shiftMembers(slope, xOffsetIn, baseZIn).map((m) => ({
-    ...m,
-    memberId: `${prefix}_${m.memberId}`,
-    notes: `${m.notes ?? ""}${m.notes ? " — " : ""}${prefix === "cap_left" ? "left" : "right"} slope of the five-sided peak, meeting its pair at the ridge`,
-  }));
-}
-
-/**
- * How far below the roofline a five-sided peak's BODY has to stop, so the cap
- * band above it has room for its own sloped top assembly. The caller builds
- * the column body this much shorter than the tile's edge height.
- */
-export function gablePeakCapBandIn(widthIn: number, top: GablePeakTopProfile): number {
+/** The body's flat top, given where the panel's top SURFACE sits at its
+ * lower edge. */
+export function gablePeakWedgeBodyTopZIn(widthIn: number, edgeTopZIn: number, top: GablePeakTopProfile): number {
   const leftRunIn = top.apexOffsetXIn;
   const rightRunIn = widthIn - top.apexOffsetXIn;
-  return Math.max(
-    capBandIn(leftRunIn, Math.abs(top.apexRiseIn - top.leftRiseIn)),
-    capBandIn(rightRunIn, Math.abs(top.apexRiseIn - top.rightRiseIn)),
+  return (
+    edgeTopZIn -
+    Math.max(
+      gablePeakLidVerticalThicknessIn(leftRunIn, Math.abs(top.apexRiseIn - top.leftRiseIn)),
+      gablePeakLidVerticalThicknessIn(rightRunIn, Math.abs(top.apexRiseIn - top.rightRiseIn)),
+    )
   );
 }
 
 /**
- * The cap band. `edgeTopZIn` is where the panel's own top surface sits at its
- * LOWER edge — i.e. the body height the caller would have used for a flat
- * top. The band hangs below it and rises to the ridge; the body underneath
- * must be built `gablePeakCapBandIn` shorter.
+ * The five-sided top as he drew it: two tapered wedges per slope on the
+ * panel's own flat top, and a plumb-cut plywood lid over each.
+ *
+ * `edgeTopZIn` is where the panel's top SURFACE sits at its lower edge — the
+ * height the tile reports. The body underneath is built to
+ * `gablePeakWedgeBodyTopZIn`, one lid lower.
  */
-export function buildGablePeakTopMembers(
+export function buildGablePeakWedgeTopMembers(
   widthIn: number,
   depthIn: number,
   edgeTopZIn: number,
   top: GablePeakTopProfile,
-  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
-  const { apexOffsetXIn, leftRiseIn, apexRiseIn, rightRiseIn } = top;
-  const bandIn = gablePeakCapBandIn(widthIn, top);
-  const baseZIn = edgeTopZIn - bandIn;
-  /* Heights within the band: every point is the band itself plus however far
-     this panel's top surface rises above its lower edge there. */
-  return [
-    ...buildCapSlope("cap_left", apexOffsetXIn, depthIn, bandIn + leftRiseIn, bandIn + apexRiseIn, baseZIn, 0, girtStyle),
-    ...buildCapSlope(
-      "cap_right",
-      widthIn - apexOffsetXIn,
-      depthIn,
-      bandIn + apexRiseIn,
-      bandIn + rightRiseIn,
-      baseZIn,
-      apexOffsetXIn,
-      girtStyle,
-    ),
-  ];
+  const out: PanelMember[] = [];
+  const bodyTopZIn = gablePeakWedgeBodyTopZIn(widthIn, edgeTopZIn, top);
+  const slopes = [
+    { id: "left", fromXIn: 0, toXIn: top.apexOffsetXIn, fromRiseIn: top.leftRiseIn, toRiseIn: top.apexRiseIn },
+    {
+      id: "right",
+      fromXIn: top.apexOffsetXIn,
+      toXIn: widthIn,
+      fromRiseIn: top.apexRiseIn,
+      toRiseIn: top.rightRiseIn,
+    },
+  ] as const;
+
+  for (const slope of slopes) {
+    const runIn = slope.toXIn - slope.fromXIn;
+    if (runIn <= 0) continue;
+    const deepestIn = Math.max(slope.fromRiseIn, slope.toRiseIn);
+    if (deepestIn <= 0) continue;
+    const stock = gablePeakWedgeStockFor(deepestIn);
+    /* The wedges. Two per slope, one at each wythe face. */
+    for (const [face, yIn] of [
+      ["exterior", 0],
+      ["interior", depthIn - GABLE_PEAK_WEDGE_THICKNESS_IN],
+    ] as const) {
+      out.push({
+        memberId: `gable_peak_wedge_${slope.id}_${face}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: stock,
+        actualDimsIn: { thicknessIn: GABLE_PEAK_WEDGE_THICKNESS_IN, widthIn: deepestIn, lengthIn: runIn },
+        orientation: "diagonal",
+        position: {
+          xIn: slope.fromXIn,
+          yIn,
+          zIn: bodyTopZIn,
+          rotationDeg: 0,
+          /* ⚠ A TRIANGLE, written as a quad with its two low corners
+             coincident — the bottom face is FLAT on the panel's top deck and
+             the top face is the roof plane, so the section really does come
+             to a point at the shallow end. */
+          trapezoidCornersIn: [
+            { xIn: slope.fromXIn, zIn: bodyTopZIn + slope.fromRiseIn },
+            { xIn: slope.toXIn, zIn: bodyTopZIn + slope.toRiseIn },
+            { xIn: slope.toXIn, zIn: bodyTopZIn },
+            { xIn: slope.fromXIn, zIn: bodyTopZIn },
+          ],
+          trapezoidDepthIn: GABLE_PEAK_WEDGE_THICKNESS_IN,
+        },
+        role: "stud",
+        qty: 1,
+        notes:
+          `${face} wythe — tapered rip from a ${stock}, ${deepestIn.toFixed(2)}in at the ridge to a feather edge at ` +
+          `the panel edge over ${runIn.toFixed(2)}in. His "long cut triangle"; the taper IS the roof pitch.`,
+      });
+    }
+
+    /* The lid. ⚠ Plumb-cut at both ends — *"I forgot to plumb cut the edges
+       of the plywood"* — which `plumbEndedSlopedBoardCornersIn` has done all
+       along, and is the detail the gable/roof flush junction took four passes
+       to get right.
+
+       Its TOP face is the panel's top surface: the wedge's sloped face plus
+       the lid's own vertical thickness. So at the panel's outer edge, where
+       the wedge has feathered to nothing, the surface is exactly one lid
+       above the body — which is what `gablePeakWedgeBodyTopZIn` subtracts. */
+    const runRiseIn = Math.abs(slope.toRiseIn - slope.fromRiseIn);
+    const lidVerticalThicknessIn = gablePeakLidVerticalThicknessIn(runIn, runRiseIn);
+    const lowIsFrom = slope.fromRiseIn <= slope.toRiseIn;
+    const lowXIn = lowIsFrom ? slope.fromXIn : slope.toXIn;
+    const highXIn = lowIsFrom ? slope.toXIn : slope.fromXIn;
+    const lowTopZIn = bodyTopZIn + Math.min(slope.fromRiseIn, slope.toRiseIn) + lidVerticalThicknessIn;
+    const highTopZIn = bodyTopZIn + Math.max(slope.fromRiseIn, slope.toRiseIn) + lidVerticalThicknessIn;
+    out.push({
+      memberId: `gable_peak_lid_${slope.id}`,
+      material: "plywood",
+      speciesGrade: null,
+      plySpec: GABLE_PEAK_BOX_PLY_SPEC,
+      nominalSize: null,
+      actualDimsIn: {
+        thicknessIn: SKIN_THICKNESS_IN,
+        widthIn: depthIn,
+        lengthIn: Math.hypot(runIn, runRiseIn),
+      },
+      orientation: "diagonal",
+      position: {
+        xIn: slope.fromXIn,
+        yIn: 0,
+        zIn: bodyTopZIn,
+        rotationDeg: 0,
+        trapezoidCornersIn: plumbEndedSlopedBoardCornersIn(
+          lowXIn,
+          lowTopZIn,
+          highXIn,
+          highTopZIn,
+          lidVerticalThicknessIn,
+        ),
+        trapezoidDepthIn: depthIn,
+      },
+      role: "skin",
+      qty: 1,
+      notes: `${slope.id} lid of the five-sided peak — one of his two pieces, plumb cut at both ends`,
+    });
+  }
+  return out;
 }
+
+
 
 /**
  * Every physical member of a Gable Peak Panel: a Column Panel, with its
@@ -543,23 +606,22 @@ export function buildGablePeakPanelMembers(
      the box takes its bearing off. Measuring from `heightIn` here would have
      hung the box up inside the cap, the same shape of fault as the 16.338in
      lift error that function's own doc comment records. */
-  const slotBandIn = top ? gablePeakCapBandIn(widthIn, top) : 0;
-  const slot = gablePeakSlotIn(widthIn, heightIn - slotBandIn, rooflineBelowTopIn);
+  const bodyHeightIn = top ? gablePeakWedgeBodyTopZIn(widthIn, heightIn, top) : heightIn;
+  const slot = gablePeakSlotIn(widthIn, bodyHeightIn, rooflineBelowTopIn);
   /* ⚠ **Never a centre nailer on this panel.** A nailer stands at mid-width,
      which is exactly where the box is, so the two would occupy the same
      straw. The box is the thing the panel exists for. */
-  /* ⚠ **THE BODY STOPS SHORT WHEN THERE IS A CAP**, by exactly the band the
-     cap's own sloped top assembly needs — see `gablePeakCapBandIn`. Building
-     the body to the full edge height and putting the cap above it drove the
-     cap's plates 1.87in down through the body's top plate at 4:12. */
-  const bandIn = top ? gablePeakCapBandIn(widthIn, top) : 0;
-  const bodyHeightIn = heightIn - bandIn;
+  /* ⚠ **THE BODY IS AN ORDINARY FLAT-TOPPED COLUMN PANEL**, complete with its
+     own top plate and top skin, just one lid's thickness lower than the
+     panel's top surface. That is his design and it is what makes the top
+     additive — nothing is removed from the body, so there is no shared top
+     assembly to negotiate. */
   const column = buildColumnStyleMembers(widthIn, depthIn, bodyHeightIn, includeNailer && false, girtStyle);
   const added = [...buildBoxMembers(slot, depthIn), ...buildStudPacks(slot, depthIn, bodyHeightIn)];
-  /* The cap is added AFTER the cut pass: it sits entirely above the body, so
+  /* The top is added AFTER the cut pass: it sits entirely above the body, so
      nothing in it runs across the box or the packs. */
-  const cap = top ? buildGablePeakTopMembers(widthIn, depthIn, heightIn, top, girtStyle) : [];
-  return [...cutRowsAroundObstacles(column, added), ...added, ...cap];
+  const peak = top ? buildGablePeakWedgeTopMembers(widthIn, depthIn, heightIn, top) : [];
+  return [...cutRowsAroundObstacles(column, added), ...added, ...peak];
 }
 
 /** Wraps `buildGablePeakPanelMembers` in the full shared component schema. */
