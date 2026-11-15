@@ -241,6 +241,8 @@ import {
   PLATE_2X4_WIDTH_IN,
   carbonFractionOfDryMass,
   COLUMN_TOTAL_WIDTH_IN,
+  BIG_HEADER_PERPENDICULAR_MIN_WIDTH_IN,
+  bigHeaderIsStuffedPerpendicular,
   bigHeaderWidthInRange,
   bigHeaderHeightInRange,
   bigHeaderDefaultWidthIn,
@@ -15929,6 +15931,14 @@ export default function LayoutEditor() {
                             />
                             &quot; ({bigHeaderWidthInRange.minIn / 12}-{bigHeaderWidthInRange.maxIn / 12}ft)
                           </label>
+                          {/* ⚠ The one panel whose CONSTRUCTION changes with its width,
+                              so the control that sets the width says where the line is.
+                              The default 8ft is already past it. */}
+                          <p className={styles.note}>
+                            {bigHeaderIsStuffedPerpendicular(slot.widthIn)
+                              ? `Over ${formatLengthIn(BIG_HEADER_PERPENDICULAR_MIN_WIDTH_IN, unitSystem)} this header is stuffed PERPENDICULAR: its top and bottom plates run the full width over both jack studs, and the jacks stand between them.`
+                              : `At or under ${formatLengthIn(BIG_HEADER_PERPENDICULAR_MIN_WIDTH_IN, unitSystem)} it is built and stuffed like a standard panel — the plates stop at the two jack studs. Wider than that and it is stuffed perpendicular instead, with the plates running the full width over them.`}
+                          </p>
                           <label style={{ display: "block" }}>
                             Height{" "}
                             <LengthInput

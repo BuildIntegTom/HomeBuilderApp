@@ -139,8 +139,8 @@ is cut, what sets the radius) was answering the wrong question.
     lives in the builder module rather than at a call site — the third time a
     call-site clamp failed to cover the next call site.
 
-12. **Big Header over 48in — stuffed perpendicular** — **BUILT 2026-11-14**,
-    and dormant. *"If they are greater than 48 in... the top and bottom plates
+12. **Big Header over 48in — stuffed perpendicular** — **BUILT and LIVE
+    2026-11-14.** *"If they are greater than 48 in... the top and bottom plates
     should be completely within the panel so that the top and bottom plate
     stretch the entire opening."* The threshold is the width along the wall
     (his *"correct"*); at 48in and under nothing changes (his *"just the way
@@ -151,10 +151,17 @@ is cut, what sets the radius) was answering the wrong question.
     change — which matters, because it is the flavour that actually gets wide.
     What changed is the **slot** Big Header: over 48in its plates now run the
     full width and its jack studs stand between them, bearing the top plate.
-    ⚠ **It cannot fire today.** `panelWidthInRange.maxIn` is 48in and marked
-    confirmed, and every slot drag is clamped to it, so a slot Big Header can
-    never be wider than 4ft. **Tommy's call**: raise that cap (for this type
-    or at all), or the rule only ever describes the mid-wall flavour.
+    ⚠ **I reported this as dormant and that was WRONG.** I checked
+    `panelWidthInRange.maxIn` (48in, the ordinary panel cap) and concluded a
+    Big Header could never cross its own threshold. A Big Header does not use
+    that range: it has had **`bigHeaderWidthInRange`, his own stated 4ft-12ft**,
+    and its own width field in the panel note, all along. Its DEFAULT is
+    **96in**, so every Big Header anyone places is already past 48in and
+    already built the new way. Confirmed in the browser at 96in and at 48in,
+    where the note flips to the standard-panel construction.
+    ⚠ I had begun giving Big Headers a second width path with an 18ft
+    ceiling, which would have overridden his own 12ft maximum from a different
+    place. Backed out before commit — one catalog question, one answer.
 
 ## D. Open questions that are not blocking anything
 
