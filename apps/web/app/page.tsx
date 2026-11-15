@@ -474,6 +474,7 @@ import {
   gableLocalEdgeHeightIn,
   gableLocalTallerHeightIn,
   gableTileRoofTopLiftIn,
+  gableWindowCapHeightsIn,
   resolveGableProfilePoints,
   resolveHeelSeat,
   ROOF_PITCH_OPTIONS_IN12,
@@ -4326,9 +4327,8 @@ export default function LayoutEditor() {
     setRidgeColumnOverridesAlongIn({});
 
     /* One gable window per 12ft of wall, seeded with the building — see
-       `seedGableWindowsForFootprint`. Computed OUTSIDE the state updater and
-       merged with `prev` winning, so a wall the user has already answered
-       keeps its answer and nothing here reads that state back. */
+       `seedGableWindowsForFootprint`. Computed OUTSIDE the state updater, so
+       nothing here reads that state back. */
     const seededGableWindows = seedGableWindowsForFootprint(
       fp,
       autoGableWallIds,
@@ -4348,7 +4348,31 @@ export default function LayoutEditor() {
          seeding onto a 28in tile did on 2026-11-15. */
       standardWindowHeightDefaultIn.value + GABLE_PANEL_MIN_HEIGHT_IN,
     );
-    setGableWindowAnchorsByWallId((prev) => ({ ...seededGableWindows, ...prev }));
+    /* ⚠ **REPLACES, it does not merge — a stored gable window is stale state
+       on a re-derive, exactly like the ridge column override cleared a few
+       lines up.** This used to be `{ ...seededGableWindows, ...prev }` with
+       `prev` winning, on the reasoning that a wall the user has already
+       answered keeps its answer. That reasoning is wrong HERE, for the same
+       reason `withRederivedRoof` gives for throwing away a stored gable
+       profile: every caller of this function is a RE-DERIVE — a fresh draw, a
+       shape change past the gable-pair or shed/peak limit, or one of the four
+       paths that renumber walls — so the row a reservation was made against
+       no longer exists, and a wall id that matches across it is not
+       necessarily the same wall. A plain resize does not come through here at
+       all (`roofShapeChangeVerdict` says so), so no hand-placed window is
+       lost to this.
+
+       ⚠ **Measured 2026-11-15, and it is what Tommy was seeing.** Draw the
+       Tiny House (a shed: its gable walls rise 64in, so windows seed happily)
+       and then draw The Tank over it. The Tank's gable tiles rise at most
+       ~44in against the 49.5in a 48in window needs, so `seedGableWindows`
+       correctly seeds NOTHING — and `prev` then put the Tiny House's window
+       back, at the same tile ORDINAL, on a tile 35in tall. The elevation drew
+       a flat-topped opening standing through the roof plane with no panel
+       over it, and every gate passed: the seeder's own height guard had
+       already run and refused. Drawing The Tank first is clean, which is why
+       this survived the day it shipped. */
+    setGableWindowAnchorsByWallId(seededGableWindows);
 
     return nextSlots;
   };
@@ -12421,6 +12445,97 @@ export default function LayoutEditor() {
     ];
   }, [allInstances, panelizationType, unitSystem, estimatedTotalShear, wallBracePattern]);
 
+  /**
+   * ⚠ **A GABLE WINDOW STANDING THROUGH ITS OWN ROOFLINE.** This closes the
+   * gap `gableWindowCapHeightsIn` has carried in its own doc comment since it
+   * was written: *"No caller reports the breach into the Review Log yet.
+   * Flagged rather than guessed at."* The function has always MEASURED the
+   * breach — it is why its refusal carries `exceedsRooflineIn` instead of a
+   * plain `null` — and until now nothing in the app read the number.
+   *
+   * ⚠ **What it looks like when nobody is listening**, which is the reason
+   * this is worth an entry rather than a silent clamp: both cap edges clamp
+   * to zero, so the 3D view builds the window's jack studs and sill and then
+   * builds NO gable panel above them, and the elevation draws a flat-topped
+   * opening running clean through the roof plane. Nothing throws, nothing
+   * refuses, no overlap is recorded — the overlap audit cannot see it,
+   * because a missing panel is not an interference. The drawing simply shows
+   * a hole in the roof and every number agrees with itself.
+   *
+   * ⚠ **The seeder is not the only way in.** `seedGableWindows` refuses a
+   * tile too short (the `minRiseIn` guard), and a stale reservation carried
+   * onto a shorter building was the OTHER way in — fixed in
+   * `applyRoofDefaultsForFootprint`. A window placed or kept by hand on a
+   * tile that cannot hold it is still reachable and always was, which is what
+   * this entry is for: the guard stops the app from doing it to you, this
+   * says so when you do it to yourself.
+   *
+   * ⚠ **The lift and the cap are read from the SAME two functions the 3D view
+   * uses**, with the same arguments, rather than re-derived here. Two copies
+   * of a gable elevation subtraction is the B9 fault, and a second copy on
+   * the REPORTING side would be worse than one on the drawing side: a breach
+   * measured wrong still prints as a reassuring absence.
+   */
+  const gableWindowRooflineReviewEntries = useMemo(() => {
+    if (!footprint) return [];
+    const breaches: { label: string; exceedsIn: number }[] = [];
+    for (const wall of footprint.walls) {
+      const tiles = gableTilesByWallId[wall.id];
+      if (!tiles) continue;
+      for (const tile of tiles) {
+        if (!tile.isWindow) continue;
+        /* ⚠ **MEASURED AGAINST THE ROOFLINE, WITH NO LIFT — and that choice
+           is the whole entry.** The 3D view passes `gableWindowCapHeightsIn`
+           its LIFTED local heights (`tile.leftEdgeHeightIn + appliedLiftIn
+           - gableEaveHeightIn`), because it is asking a fabrication question:
+           can `buildGablePanelMembers` build the piece above this window.
+           With `gableEndsFullHeight` on, the lift is about 16 3/8in of panel
+           standing above the roof plane to close to the roof's TOP surface,
+           so a window whose head is a foot through the roofline still comes
+           back with a ~3in cap and looks buildable.
+
+           That is not the question a reviewer is asking. The app's own
+           policy is already written down in `seedGableWindows`: a tile must
+           RISE far enough — raw rise above the eave, no lift — before it may
+           hold a window at all. Measuring here the way the seeder measures
+           there keeps one rule, and it is the rule that matches the drawing:
+           the elevation draws the window's head against the roofline too. */
+        const cap = gableWindowCapHeightsIn(
+          tile.leftEdgeHeightIn - gableEaveHeightIn,
+          tile.rightEdgeHeightIn - gableEaveHeightIn,
+          /* The truss plate is the sill, so the rough opening's top IS the
+             window's own height above the row's base — see the 3D view's
+             `roTopZIn`, which is this same expression. */
+          tile.windowHeightIn ?? standardWindowHeightDefaultIn.value,
+          GABLE_PANEL_MIN_HEIGHT_IN,
+        );
+        /* `exceedsRooflineIn === 0` is the LEGITIMATE no-cap case — a window
+           whose head lands exactly on its own roofline genuinely has no gable
+           material above it. Only a positive figure is a part that does not
+           fit. */
+        if (cap.kind !== "none" || !(cap.exceedsRooflineIn > 1e-6)) continue;
+        breaches.push({
+          label: `Wall ${wallCompassDirection(wall, footprint)} at ${formatLengthIn(tile.xStartIn, unitSystem)}`,
+          exceedsIn: cap.exceedsRooflineIn,
+        });
+      }
+    }
+    if (breaches.length === 0) return [];
+    const worstIn = Math.max(...breaches.map((b) => b.exceedsIn));
+    return [
+      {
+        label: `⚠ ${breaches.length} gable window${breaches.length === 1 ? "" : "s"} stand${breaches.length === 1 ? "s" : ""} through ${breaches.length === 1 ? "its" : "their"} own roofline — up to ${formatLengthIn(worstIn, unitSystem)} proud`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `A gable window's rough opening is taller than the tile it sits in, so its head passes above the roof plane and there is no gable panel over it. ` +
+          `At: ${breaches.map((b) => `${b.label} (${formatLengthIn(b.exceedsIn, unitSystem)} proud)`).join(" · ")}. ` +
+          `⚠ This is a design that does not close, not a value that needs sourcing. Either the window is shorter, the tile is taller, or the window does not belong on that tile. ` +
+          `The app will not seed one into a tile that cannot hold it, so a window reported here was placed or kept by hand. ` +
+          `⚠ The two drawings do not agree about such a window, and this entry sides with the elevation. The elevation measures its head against the ROOF PLANE and draws it standing through. The 3D view measures against the gable panel's own top, which with full-height gable ends closes to the roof's top SURFACE — about 16 3/8in higher — so it finds a few inches of cap and builds a sliver there. Whether a cap made only of that closing material counts as a panel over a window has not been decided.`,
+      },
+    ];
+  }, [footprint, gableTilesByWallId, gableEaveHeightIn, unitSystem]);
+
   const reviewLog = useMemo(() => {
     // Walls still carrying the panel run the OLD corner-ownership rule gave
     // them — see `preChangeTilingNotice.ts` for why this is a notice and not a
@@ -12485,6 +12600,10 @@ export default function LayoutEditor() {
       // other way round: that one reports two parts in one place, this one
       // reports a part that is not there at all.
       ...headerWithoutWebReviewEntries,
+      // And beside THAT one, because it is the same missing part again: a
+      // header with no web is a part built another way, a gable window
+      // through its own roofline is a part that was never built at all.
+      ...gableWindowRooflineReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
       // One line, above the material assumptions because it is about THIS file
@@ -12680,6 +12799,7 @@ export default function LayoutEditor() {
     squareBaleMergedCornerReviewEntries,
     memberOverlapReviewEntries,
     headerWithoutWebReviewEntries,
+    gableWindowRooflineReviewEntries,
     // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
     // values, and the notice is derived inline rather than in its own memo
     // precisely so that no MEMO joins this array.

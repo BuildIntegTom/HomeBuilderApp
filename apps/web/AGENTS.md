@@ -124,6 +124,37 @@
   in the memo, it is in how many already-flagged values its dependency array
   touches. A memo with one clean dep is free.
 
+  ⚠ **Recorded exception, 2026-11-15 (second of the day) — the gable-window
+  roofline entry, +1.** `preserve-manual-memoization` 73 -> 74. Every other
+  rule byte-identical and no correctness rule moved (`exhaustive-deps` 12,
+  `refs` 29, `set-state-in-effect` 12, `purity` 1, `immutability` 1,
+  `no-unused-vars` 35).
+
+  It is ONE dependency, attributed by the single-file bisect below rather than
+  by reading line numbers: **`gableTilesByWallId` in the new
+  `gableWindowRooflineReviewEntries` memo's dep array**. The memo itself is
+  free; its other three deps (`footprint`, `gableEaveHeightIn`, `unitSystem`)
+  are free; the one already-memoized value costs one. That is the 2026-11-15
+  ridge-beam note's rule holding again, now in both directions: **a memo costs
+  one per already-flagged value its dep array touches, and nothing for
+  itself.**
+
+  ⚠ **The accompanying one-line behaviour fix cost NOTHING** — replacing
+  `setGableWindowAnchorsByWallId((prev) => ({ ...seeded, ...prev }))` with
+  `setGableWindowAnchorsByWallId(seeded)` measured 73, identical to HEAD. Worth
+  knowing: removing an updater function from a setter is free here, so a merge
+  that has to become a replacement never has to be argued against this budget.
+
+  ⚠ **A correction to the 2026-11-15 ridge-beam entry above.** It attributes
+  its +1 to `secondStory` at `page.tsx:8054:5`. That line was ALREADY flagged
+  at HEAD along with `gableEaveHeightIn` at `8051:5` — the `ridgeBeamForPlan`
+  dep array carries two, not one, and did before that change. The entry's
+  conclusion stands (the dep was required, and dropping it would have raised
+  `exhaustive-deps`); its line-number attribution does not. **Attribute by
+  diffing the flagged SOURCE LINE TEXT between two runs, not by eye against
+  shifted line numbers** — an edit earlier in the file moves every number below
+  it, and this file is 17,000 lines long.
+
   ⚠ **How to bisect this rule cheaply, which was the real find.** The
   whole-app run takes ~10 minutes, but linting **`app/page.tsx` alone**
   finishes in about a minute and reproduces this rule's count exactly
