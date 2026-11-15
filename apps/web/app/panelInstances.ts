@@ -17,7 +17,6 @@ import {
   computeRoughOpeningWidthIn,
   computeStandardGirtRowCount,
   panelHeightInRange,
-  sillDefaultHeightIn,
   standardWindowHeightDefaultIn,
   type BracePattern,
   type JackStudConfig,
@@ -713,9 +712,29 @@ export function allPanelInstances(
           // window's jack studs are derived from its own "header" instance
           // (see page.tsx's shippingJackStudRefs, extended to also match a
           // gable cap via sourceSlotType === "window").
+          /* ─────────────────────────────────────────────────────────────
+             ⚠ **NO SILL, AND THE OPENING GOES DOWN TO THE TRUSS PLATE.**
+
+             > *"Those are made by a Gable inclined panel just turned into a
+             > header panel without a sill - bottom edge is just the truss
+             > plate."* — Tommy, 2026-11-01
+
+             Both halves of that were wrong here until 2026-11-15. A gable
+             window was built like a WALL window: a sill band at the bottom and
+             sill instances to fill it, so the rough opening floated
+             `sillHeightIn` above the row's own base. His rule is that the
+             opening's bottom edge IS the plate the gable row stands on — so
+             the sill height is out of the arithmetic entirely, and no sill is
+             fabricated.
+
+             ⚠ `tile.windowSillHeightIn` is still CARRIED on the instance, and
+             deliberately: a stored project may have one, the elevation editor
+             still offers the field, and silently dropping a number somebody
+             typed is worse than ignoring it here where the reason is written
+             down. It no longer moves anything.
+             ───────────────────────────────────────────────────────────── */
           const windowHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
-          const sillHeightIn = tile.windowSillHeightIn ?? sillDefaultHeightIn.value;
-          const roTopIn = gableEaveHeightIn !== undefined ? gableEaveHeightIn + sillHeightIn + windowHeightIn : undefined;
+          const roTopIn = gableEaveHeightIn !== undefined ? gableEaveHeightIn + windowHeightIn : undefined;
           pushInstance(
             direction,
             wall.id,
@@ -730,10 +749,10 @@ export function allPanelInstances(
             roTopIn !== undefined ? Math.max(0, tile.leftEdgeHeightIn - roTopIn) : undefined,
             roTopIn !== undefined ? Math.max(0, tile.rightEdgeHeightIn - roTopIn) : undefined,
           );
-          const roWidthIn = computeRoughOpeningWidthIn(tile.widthIn, jackStudConfig);
-          for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
-            pushInstance(direction, wall.id, "sill", sillWidthIn, slotIndexInWall, "window", undefined, tile.windowSillHeightIn);
-          }
+          /* ⚠ **No sill instances. Deleted 2026-11-15, not forgotten** — see the
+             block above. A wall window is a header AND a sill; a gable window
+             is *"a header panel without a sill"*, because there is nothing
+             under its opening but the truss plate. */
           return;
         }
         pushInstance(

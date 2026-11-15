@@ -1883,27 +1883,41 @@ export default function Building3DView({
           // header discarded — the upper gable cap takes that structural
           // role instead), plus a second, smaller buildGablePanelMembers
           // call for the cap, shifted up by the window's own RO-top.
+          /* ───────────────────────────────────────────────────────────
+             ⚠ **HIS OWN DESCRIPTION, 2026-11-15, AND IT IS SIMPLER THAN WHAT
+             WAS HERE:**
+
+             > *"the only difference between a regular tilted top gable panel
+             > and a tilted top gable window is that the bottom plate on the
+             > window panel is raised up and plywood jack studs placed under
+             > it. the truss plate detail becomes the sill."*
+
+             So there is **no new part and no header body**. The gable panel is
+             the SAME panel — same sloped top, same girts, same everything —
+             standing on two jack studs instead of on the plate, and the
+             opening is the space they leave beneath it.
+
+             ⚠ **THE TRUSS PLATE IS THE SILL.** Nothing is fabricated for it.
+             This path used to build sill runs and start the jack studs a sill
+             height up, so the opening floated above the row's own base — which
+             is the thing his earlier *"bottom edge is just the truss plate"*
+             had already ruled out. `buildOpeningAssemblyMembers` still does
+             the work; it is simply given a zero sill and asked to start at 0.
+             ─────────────────────────────────────────────────────────── */
           const windowHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
-          const windowSillHeightIn = tile.windowSillHeightIn ?? sillDefaultHeightIn.value;
-          const g = computeOpeningGeometry(
-            false,
-            tile.widthIn,
-            Math.max(tallerLocalIn, windowSillHeightIn + windowHeightIn + 1),
-            windowSillHeightIn,
-            windowHeightIn,
-            jackStudConfig,
-            standardWidthIn,
-          );
+          /* The raised bottom plate's underside: the whole opening, measured
+             from the truss plate the row stands on. */
+          const roTopZIn = windowHeightIn;
           const lowerMembers = buildOpeningAssemblyMembers(
             tile.widthIn,
             thicknessIn,
             "window",
             jackStudConfig,
-            g.sillHeightIn,
-            g.jackStudSpanIn,
             0,
-            g.sillHeightIn,
-            g.sillWidthsIn,
+            roTopZIn,
+            0,
+            0,
+            [],
             includeNailer,
           ).filter((m) => !m.memberId.startsWith("header_"));
           /* ⚠ **`null` HERE INSTEAD OF A CRASH.** A window in a short gable
@@ -1913,7 +1927,7 @@ export default function Building3DView({
              `gableWindowCapHeightsIn`, which owns that decision and is
              tested. A window whose head reaches its own roofline simply has
              no gable material above it. */
-          const cap = gableWindowCapHeightsIn(leftLocalIn, rightLocalIn, g.roTopZIn, GABLE_PANEL_MIN_HEIGHT_IN);
+          const cap = gableWindowCapHeightsIn(leftLocalIn, rightLocalIn, roTopZIn, GABLE_PANEL_MIN_HEIGHT_IN);
           const capMembers =
             cap.kind === "none"
               ? []
@@ -1926,7 +1940,7 @@ export default function Building3DView({
                   girtStyle,
                 ).map((m) => ({
                   ...m,
-                  position: { ...m.position, zIn: m.position.zIn + g.roTopZIn },
+                  position: { ...m.position, zIn: m.position.zIn + roTopZIn },
                 }));
           members = [...lowerMembers, ...capMembers];
         } else {
@@ -1970,7 +1984,10 @@ export default function Building3DView({
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableEndsFullHeight, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig, standardWidthIn]);
+  }, [footprint, gableEndsFullHeight, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig]);
+  /* ⚠ `standardWidthIn` left this dep list on 2026-11-15: it was read only
+     by the `computeOpeningGeometry` call a gable window used to make to
+     find its sill run, and a gable window has no sill. */
 
   // 1-3 real roof-bearing (truss plate/box beam) segments per wall (see
   // computeRoofBearingSegments) — a wall with partial Box Beam coverage

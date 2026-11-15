@@ -635,3 +635,89 @@ describe("B33 — a Big Header instance carries its own height and its own sill 
     expect(instances[0]!.includeSillOnBigHeader).toBeUndefined();
   });
 });
+
+/**
+ * ⚠ **A GABLE WINDOW IS THE SAME PANEL, RAISED — 2026-11-15.**
+ *
+ * > *"the only difference between a regular tilted top gable panel and a
+ * > tilted top gable window is that the bottom plate on the window panel is
+ * > raised up and plywood jack studs placed under it. the truss plate detail
+ * > becomes the sill."* — Tommy
+ *
+ * Two things were wrong before, and they were the same mistake twice: a gable
+ * window was assembled like a WALL window. It fabricated sill panels, and its
+ * rough opening started a sill height ABOVE the row's own base, so the opening
+ * floated. His rule — already on record on 2026-11-01 as *"bottom edge is just
+ * the truss plate"* — is that there is nothing under the opening at all.
+ */
+describe("⚠ a gable window: no sill, opening down to the truss plate", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const wallSlots = { AB: [{ type: "standard" as const, widthIn: 40 }] };
+  const EAVE_IN = 120;
+  const tile = (windowHeightIn: number, windowSillHeightIn?: number) => ({
+    AB: [
+      {
+        widthIn: 40,
+        /* Tall enough that a 48in window still leaves a panel above it at
+           BOTH edges — a shorter left edge clamps the cap to 0, which is
+           `gableWindowCapHeightsIn` doing its job, not a defect. */
+        leftEdgeHeightIn: 200,
+        rightEdgeHeightIn: 230,
+        isWindow: true,
+        windowHeightIn,
+        ...(windowSillHeightIn === undefined ? {} : { windowSillHeightIn }),
+      },
+    ],
+  });
+  /* `gableEaveHeightIn` is the TENTH parameter, not the fifth after the
+     tiles — the signature has grown six optional arguments between them. */
+  const run = (windowHeightIn: number, windowSillHeightIn?: number) =>
+    allPanelInstances(
+      fp,
+      wallSlots,
+      40,
+      "plywood",
+      tile(windowHeightIn, windowSillHeightIn),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      EAVE_IN,
+    );
+
+  it("⚠ fabricates NO sill", () => {
+    expect(run(48).filter((i) => i.panelType === "sill")).toEqual([]);
+    /* Even when a stored project still carries a sill height. */
+    expect(run(48, 30).filter((i) => i.panelType === "sill")).toEqual([]);
+  });
+
+  it("⚠ puts the opening's head at the window height above the TRUSS PLATE, with no sill band", () => {
+    /* The cap's edge heights are local to the raised bottom plate, so the
+       roofline edge less the cap height IS the rough-opening top. */
+    const cap = run(48).find((i) => i.panelType === "gable" && i.sourceSlotType === "window")!;
+    expect(200 - cap.leftEdgeHeightIn!).toBe(EAVE_IN + 48);
+    expect(230 - cap.rightEdgeHeightIn!).toBe(EAVE_IN + 48);
+  });
+
+  it("⚠ a stored sill height no longer MOVES anything, though it is still carried", () => {
+    /* The field survives on the instance — a stored project has one and the
+       elevation editor still offers it — but it is out of the arithmetic. */
+    const withSill = run(48, 30).find((i) => i.panelType === "gable" && i.sourceSlotType === "window")!;
+    const without = run(48).find((i) => i.panelType === "gable" && i.sourceSlotType === "window")!;
+    expect(withSill.leftEdgeHeightIn).toBe(without.leftEdgeHeightIn);
+    expect(withSill.sillHeightIn).toBe(30);
+  });
+
+  it("is still the same gable panel, just shorter — same tile, same width, sloped both ways", () => {
+    const cap = run(48).find((i) => i.panelType === "gable" && i.sourceSlotType === "window")!;
+    expect(cap.widthIn).toBe(40);
+    /* The rake is untouched: both edges dropped by the same rough-opening top. */
+    expect(cap.rightEdgeHeightIn! - cap.leftEdgeHeightIn!).toBe(230 - 200);
+  });
+
+  it("a taller window leaves a shorter panel above it, one inch for one inch", () => {
+    const short = run(48).find((i) => i.panelType === "gable" && i.sourceSlotType === "window")!;
+    const tall = run(60).find((i) => i.panelType === "gable" && i.sourceSlotType === "window")!;
+    expect(short.leftEdgeHeightIn! - tall.leftEdgeHeightIn!).toBe(12);
+  });
+});

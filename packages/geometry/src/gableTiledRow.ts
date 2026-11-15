@@ -1318,19 +1318,39 @@ export function classifyGableWindowsAgainstRunStop(
 export const GABLE_WINDOW_PER_WALL_FT = 12;
 
 export function seedGableWindows(
-  /** The row's own tile count, EXCLUDING safety gaps and the ridge column —
-   *  the same ordinal space `GableWindowReservation.beforeTileCount` uses. */
-  tileCount: number,
+  /**
+   * ⚠ **Each real tile's own RISE above the eave**, in the ordinal space
+   * `GableWindowReservation.beforeTileCount` uses (safety gaps and the ridge
+   * column excluded). It used to be a plain COUNT, and a count cannot answer
+   * the question that matters.
+   *
+   * ⚠ **Found 2026-11-15, the day after auto-spawning shipped:** a seeded
+   * window landed on a tile only 28in tall. A window is 48in, so its head
+   * stood clean through the tile's own roofline, the gable cap above it
+   * clamped to nothing, and the drawing showed an opening with no panel over
+   * it. `gableWindowCapHeightsIn` reports that as `exceedsRooflineIn` and
+   * nobody was listening. Hand-placing one could always reach it; seeding made
+   * it the DEFAULT on any building with a shallow gable.
+   */
+  tileRisesIn: readonly number[],
   wallLengthIn: number,
   /** The width a reservation carries when nothing aligns it; the caller's
    *  standard panel width. */
   defaultWidthIn: number,
+  /** What a tile must rise to hold one: the window's own height plus enough
+   *  panel above it to be a panel. The caller owns both numbers. */
+  minRiseIn: number,
   randomFn: () => number = Math.random,
 ): GableWindowReservation[] {
+  const tileCount = tileRisesIn.length;
   const wanted = Math.floor(wallLengthIn / (GABLE_WINDOW_PER_WALL_FT * 12));
   if (!(wanted > 0) || !(tileCount > 2)) return [];
   const candidates: number[] = [];
-  for (let ordinal = 1; ordinal < tileCount - 1; ordinal++) candidates.push(ordinal);
+  for (let ordinal = 1; ordinal < tileCount - 1; ordinal++) {
+    /* ⚠ A tile too short for a window is not a candidate — better a wall
+       with fewer windows than one with a window through its own roof. */
+    if ((tileRisesIn[ordinal] ?? 0) >= minRiseIn) candidates.push(ordinal);
+  }
   const chosen: number[] = [];
   for (let i = 0; i < wanted && candidates.length > 0; i++) {
     chosen.push(candidates.splice(Math.floor(randomFn() * candidates.length), 1)[0]!);

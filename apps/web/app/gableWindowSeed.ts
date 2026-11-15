@@ -59,6 +59,13 @@ export function seedGableWindowsForFootprint(
   heelHeightIn: number,
   anchorMode: RoofBearingAnchorMode,
   columnReservationWidthIn: number | undefined,
+  /**
+   * ⚠ What a tile must RISE to hold a seeded window: the window's own height
+   * plus enough panel left above it to be a panel. Passed in rather than
+   * derived, because both numbers are the app's (`standardWindowHeightDefaultIn`
+   * and `GABLE_PANEL_MIN_HEIGHT_IN`) and geometry owns neither.
+   */
+  minTileRiseForWindowIn: number,
   randomFn?: () => number,
 ): Record<string, GableWindowReservation[]> {
   const seeded: Record<string, GableWindowReservation[]> = {};
@@ -109,8 +116,13 @@ export function seedGableWindowsForFootprint(
       wallLengthIn,
       spans,
     );
-    /* The ordinal space `beforeTileCount` counts in: real tiles only. */
-    const windows = seedGableWindows(tiles.filter((t) => !t.isSafetyGap).length, wallLengthIn, standardWidthIn, randomFn);
+    /* The ordinal space `beforeTileCount` counts in: real tiles only, each
+       with its own RISE above the eave — see `seedGableWindows`, which refuses
+       a tile too short to hold a window under its own roofline. */
+    const risesIn = tiles
+      .filter((t) => !t.isSafetyGap)
+      .map((t) => Math.max(t.leftHeightIn, t.rightHeightIn) - gableEaveHeightIn);
+    const windows = seedGableWindows(risesIn, wallLengthIn, standardWidthIn, minTileRiseForWindowIn, randomFn);
     if (windows.length > 0) seeded[wallId] = windows;
   }
   return seeded;

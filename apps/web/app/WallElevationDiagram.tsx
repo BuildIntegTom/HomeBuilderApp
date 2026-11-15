@@ -2656,34 +2656,51 @@ export default function WallElevationDiagram({
                   </g>
                 );
               }
-              // Window tile — split render.
+              /* ─────────────────────────────────────────────────────────
+                 ⚠ **THE SAME PANEL, RAISED ONTO JACK STUDS — 2026-11-15.**
+
+                 > *"the only difference between a regular tilted top gable
+                 > panel and a tilted top gable window is that the bottom plate
+                 > on the window panel is raised up and plywood jack studs
+                 > placed under it. the truss plate detail becomes the sill."*
+
+                 ⚠ **THIS IS THE THIRD PLACE THAT HAD ITS OWN COPY** of the
+                 arithmetic, after `panelInstances` and `Building3DView`, and it
+                 is the one he looks at: the drawing still put a sill band under
+                 the opening after both of those were fixed, so the elevation
+                 showed a green sill the fabrication data no longer had.
+
+                 The truss plate IS the sill. Nothing is drawn for it, the
+                 opening starts at the row's own base, and the jack studs carry
+                 the raised panel the whole way down.
+                 ───────────────────────────────────────────────────────── */
               const windowHeightIn = p.windowHeightIn ?? standardWindowHeightDefaultIn.value;
-              const windowSillHeightIn = p.windowSillHeightIn ?? sillDefaultHeightIn.value;
               const tileMaxLocalRiseIn = Math.max(p.leftHeightIn, p.rightHeightIn) - roofBaseHeightIn;
               const g = computeOpeningGeometry(
                 false,
                 p.widthIn,
-                Math.max(tileMaxLocalRiseIn, windowSillHeightIn + windowHeightIn + 1),
-                windowSillHeightIn,
+                Math.max(tileMaxLocalRiseIn, windowHeightIn + 1),
+                0,
                 windowHeightIn,
                 jackStudConfig,
                 targetPanelWidthIn,
               );
-              const members = buildOpeningAssemblyMembers(p.widthIn, thicknessIn, "window", jackStudConfig, g.sillHeightIn, g.jackStudSpanIn, 0, g.sillHeightIn, g.sillWidthsIn, includeNailer);
+              const members = buildOpeningAssemblyMembers(p.widthIn, thicknessIn, "window", jackStudConfig, 0, windowHeightIn, 0, 0, [], includeNailer);
               const jackStudMembers = members.filter((m) => m.role === "jack_stud");
               const localXToPx = (xIn: number) => xPx(p.xStartIn + xIn);
               const localYPx = (localHeightIn: number) => yPx(roofBaseHeightIn + localHeightIn);
               const roGapXPx = localXToPx(g.jackThicknessIn);
               const roGapWidthPx = localXToPx(p.widthIn - g.jackThicknessIn) - roGapXPx;
-              const roGapTopPx = localYPx(g.roTopZIn);
-              const roGapHeightPx = localYPx(g.sillHeightIn) - roGapTopPx;
-              const sillOffsetsIn = g.sillWidthsIn.reduce<number[]>((acc, w) => [...acc, acc[acc.length - 1]! + w], [g.jackThicknessIn]);
+              /* The opening runs from the truss plate to the raised bottom
+                 plate — no sill band at either end of that span. */
+              const roGapTopPx = localYPx(windowHeightIn);
+              const roGapHeightPx = localYPx(0) - roGapTopPx;
               // Upper cap — same trapezoid as a plain tile, just floored at
               // the window's own RO-top (roofBaseHeightIn + g.roTopZIn)
               // instead of the true eave; clamped to >=0 so an edge the
               // window already reaches all the way up to renders flush
               // (zero-height on that side) instead of inverting.
-              const capFloorIn = roofBaseHeightIn + g.roTopZIn;
+              const capFloorIn = roofBaseHeightIn + windowHeightIn;
               const capLeftIn = Math.max(capFloorIn, p.leftHeightIn);
               const capRightIn = Math.max(capFloorIn, p.rightHeightIn);
               const capPoints4 = [
@@ -2697,18 +2714,7 @@ export default function WallElevationDiagram({
               const capRip = computeGableRipCallout(p.widthIn, Math.min(capLeftIn, capRightIn) - capFloorIn, Math.max(capLeftIn, capRightIn) - capFloorIn);
               return (
                 <g key={i} onClick={toggle} style={{ cursor: "pointer" }}>
-                  {g.sillWidthsIn.map((sillWidthIn, sillIdx) => (
-                    <rect
-                      key={sillIdx}
-                      x={localXToPx(sillOffsetsIn[sillIdx]!)}
-                      y={localYPx(g.sillHeightIn)}
-                      width={localXToPx(sillOffsetsIn[sillIdx]! + sillWidthIn) - localXToPx(sillOffsetsIn[sillIdx]!)}
-                      height={Math.max(0, localYPx(0) - localYPx(g.sillHeightIn))}
-                      fill={NAMED_PANEL_TYPE_COLORS.sill}
-                      stroke="#3a6a4a"
-                      strokeWidth={1}
-                    />
-                  ))}
+                  {/* ⚠ No sill rectangles. The truss plate is the sill. */}
                   <MemberElevationShapes members={jackStudMembers} xToPx={localXToPx} zToPx={localYPx} />
                   <rect
                     x={roGapXPx}

@@ -4273,6 +4273,10 @@ export default function LayoutEditor() {
       effectiveHeelHeightIn,
       roofBearingAnchorMode,
       isPeaked ? COLUMN_TOTAL_WIDTH_IN : undefined,
+      /* ⚠ A tile has to hold the whole window AND still be a panel above it,
+         or the window's head stands through its own roofline — which is what
+         seeding onto a 28in tile did on 2026-11-15. */
+      standardWindowHeightDefaultIn.value + GABLE_PANEL_MIN_HEIGHT_IN,
     );
     setGableWindowAnchorsByWallId((prev) => ({ ...seededGableWindows, ...prev }));
 

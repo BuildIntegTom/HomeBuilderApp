@@ -1246,6 +1246,10 @@ describe("⚠ gable windows under joint alignment", () => {
 });
 
 describe("⚠ seedGableWindows — one per 12ft, at random tiles", () => {
+  /** Tiles tall enough to hold a window: the rise is what decides, not a count. */
+  const TALL = (n: number) => Array.from({ length: n }, () => 200);
+  const MIN_RISE = 48 + 1.5;
+
   /* A fixed sequence, so "random" is testable and the count/eligibility rules
      are pinned rather than the dice. */
   const fixed = (values: number[]) => {
@@ -1262,13 +1266,13 @@ describe("⚠ seedGableWindows — one per 12ft, at random tiles", () => {
       [24, 2],
       [40, 3],
     ] as [number, number][]) {
-      expect({ lengthFt, n: seedGableWindows(20, lengthFt * 12, 48, fixed([0])).length }).toEqual({ lengthFt, n: expected });
+      expect({ lengthFt, n: seedGableWindows(TALL(20), lengthFt * 12, 48, MIN_RISE, fixed([0])).length }).toEqual({ lengthFt, n: expected });
     }
   });
 
   it("⚠ never seeds the first or last tile — a gable's end tiles are its shortest", () => {
     for (let seed = 0; seed < 20; seed++) {
-      const windows = seedGableWindows(6, 40 * 12, 48, fixed([seed / 20, (seed * 7) % 20 / 20, (seed * 13) % 20 / 20]));
+      const windows = seedGableWindows(TALL(6), 40 * 12, 48, MIN_RISE, fixed([seed / 20, (seed * 7) % 20 / 20, (seed * 13) % 20 / 20]));
       for (const w of windows) {
         expect({ seed, ordinal: w.beforeTileCount, inRange: w.beforeTileCount >= 1 && w.beforeTileCount <= 4 }).toEqual({
           seed,
@@ -1280,20 +1284,45 @@ describe("⚠ seedGableWindows — one per 12ft, at random tiles", () => {
   });
 
   it("never puts two windows on the same tile", () => {
-    const windows = seedGableWindows(8, 40 * 12, 48, fixed([0, 0, 0]));
+    const windows = seedGableWindows(TALL(8), 40 * 12, 48, MIN_RISE, fixed([0, 0, 0]));
     expect(new Set(windows.map((w) => w.beforeTileCount)).size).toBe(windows.length);
   });
 
   it("asks for no more than the row can hold", () => {
     /* A 60ft wall wants 5 windows; a 4-tile row has 2 eligible positions. */
-    expect(seedGableWindows(4, 60 * 12, 48, fixed([0])).length).toBe(2);
+    expect(seedGableWindows(TALL(4), 60 * 12, 48, MIN_RISE, fixed([0])).length).toBe(2);
     /* And a row with no interior tile at all gets none rather than throwing. */
-    expect(seedGableWindows(2, 60 * 12, 48, fixed([0]))).toEqual([]);
+    expect(seedGableWindows(TALL(2), 60 * 12, 48, MIN_RISE, fixed([0]))).toEqual([]);
   });
 
   it("is deterministic given its random source, so a saved project reopens the same", () => {
-    const a = seedGableWindows(10, 36 * 12, 48, fixed([0.1, 0.9, 0.5]));
-    const b = seedGableWindows(10, 36 * 12, 48, fixed([0.1, 0.9, 0.5]));
+    const a = seedGableWindows(TALL(10), 36 * 12, 48, MIN_RISE, fixed([0.1, 0.9, 0.5]));
+    const b = seedGableWindows(TALL(10), 36 * 12, 48, MIN_RISE, fixed([0.1, 0.9, 0.5]));
     expect(a).toEqual(b);
+  });
+
+  /**
+   * ⚠ **A tile too short for a window is not a candidate — 2026-11-15.**
+   *
+   * Found the day after seeding shipped: a seeded window landed on a 28in tile,
+   * so its 48in head stood clean through that tile's own roofline and the gable
+   * cap above it clamped to nothing. The drawing showed an opening with no panel
+   * over it. Better a wall with fewer windows than one with a window through
+   * its roof.
+   */
+  it("⚠ refuses a tile that cannot hold the window under its own roofline", () => {
+    /* Eight tiles, only the two at ordinals 3 and 4 tall enough. */
+    const rises = [200, 20, 20, 200, 200, 20, 20, 200];
+    const windows = seedGableWindows(rises, 60 * 12, 48, MIN_RISE, fixed([0, 0, 0, 0, 0]));
+    expect(windows.map((w) => w.beforeTileCount).sort((a, b) => a - b)).toEqual([3, 4]);
+  });
+
+  it("seeds nothing at all on a row of short tiles, rather than something broken", () => {
+    expect(seedGableWindows([200, 20, 20, 20, 200], 60 * 12, 48, MIN_RISE, fixed([0]))).toEqual([]);
+  });
+
+  it("a tile exactly AT the minimum is allowed; one a hair under is not", () => {
+    expect(seedGableWindows([200, MIN_RISE, 200], 12 * 12, 48, MIN_RISE, fixed([0]))).toHaveLength(1);
+    expect(seedGableWindows([200, MIN_RISE - 0.125, 200], 12 * 12, 48, MIN_RISE, fixed([0]))).toEqual([]);
   });
 });
