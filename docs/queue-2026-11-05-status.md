@@ -139,6 +139,23 @@ is cut, what sets the radius) was answering the wrong question.
     lives in the builder module rather than at a call site — the third time a
     call-site clamp failed to cover the next call site.
 
+12. **Big Header over 48in — stuffed perpendicular** — **BUILT 2026-11-14**,
+    and dormant. *"If they are greater than 48 in... the top and bottom plates
+    should be completely within the panel so that the top and bottom plate
+    stretch the entire opening."* The threshold is the width along the wall
+    (his *"correct"*); at 48in and under nothing changes (his *"just the way
+    its stuff and created / as is"*).
+    ⚠ Two surprises. The top and bottom **skins already existed** on both
+    flavours. And the **mid-wall** Big Header already ran its plates corner to
+    corner with no jack studs at all, so it complied in full and needed no
+    change — which matters, because it is the flavour that actually gets wide.
+    What changed is the **slot** Big Header: over 48in its plates now run the
+    full width and its jack studs stand between them, bearing the top plate.
+    ⚠ **It cannot fire today.** `panelWidthInRange.maxIn` is 48in and marked
+    confirmed, and every slot drag is clamped to it, so a slot Big Header can
+    never be wider than 4ft. **Tommy's call**: raise that cap (for this type
+    or at all), or the rule only ever describes the mid-wall flavour.
+
 ## D. Open questions that are not blocking anything
 
 - **Shipping bundles**: *"full panel height x 3 panel depths tall"* — on the

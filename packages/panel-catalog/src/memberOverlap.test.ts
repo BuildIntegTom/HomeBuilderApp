@@ -412,6 +412,14 @@ const HEIGHT_CASES: HeightCase[] = [
   { name: "door header", at: (h) => buildDoorHeaderMembers(40, D, h), loIn: 4, hiIn: 48, anchorIn: 24 },
   { name: "window header", at: (h) => buildWindowHeaderMembers(40, D, h), loIn: 4, hiIn: 48, anchorIn: 24 },
   { name: "big header", at: (h) => buildBigHeaderMembers(40, D, h, false, "plywood"), loIn: 8, hiIn: 48, anchorIn: 24 },
+  /* ⚠ **The OTHER Big Header — 2026-11-14.** Over 48in wide it is stuffed
+     perpendicular, so its plates run corner to corner and the jack studs stand
+     BETWEEN them instead of beside them. A full-width plate passing over a
+     full-height jack is exactly the overlap this case exists to refuse, and
+     the 40in case above can never reach it. Both 2x4 jack configs, because the
+     jack's thickness is what the plate has to clear. */
+  { name: "big header wide", at: (h) => buildBigHeaderMembers(72, D, h, false, "plywood"), loIn: 8, hiIn: 48, anchorIn: 24 },
+  { name: "big header wide 2x4 jacks", at: (h) => buildBigHeaderMembers(96, D, h, false, "plywood+2x4"), loIn: 8, hiIn: 48, anchorIn: 24 },
   { name: "big header beam", at: (h) => buildBigHeaderBeamMembers(120, D, h), loIn: 4, hiIn: 48, anchorIn: 24 },
   { name: "vertical gap filler", at: (h) => buildVerticalGapFillerMembers(40, D, h, h + 12), loIn: 8, hiIn: WALL_HI, anchorIn: 12 },
 ];
@@ -608,6 +616,18 @@ const SWEEP_FINDINGS: Record<string, string[]> = {
   "window header": [
     "bottom_chord_2x4_ext x top_chord_2x4_ext @ 4..4",
     "bottom_chord_2x4_int x top_chord_2x4_int @ 4..4",
+  ],
+  /* The SAME degenerate pair the narrow case pins, and nothing else: at 8in
+     the assembly is shorter than its own two plate stacks. A full-width plate
+     passing over a jack stud produces no finding at any height, which is the
+     thing this case was added to check. */
+  "big header wide": [
+    "bottom_chord_2x4_ext x top_chord_2x4_ext @ 8..8",
+    "bottom_chord_2x4_int x top_chord_2x4_int @ 8..8",
+  ],
+  "big header wide 2x4 jacks": [
+    "bottom_chord_2x4_ext x top_chord_2x4_ext @ 8..8",
+    "bottom_chord_2x4_int x top_chord_2x4_int @ 8..8",
   ],
   "big header": [
     "bottom_chord_2x4_ext x top_chord_2x4_ext @ 8..8",
