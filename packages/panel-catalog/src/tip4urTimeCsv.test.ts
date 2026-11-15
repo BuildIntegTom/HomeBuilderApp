@@ -21,6 +21,7 @@ function assembly(
   widthIn = 48,
   heightIn = 96,
   countsAsPanel = true,
+  depthIn = 15.5,
 ): ExportableAssembly {
   return {
     panelType,
@@ -28,6 +29,7 @@ function assembly(
     label: `${typeName} ${widthIn}in`,
     widthIn,
     heightIn,
+    depthIn,
     copies: instanceNames.length,
     usedAt: instanceNames.join(", "),
     instanceNames,
@@ -39,10 +41,39 @@ function assembly(
 describe("tip4urTimeSqFt", () => {
   it("is a plain number with up to 2 decimals, no trailing zeros", () => {
     /* His own examples: 32 and 32.5, never 32.00. */
-    expect(tip4urTimeSqFt(48, 96)).toBe(32);
-    expect(tip4urTimeSqFt(48, 97.5)).toBe(32.5);
-    expect(String(tip4urTimeSqFt(48, 96))).toBe("32");
-    expect(String(tip4urTimeSqFt(40.125, 96))).toBe("26.75");
+    expect(tip4urTimeSqFt((48 * 96) / 144)).toBe(32);
+    expect(tip4urTimeSqFt((48 * 97.5) / 144)).toBe(32.5);
+    expect(String(tip4urTimeSqFt((48 * 96) / 144))).toBe("32");
+    expect(String(tip4urTimeSqFt((40.125 * 96) / 144))).toBe("26.75");
+  });
+});
+
+describe("\u26a0 a SHOP ITEM is measured by its largest face \u2014 his 2026-11-15 acceptance check", () => {
+  it("a safety gap reads 12.9 sq ft, not the 0.63 the elevation gives", () => {
+    /* His own numbers, verbatim: *"For a safety gap that is the plywood seen
+       edge-on: 0.75in x 120in = 0.63 sq ft. He wants the piece's largest face
+       instead \u2014 for that same gap, the sheet: 15.5in x 120in = 12.9 sq ft."*
+       This is the test the whole change exists to pass. */
+    const gap = assembly("Wall panel", "Safety Gap", ["N4"], 0.75, 120, false, 15.5);
+    const ledger = stampPanelCodes(tip4urTimePanelKeys([gap]), EMPTY_PANEL_CODE_LEDGER);
+    const [row] = tip4urTimePanels([gap], ledger);
+    expect(tip4urTimeSqFt(row.sqFt)).toBe(12.92);
+    expect(row.countsAsPanel).toBe(false);
+    /* The two dimensions on the row are unchanged \u2014 a crew still reads a
+       3/4in by 10ft piece off it. The sq ft deliberately does not multiply
+       out from them; the 15.5in depth is the missing factor. */
+    expect([row.widthIn, row.heightIn]).toEqual([0.75, 120]);
+  });
+
+  it("a STRAW PANEL is untouched, even when its largest face is through the wall", () => {
+    /* *"Shop items only. Straw panels keep their elevation face, unchanged."*
+       A 48in gable tile only 12in tall in a 15.5in wall has its biggest face
+       lying down (48 x 15.5 = 5.17) rather than standing (48 x 12 = 4) \u2014 so a
+       plain `max` would have quietly re-measured the top of every gable row. */
+    const tile = assembly("Wall panel", "Gable End Panel", ["G1"], 48, 12, true, 15.5);
+    const ledger = stampPanelCodes(tip4urTimePanelKeys([tile]), EMPTY_PANEL_CODE_LEDGER);
+    const [row] = tip4urTimePanels([tile], ledger);
+    expect(tip4urTimeSqFt(row.sqFt)).toBe(4);
   });
 });
 
@@ -181,7 +212,7 @@ describe("⚠ the file's own shape", () => {
 });
 
 describe("tip4urTimeExportProblems — his acceptance check, enforced before the file leaves", () => {
-  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, countsAsPanel: true };
+  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, sqFt: (48 * 96) / 144, countsAsPanel: true };
 
   it("passes a sound export", () => {
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [ok] })).toEqual([]);
@@ -199,9 +230,18 @@ describe("tip4urTimeExportProblems — his acceptance check, enforced before the
         panels: [{ ...ok, code: "x".repeat(TIP4URTIME_CODE_MAX_LENGTH + 1) }],
       }),
     ).toHaveLength(1);
+    /* \u26a0 **`sqFt` IS WHAT IS CHECKED NOW, not `heightIn` x `widthIn`.** A
+       shop item's area comes off its largest face, so a row CAN carry a real
+       area with a zero in one of its two printed dimensions \u2014 and a row with
+       both dimensions set can still have no area. Zeroing the height used to
+       be the same thing as zeroing the area; it is not any more, which is
+       exactly why this guard had to follow the field it is guarding. */
+    expect(
+      tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [{ ...ok, sqFt: 0 }] }),
+    ).toHaveLength(1);
     expect(
       tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [{ ...ok, heightIn: 0 }] }),
-    ).toHaveLength(1);
+    ).toEqual([]);
   });
 
   it("catches a panel that never got a code", () => {
@@ -233,12 +273,23 @@ describe("⚠ a Safety Gap is claimable, earns its square footage, and is NOT a 
     const csv = buildTip4urTimeCsv({ projectName: "P", projectId: "id", panels });
     const lines = csv.trimEnd().split("\r\n");
     expect(lines[3]!.endsWith(",1")).toBe(true);
-    expect(lines[4]).toBe("P-0002,Safety Gap,N2,0.75,120,0.63,0");
+    /* \u26a0 **12.92, AND IT USED TO SAY 0.63 \u2014 his 2026-11-15 answer, in one
+       row.** This line is the acceptance check for the whole change: *"Its
+       row should show about 12.9 in Sq ft (not 0.63) and 0 in Counts as
+       panel."* The two dimensions beside it are unchanged and deliberately
+       do not multiply out to it \u2014 the missing factor is the 15.5in through
+       the wall, which is not a column. */
+    expect(lines[4]).toBe("P-0002,Safety Gap,N2,0.75,120,12.92,0");
     expect(lines[5]!.endsWith(",0")).toBe(true);
   });
 
-  it("still carries a real square footage, because a crew earns it", () => {
-    expect(tip4urTimeSqFt(0.75, 120)).toBe(0.63);
+  it("still carries a real square footage, because a crew earns it \u2014 now the SHEET's", () => {
+    /* It always carried one; the question this file raised on 2026-11-14 was
+       whether 0.63 was the right one, and his answer was no. A crew claiming
+       a safety gap is handling a 15.5in x 10ft sheet of plywood and is
+       credited for it. */
+    const gap = panels.find((row) => row.panelType === "Safety Gap")!;
+    expect(tip4urTimeSqFt(gap.sqFt)).toBe(12.92);
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels })).toEqual([]);
   });
 });

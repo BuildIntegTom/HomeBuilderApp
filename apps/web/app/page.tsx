@@ -159,6 +159,8 @@ import {
   computeCoveragePrice,
   billableAreaSqFt,
   PUBLIC_COVERAGE_RATE_PER_SQ_FT,
+  computeShopItemPrice,
+  plywoodJackStuds,
   type PriceablePanel,
   computeSillTapeLengthFt,
   computeStandardPanelStrawVolume,
@@ -308,6 +310,7 @@ import {
   plasterMixPartsDefaults,
   plasterPriceDefaults,
   priceRates,
+  shopItemRates,
   referenceDensities,
   roofCatcherBeamShapeDefault,
   roofCatcherBeamShapeOptions,
@@ -708,11 +711,13 @@ function formatTrailerLengthIn(valueIn: number, unitSystem: "imperial" | "metric
  * that is itself rebuilt per render.
  */
 const phase2Assumptions = () => [
-  {
-    label: "Safety/gap panel pricing",
-    status: "pending-BI-confirmation" as const,
-    note: "No distinct price rate given for safety/gap panels — priced at the standard rate ($28/sqft) as a placeholder.",
-  },
+  /* ⚠ **"Safety/gap panel pricing" WAS HERE, and 2026-11-15 closed it.** It
+     was open because no rate had ever been given for a safety gap, so it was
+     charged at a neighbouring panel's rate on the 3/4in sliver it fills. He
+     has now given it both halves: $4/sq ft, on the piece's LARGEST face. See
+     `shopItemRates`, and the entry below for what is still open about it.
+     Deleted rather than reworded, because this list is an inventory of what
+     is NOT settled. */
   {
     label: "Header/sill panel area",
     status: "pending-BI-confirmation" as const,
@@ -721,7 +726,13 @@ const phase2Assumptions = () => [
   {
     label: "Gable End Panel pricing",
     status: "pending-BI-confirmation" as const,
-    note: "Gable End Panels are priced at the roof rate ($42/sqft placeholder) using the trapezoid's own average height above the eave; a tile's vertical safety-gap filler is priced at the standard rate instead, since it's the exact same member a wall-level safety-gap panel uses.",
+    note:
+      "Gable End Panels are priced at the flat coverage rate using the trapezoid's own average height above the " +
+      "eave. ⚠ A tile's SAFETY-GAP filler has left this entry as of 2026-11-15: it used to be charged at the " +
+      "standard panel rate on the reasoning that it builds from the exact same member a wall-level safety gap " +
+      "does, and that reasoning now sends it the other way — it is a shop item at $4/sq ft of its real " +
+      "15.5in-deep face. What is still a reading here is the TRAPEZOID basis for a real gable tile: average " +
+      "height above the eave, which is its true face, applied at a rate he set for rectangular wall panels.",
   },
   {
     label: "Cross-tilted (tilted gable) panel — pricing basis, cavity fill and fastener schedule",
@@ -745,16 +756,58 @@ const phase2Assumptions = () => [
       "fastener schedule is still the standard wall panel's read onto these roles rather than one written for " +
       "this part.",
   },
+  /* ⚠ **THE BEAM AREA STAND-IN IS GONE, 2026-11-15.** This entry existed
+     because a beam is a linear member with no width-x-wall-height face, so
+     its area was its covered length by its own cross-sectional height — a
+     made-up rectangle, charged at a panel's rate. Shop items are now priced
+     off their real pieces: an LVL web on its own 9in face, a 2x4 chord on its
+     own 3 1/2in face. The area being multiplied is a real piece of stock for
+     the first time, so the stand-in has nothing left to confirm. What took
+     its place is the entry immediately below, which is about the READING of
+     his rates rather than about an invented area. */
   {
-    label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing — the AREA is a stand-in (the rate is now his)",
+    label: "Shop-item rates: PER PIECE is a reading of his instruction, and a Truss Plate moves 2.3x",
     status: "pending-BI-confirmation" as const,
     note:
-      "The RATE this entry used to be about is settled: asked on 2026-11-08 whether the buckets his flat rate did " +
-      "not name should keep their own prices, Tommy answered \"Flat $25 for absolutely everything\", so beams, truss " +
-      "plates, box beams and Mid-Wall Bond Beams are priced at $25/sq ft like every other bucket and the " +
-      "$42/sqft placeholder is deleted. What is STILL a stand-in is the AREA that rate is charged against: these " +
-      "are linear members with no real width x wall-height face, so each piece is priced on its own covered " +
-      "length x its own assembly's cross-sectional height. He confirmed the rate, not the area.",
+      "His 2026-11-15 table — plywood jack studs and safety gaps $4/sq ft, LVLs $10/sq ft per LVL, beams and " +
+      "columns built from dimensional lumber $60/sq ft, each on \"the piece's largest face\" — is applied PER " +
+      "PIECE, so a Box Beam is four prices (two LVL webs, two plywood caps) and a Truss Plate is three (two 2x4 " +
+      "chords, one skin). That is his own wording twice over, including his answer on what \"per LVL\" means: " +
+      "\"each LVL is priced on its own largest face: a header made of two LVLs is two of them.\" ⚠ But the other " +
+      "reading — one rate on the assembled thing's biggest face — is not absurd, and the two differ a lot: per " +
+      "10ft, a Box Beam goes $177.08 -> $253.33 either way, while a TRUSS PLATE goes $177.08 -> $401.67 per piece " +
+      "against roughly $775 on its envelope. The $60 rate on a single 2x4's 3 1/2in x 10ft face is about $175 a " +
+      "stick, which is the number to put in front of him: if $60 was meant for a built-up beam rather than for " +
+      "each board in one, every roof in the app is over-quoted. Nothing in the printed arithmetic distinguishes " +
+      "the two readings. ⚠ Also unasked: no rate exists for wire mesh, wood fiber board or fasteners, so those " +
+      "price at zero (no shop item contains one today, asserted by a test); and a PLYWOOD JACK STUD is now " +
+      "charged $4/sq ft although his 2026-11-08 answer had it \"explicitly rolled into the $25\" — the newer " +
+      "table names it, so the newer table wins, and it is an addition to a panel's price rather than a " +
+      "re-slicing of it.",
+  },
+  {
+    label: "A spanning header's rate has changed hands twice, and this is the third answer",
+    status: "pending-BI-confirmation" as const,
+    note:
+      "On 2026-09-25, asked directly, Tommy settled that a spanning header carries the header/sill rate rather " +
+      "than the beam rate — two spanning things on two rates, by decision. The 2026-11-08 flat rate erased the " +
+      "distinction; the 2026-11-15 shop-item table restores one, and lands the opposite way: a spanning header " +
+      "has no straw in it, so it is a beam and prices stick by stick like the Box Beam beside it. That follows " +
+      "from his own table rather than from a question he was asked, and it quietly reverses a decision he did " +
+      "make. Worth one sentence of confirmation.",
+  },
+  {
+    label: "The roof-catcher (ridge) beam is drawn and never priced, shipped or cut-listed",
+    status: "pending-BI-confirmation" as const,
+    note:
+      "Found while wiring the 2026-11-15 shop-item rates. `buildRoofCatcherBeamMembers` is called from the 3D " +
+      "view ONLY: the beam a gable column panel is deliberately shortened 11 1/4in to catch (B9) has no " +
+      "fabrication group, so it is in no Shop Fabrication sheet, no cut list, no CSV, no weight and no price. It " +
+      "is three 2x12s of dimensional lumber, which at his $60/sq ft is real money on every peaked roof, and at " +
+      "$0 today. ⚠ NOT caused by the shop-item change — it was missing from the old `beam` price bucket too, " +
+      "which only ever held the roof-bearing run and the mid-wall beams. The shop-item work is just what made it " +
+      "visible, because every other beam in the building now reaches the price through the export seam and this " +
+      "one is not on it.",
   },
   {
     label: "Wall interior default read as clay plaster",
@@ -11360,6 +11413,49 @@ export default function LayoutEditor() {
     sillHeightIn: sillDefaultHeightIn.value,
   });
 
+  /**
+   * ⚠ **EVERY SHOP ITEM'S PRICE, off the export seam — the one exception to
+   * the flat rate.**
+   *
+   * > *"Plywood jack studs and safety gaps $4/sq ft. LVLs $10/sq ft, per LVL.
+   * > Beams and columns built from dimensional lumber $60/sq ft."*
+   * > — Tommy, 2026-11-15
+   *
+   * ⚠ **It reads `exportableAssemblies`, not the six pipelines**, and that is
+   * the point. The shop items are exactly the rows a crew is shown and a
+   * purchase list orders, so pricing them from the same list makes "what the
+   * building contains" one answer instead of two. A seventh pipeline becomes
+   * priceable by appearing on that seam, which is also where it has to appear
+   * to be built at all.
+   *
+   * ⚠ **`countsAsPanel` is the switch, for the third time** — a crew's tally,
+   * which face it is measured by (`assemblyFaceSqFt`), and now which rate it
+   * pays. One flag, three answers, so they cannot drift.
+   *
+   * ⚠ **A panel row contributes its PLYWOOD JACK STUDS and nothing else.**
+   * Those are the one shop item that is not an assembly of its own — they
+   * stand inside the window, door, Big Header or gable-window panel beside
+   * them. The panel still counts as one panel and is still priced across its
+   * whole standing face; the jack stud is charged on the 15.5in-deep face
+   * that face never contained. See `plywoodJackStuds`.
+   */
+  const shopItemPrice = useMemo(() => {
+    let total = 0;
+    let faceSqFt = 0;
+    let unpricedFaceSqFt = 0;
+    let jackStudTotal = 0;
+    for (const assembly of exportableAssemblies) {
+      const members = assembly.countsAsPanel ? plywoodJackStuds(assembly.members) : assembly.members;
+      if (members.length === 0) continue;
+      const priced = computeShopItemPrice(members, assembly.copies);
+      total += priced.total;
+      faceSqFt += priced.faceSqFt;
+      unpricedFaceSqFt += priced.unpricedFaceSqFt;
+      if (assembly.countsAsPanel) jackStudTotal += priced.total;
+    }
+    return { total, faceSqFt, unpricedFaceSqFt, jackStudTotal };
+  }, [exportableAssemblies]);
+
   const price = useMemo(() => {
     // Height-dependent (area = width x height), so — like strawWeight/
     // totalWoodWeightKg above — this sums each story's own contribution
@@ -11404,9 +11500,16 @@ export default function LayoutEditor() {
     // have negative height, so this only bites a degenerate/negative
     // manually-typed rise, not the normal case.
     let gableRoofAreaSqFt = 0;
-    let gableStandardAreaSqFt = 0;
     for (const tiles of Object.values(gableTilesAsFabricatedByWallId)) {
       for (const t of tiles) {
+        /* ⚠ **A gable row's SAFETY-GAP tile is skipped here entirely** as of
+           2026-11-15. It used to be added to the `standard` bucket, on the
+           reasoning that it builds from the very same
+           `buildSafetyGapMembers` a wall-level safety gap does — and that
+           reasoning now points the other way: it is a shop item, and
+           `shopItemPrice` charges it $4/sq ft of its real 15.5in-deep face
+           instead of $25 of a 3/4in sliver. */
+        if (t.isSafetyGap) continue;
         const localLeftIn = Math.max(0, t.leftEdgeHeightIn - gableEaveHeightIn);
         const localRightIn = Math.max(0, t.rightEdgeHeightIn - gableEaveHeightIn);
         // Trapezoid average of each edge's own real gap (either can be 0 —
@@ -11416,45 +11519,25 @@ export default function LayoutEditor() {
         // now that the 2 edges can legitimately differ.
         const overflowAreaSqFt =
           (t.widthIn / 12) * (((t.verticalGapIn?.leftIn ?? 0) + (t.verticalGapIn?.rightIn ?? 0)) / 2 / 12);
-        if (t.isSafetyGap) {
-          gableStandardAreaSqFt += (t.widthIn / 12) * (Math.max(localLeftIn, localRightIn) / 12) + overflowAreaSqFt;
-        } else {
-          gableRoofAreaSqFt += (t.widthIn / 12) * ((localLeftIn + localRightIn) / 2 / 12) + overflowAreaSqFt;
-        }
+        gableRoofAreaSqFt += (t.widthIn / 12) * ((localLeftIn + localRightIn) / 2 / 12) + overflowAreaSqFt;
       }
     }
 
-    // Box Beam/Truss Plate (roofline bearing) and Mid-Wall Bond Beams are
-    // linear members, not flat wall panels, so there's no natural
-    // "width x wall height" face — priced instead by each group's own
-    // elevation face (its real covered length x its own assembly's
-    // cross-sectional height), the same width-x-height sqft convention
-    // every panel above uses, just with the beam's own dimensions.
-    const roofBearingAreaSqFt = roofBearingFabricationGroups.reduce((sum, g) => sum + (g.lengthIn / 12) * (g.heightIn / 12), 0);
-    const midWallBeamAreaSqFt = midWallBondBeamFabricationGroups.reduce((sum, g) => sum + (g.lengthIn / 12) * (g.heightIn / 12), 0);
-    // A spanning header is a real fabricated panel, so it is priced —
-    // otherwise a wall that gained one would show no change in cost at all.
-    // Its own elevation face (derived span x its own height), the same
-    // width-x-height convention every entry here uses.
-    //
-    // **Priced at the header/sill ("opening") rate — TOMMY'S DECISION,
-    // 2026-09-25**, asked directly what rate a spanning header carries. It
-    // stopped being this code's assumption on that date.
-    //
-    // ⚠ What he settled is WHICH EXISTING RATE APPLIES. It does not promote
-    // any catalog value's status: the header/sill rate is exactly as
-    // confirmed (or not) as it was before, and nothing in
-    // `packages/panel-catalog` moves because of this line.
-    //
-    // ⚠ And it is deliberately NOT consistent with its nearest neighbour: the
-    // mid-wall Big Header BEAM is priced in the `beam` bucket two lines down.
-    // Two spanning things, two different rates, by decision rather than by
-    // oversight — which is why the Review Log entry says so in words, since
-    // that is what reaches the engineer.
-    const spanningHeaderAreaSqFt = spanningHeaderFabricationGroups.reduce(
-      (sum, g) => sum + g.instances.length * (g.widthIn / 12) * (g.heightIn / 12),
-      0,
-    );
+    /* ⚠ **THE BEAMS AND THE SPANNING HEADER NO LONGER HAVE AREAS HERE.**
+       Three stand-in faces lived on these lines — a beam's covered length by
+       its cross-sectional height, and a spanning header's derived span by its
+       own height — because a linear member has no "width x wall height" face
+       to charge against. They are shop items as of 2026-11-15, priced piece
+       by piece off their real members, so the stand-ins are deleted rather
+       than left computing a number nothing reads.
+
+       ⚠ One decision of his is retired by this, and it should not be read as
+       reversed: on 2026-09-25 he settled that a spanning header carries the
+       header/sill rate rather than the beam rate. The flat rate erased that
+       distinction in November, and the $60 shop-item line now answers the
+       same question a third time — the header and the Box Beam beside it are
+       on one rate again, by his own 2026-11-15 table rather than by this
+       code's choice. */
 
     /* One rate now, so the `type` on each entry no longer picks a price - it
        is the record of WHICH areas are inside the total, which is the thing
@@ -11471,7 +11554,15 @@ export default function LayoutEditor() {
         // Safety/gap panels are charged like everything else; there is no
         // longer a per-type rate for them to be an assumption about.
         // (Was: priced at the standard rate, an assumption in the Review Log.) — priced at the standard rate (assumption, see Review Log).
-        { type: "standard", areaSqFt: areaSqFtFor("standard") + areaSqFtFor("safety-gap") + gableStandardAreaSqFt },
+        /* ⚠ **SAFETY GAPS ARE NO LONGER IN HERE** — neither a wall's own
+           `safety-gap` slot nor a gable row's filler tile
+           (`gableStandardAreaSqFt`, now unused by this list). They are shop
+           items as of 2026-11-15 and priced by `shopItemPrice` at $4/sq ft of
+           their real 15.5in-deep face, which is MORE than the $25 they used
+           to pay on a 3/4in sliver: 12.9 x $4 = $51.67 against 0.63 x $25 =
+           $15.63. A rate going down and a bill going up is the whole point of
+           measuring the piece instead of the gap it fills. */
+        { type: "standard", areaSqFt: areaSqFtFor("standard") },
         // safety-oct-corner is a fabrication-ID variant of the same corner panel, priced identically.
         {
           type: "corner",
@@ -11482,7 +11573,12 @@ export default function LayoutEditor() {
             cornerEdgeAreaSqFtFor("safety-oct-corner"),
         },
         { type: "braced", areaSqFt: areaSqFtFor("braced") },
-        { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") + spanningHeaderAreaSqFt },
+        /* ⚠ **The spanning header has left this bucket.** It is a beam with
+           no straw in it, so it prices as a shop item now; his 2026-09-25
+           decision that it carried the header/sill rate settled a question
+           the flat rate then erased, and the $60 line settles it again from
+           the other side. `spanningHeaderAreaSqFt` is no longer read here. */
+        { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") },
         { type: "column", areaSqFt: areaSqFtFor("column") },
         /* ⚠ **His own $25, 2026-11-05**, and its own bucket rather than the
            `opening` one a spanning header sits in — two decisions of his about
@@ -11503,13 +11599,14 @@ export default function LayoutEditor() {
            different heights, so the trapezoid average is the same reading the
            gable row's own area takes across its width. */
         { type: "roof", areaSqFt: gableRoofAreaSqFt + crossTiltTakeoff.faceAreaSqFt },
-        /* ⚠ The beams, in their own bucket at last — his *"Beams and roof
-           and floor panels should all have their own prices."* The bucket is
-           seeded at the roof rate, which is what they were being charged
-           anyway, so no project's cost moves today. What he has not given is
-           the beam rate itself; see `beamPriceRatePerSqFt` and the Review
-           Log line it carries. */
-        { type: "beam", areaSqFt: roofBearingAreaSqFt + midWallBeamAreaSqFt },
+        /* ⚠ **THE `beam` BUCKET IS GONE FROM THIS LIST, 2026-11-15.** Box
+           Beams, Truss Plates and Mid-Wall Beams are shop items now, priced
+           piece by piece off their own members rather than against a
+           stand-in face — which retires the caveat this bucket carried from
+           the day it was created, that "these are linear members with no
+           real width-x-wall-height face". An LVL web is now charged as an
+           LVL and a 2x4 chord as a 2x4, so the area being multiplied is a
+           real piece of stock for the first time. */
         /* ⚠ COVERAGE, not elevation face: *"floor and roof should be $24/sq
            ft coverage."* And a roof's coverage is measured up its real
            SLOPE, because that is the material bought and hung — the takeoff
@@ -11524,11 +11621,26 @@ export default function LayoutEditor() {
          exists to do. Reading it from the engine rather than flooring here
          keeps a single definition of what a square foot of this building is. */
       areaSqFt: billableAreaSqFt(priceable),
-      total: computeCoveragePrice(priceable, effectivePricePerSqFt),
+      /* ⚠ **TWO TERMS NOW: the panels by coverage, the shop items by their
+         own rates.** Everything that counts as a panel is still
+         `area x rate` to the cent, so the printed working still reconciles —
+         it just has a second line. The shop items could not be folded into
+         the first term without inventing an equivalent area for them, which
+         is exactly the stand-in the `beam` bucket used to be. */
+      panelsTotal: computeCoveragePrice(priceable, effectivePricePerSqFt),
+      shopItemsTotal: shopItemPrice.total,
+      shopItemsFaceSqFt: shopItemPrice.faceSqFt,
+      total: computeCoveragePrice(priceable, effectivePricePerSqFt) + shopItemPrice.total,
       /* What the same building costs at the catalog's list rate. Equal to
          `total` unless somebody has adjusted the rate, which is exactly the
-         case the display has to label. */
-      listTotal: computeCoveragePrice(priceable, PUBLIC_COVERAGE_RATE_PER_SQ_FT),
+         case the display has to label.
+         ⚠ **The adjustable rate moves the PANELS only.** His adjustment is
+         *"the total average price/sq ft"* of coverage — a fabricator testing
+         $20/sq ft is testing what a panel costs, and the four shop-item rates
+         are his own separate numbers, not a scale of that one. So the shop
+         items sit at their catalog rates in both totals, and the gap between
+         `total` and `listTotal` is exactly the discount on the panels. */
+      listTotal: computeCoveragePrice(priceable, PUBLIC_COVERAGE_RATE_PER_SQ_FT) + shopItemPrice.total,
     };
   }, [
     stories,
@@ -11536,14 +11648,16 @@ export default function LayoutEditor() {
     thicknessIn,
     gableTilesAsFabricatedByWallId,
     gableEaveHeightIn,
-    roofBearingFabricationGroups,
-    midWallBondBeamFabricationGroups,
-    spanningHeaderFabricationGroups,
     deckPanelTakeoff,
     crossTiltTakeoff,
     /* B33 - a number, derived just above off the raw slots rather than off
        `stories` times a wall height. */
     bigHeaderAreaSqFt,
+    /* ⚠ The three beam/header fabrication groups have LEFT this list, and so
+       have the areas that read them. They reach the price through
+       `shopItemPrice` now, which reads them off the export seam — so a beam
+       still reprices when it moves, by one path instead of two. */
+    shopItemPrice,
   ]);
 
   /* ⚠ Over ALL the straw, not just the walls' — see `projectStrawWeightKg`.
@@ -16464,9 +16578,20 @@ export default function LayoutEditor() {
              compared to a competitor's number, which is the whole reason he
              wanted the method stated. The list-rate line appears only when
              the project has been quoted away from list. */
-          priceNote={`${price.areaSqFt.toLocaleString()} sq ft of coverage × $${effectivePricePerSqFt.toFixed(2)}/sq ft — one flat rate across every panel, beam and truss plate. Wall panels and the gable row by their standing face, floor and roof panels by what they cover (a roof up its real slope).${
+          /* ⚠ **TWO TERMS, because the price is two terms as of 2026-11-15.**
+             The old sentence said "one flat rate across every panel, beam and
+             truss plate", which stopped being true the moment the beams moved
+             to their own rates — and a printed method that no longer matches
+             the arithmetic beside it is worse than printing no method, since
+             he asked for it precisely so a reader *"can compare that to other
+             products."* */
+          priceNote={`Panels: ${price.areaSqFt.toLocaleString()} sq ft of coverage × $${effectivePricePerSqFt.toFixed(2)}/sq ft = $${price.panelsTotal.toFixed(2)}. Wall panels and the gable row by their standing face, floor and roof panels by what they cover (a roof up its real slope).${
+            price.shopItemsTotal > 0
+              ? ` Shop items (safety gaps, plywood jack studs and the beams): ${price.shopItemsFaceSqFt.toFixed(1)} sq ft of piece faces = $${price.shopItemsTotal.toFixed(2)}, each piece on its own largest face - plywood $${shopItemRates.sheetPerSqFt}/sq ft, LVL $${shopItemRates.lvlPerSqFt}/sq ft per LVL, dimensional lumber $${shopItemRates.dimensionalLumberPerSqFt}/sq ft.`
+              : ""
+          }${
             Math.abs(price.total - price.listTotal) >= 0.01
-              ? ` List rate $${PUBLIC_COVERAGE_RATE_PER_SQ_FT.toFixed(2)}/sq ft would be $${price.listTotal.toFixed(2)}.`
+              ? ` List panel rate $${PUBLIC_COVERAGE_RATE_PER_SQ_FT.toFixed(2)}/sq ft would be $${price.listTotal.toFixed(2)} in total.`
               : ""
           } See Review Log.`}
           costsRedacted={costsRedacted}
@@ -16595,11 +16720,28 @@ export default function LayoutEditor() {
                           beam and truss plate. */}
                       <span className={styles.note}>
                         {" "}
-                        — {price.areaSqFt.toLocaleString()} sq ft of coverage × $
-                        {effectivePricePerSqFt.toFixed(2)}/sq ft.
+                        — panels {price.areaSqFt.toLocaleString()} sq ft of coverage × $
+                        {effectivePricePerSqFt.toFixed(2)}/sq ft = ${price.panelsTotal.toFixed(2)}.
                         Wall panels and the gable row by their standing face, floor and roof panels by what they
                         cover (a roof up its real slope). See Review Log
                       </span>
+                      {/* ⚠ **THE SECOND TERM, and it only appears when there
+                          is one.** A design with no safety gap, no opening and
+                          no beam owes nothing here, and a line reading "$0.00
+                          of shop items" on such a sheet would be noise. The
+                          rates are read from the catalog rather than typed, so
+                          the printed sentence cannot drift from the arithmetic
+                          — which is how the old "one flat rate across every
+                          panel, beam and truss plate" came to be false. */}
+                      {price.shopItemsTotal > 0 && (
+                        <div className={styles.note} data-price-shop-items="">
+                          Plus shop items — safety gaps, plywood jack studs and the beams —{" "}
+                          {price.shopItemsFaceSqFt.toFixed(1)} sq ft of piece faces = $
+                          {price.shopItemsTotal.toFixed(2)}. Each piece on its own largest face: plywood $
+                          {shopItemRates.sheetPerSqFt}/sq ft, LVL ${shopItemRates.lvlPerSqFt}/sq ft per LVL,
+                          dimensional lumber ${shopItemRates.dimensionalLumberPerSqFt}/sq ft
+                        </div>
+                      )}
                       {/* ⚠ BOTH, LABELLED — his answer when asked what a
                           client's own sheet shows if the building is quoted
                           below list: *"Shows the client they're getting a deal,
@@ -16630,9 +16772,16 @@ export default function LayoutEditor() {
                         {" "}/ sq ft of coverage
                       </label>
                       <p className={styles.note}>
-                        The whole price, in one number (default ${priceRates.coveragePerSqFt}/sqft). Yours to adjust
-                        — try ${"20"} to see the same building at a different price point. Public viewers always see
-                        the ${priceRates.coveragePerSqFt} list rate, never an adjusted one.
+                        The PANEL price (default ${priceRates.coveragePerSqFt}/sqft). Yours to adjust — try ${"20"}{" "}
+                        to see the same building at a different price point. Public viewers always see the{" "}
+                        ${priceRates.coveragePerSqFt} list rate, never an adjusted one.
+                        {/* ⚠ It no longer moves the whole total, and saying so
+                            here is the honest version. His adjustment is *"the
+                            total average price/sq ft"* of coverage; the four
+                            shop-item rates are separate numbers of his, not a
+                            scale of this one, so they hold at list in both
+                            totals. */}
+                        {" "}Shop items hold at their own rates.
                       </p>
                     </div>
                   )}

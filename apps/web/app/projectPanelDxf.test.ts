@@ -33,6 +33,7 @@ function assembly(over: Partial<ExportableAssembly> = {}): ExportableAssembly {
     label: 'Standard 48"',
     widthIn: 48,
     heightIn: 96,
+    depthIn: DEPTH_IN,
     copies: 3,
     usedAt: "N1, N3",
     typeName: "Standard Panel",

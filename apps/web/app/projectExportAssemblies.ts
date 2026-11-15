@@ -1,4 +1,4 @@
-import type { ExportableAssembly, PanelMember } from "@building-integrity/panel-catalog";
+import { assemblyEnvelopeDepthIn, type ExportableAssembly, type PanelMember } from "@building-integrity/panel-catalog";
 
 /**
  * ⚠ **EVERY FABRICATED ASSEMBLY IN THE BUILDING, in one list, in one shape.**
@@ -77,6 +77,13 @@ export function toExportableAssemblies<T extends GroupLike>(descriptor: Assembly
       label: descriptor.label(group),
       widthIn: descriptor.widthIn(group),
       heightIn: descriptor.heightIn(group),
+      /* ⚠ **DERIVED FROM THE PIECES, not asked of the descriptor.** Six
+         pipelines would each have had to supply a depth and one of them
+         would have been wrong — a wall panel's is the wall thickness, a
+         deck panel's is its own joist depth plus two lids, and none of them
+         carries the number on the fabrication group. See
+         `assemblyEnvelopeDepthIn`. */
+      depthIn: assemblyEnvelopeDepthIn(group.members),
       copies: group.instances.length,
       usedAt: describeUsedAt(group.instances),
       /* ⚠ Uncapped on purpose — see `ExportableAssembly.instanceNames`. An

@@ -1,6 +1,25 @@
-# QUEUED — shop items: largest face, and their own prices
+# BUILT — shop items: largest face, and their own prices
 
-**From Tommy via Tip4urTime, 2026-11-15. Not started.**
+**From Tommy via Tip4urTime, 2026-11-15. SHIPPED the same day.**
+
+His acceptance check passes live: a safety gap's row carries its largest face
+and `Counts as panel = 0`. On a Tiny House the project price moves
+**$44,775.00 -> $47,957.12** (+7.1%).
+
+**Three things did NOT ship, and each is his call rather than an oversight:**
+
+1. **Per piece vs. per assembly.** His rates are applied to each PIECE, which
+   is his own wording twice over. The other reading prices the assembled
+   thing's envelope once, and a Truss Plate differs by ~2x between them
+   ($401.67 against roughly $775 per 10ft). In the Review Log.
+2. **Plywood jack studs are priced but are not their own export ROWS.** They
+   sit inside the panel they stand in. Giving them rows changes what a crew
+   claims and is paid for.
+3. **The ridge beam is still unpriced** — found while wiring this, see below.
+
+The rest of this file is the brief as he gave it, kept verbatim.
+
+---
 
 Two changes for **shop items** — the pieces that are not straw panels: safety
 gaps, plywood jack studs, LVLs, and beams and columns built from dimensional
@@ -68,3 +87,16 @@ property that lets it be served from a sync link later.
 `countsAsPanel` seam from 2026-11-14 is already the right place for "is this a
 shop item"; what is missing is a largest-face measurement beside the elevation
 one, and four rates where there is currently one.
+
+---
+
+## What shipping it found
+
+⚠ **The roof-catcher (ridge) beam is drawn and never priced, shipped or
+cut-listed.** `buildRoofCatcherBeamMembers` is called from `Building3DView.tsx`
+ONLY. It has no fabrication group, so it is in no Shop Fabrication sheet, no cut
+list, no CSV, no weight and no price — three 2x12s of dimensional lumber at $0
+on every peaked roof. **Not caused by this change**: it was missing from the old
+`beam` price bucket too, which only ever held the roof-bearing run and the
+mid-wall beams. The shop-item work is what made it visible, because every other
+beam now reaches the price through the export seam and this one is not on it.

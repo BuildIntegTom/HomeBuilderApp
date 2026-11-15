@@ -1,5 +1,6 @@
 export * from "./permeability";
 export * from "./price";
+export * from "./shopItemPrice";
 export * from "./weight";
 export * from "./panelWoodWeight";
 export * from "./panelWeightBreakdown";

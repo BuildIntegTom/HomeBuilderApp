@@ -33,6 +33,20 @@ export interface ExportableAssembly {
   label: string;
   widthIn: number;
   heightIn: number;
+  /**
+   * ⚠ **How deep the assembled thing is — the THIRD dimension, added
+   * 2026-11-15 so a shop item can be measured by its largest face.**
+   *
+   * A Safety Gap is 3/4in wide and 10ft tall, and those two numbers describe
+   * a sliver. Its real face is the 15.5in through the wall by the 10ft, and
+   * without a depth on this row that face cannot be computed at all — which
+   * is why the export used to report 0.63 sq ft for a piece a crew carries as
+   * a 12.9 sq ft sheet.
+   *
+   * Derived from the members by `assemblyEnvelopeDepthIn`, not stated by the
+   * pipeline — see that function for why.
+   */
+  depthIn: number;
   /** How many identical copies the building needs. */
   copies: number;
   /** Where they go, as the sheet names them: "N1, N3, E2". */

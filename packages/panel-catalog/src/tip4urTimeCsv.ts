@@ -1,5 +1,6 @@
 import { buildCsv } from "./csv";
 import type { ExportableAssembly } from "./projectCutListCsv";
+import { assemblyFaceSqFt } from "./shopItemFace";
 
 /**
  * ⚠ **THE PANEL LIST TIP4URTIME READS, one row per PHYSICAL PANEL.**
@@ -51,6 +52,25 @@ export interface Tip4urTimePanel {
   widthIn: number;
   heightIn: number;
   /**
+   * ⚠ **THE FACE A CREW IS CREDITED FOR, and it is NOT `widthIn x heightIn`
+   * any more.** His 2026-11-15 answer to a question this file raised itself:
+   *
+   * > *"Square feet should be the piece's largest face ... for that same gap,
+   * > the sheet: 15.5in x 120in = 12.9 sq ft."*
+   *
+   * A straw panel's is still its standing face, so for every panel row this
+   * is exactly the old arithmetic. A SHOP ITEM's is its largest — which is
+   * why it is carried as its own field rather than recomputed from the two
+   * dimensions beside it: a Safety Gap's row reads 3/4in by 10ft and 12.9 sq
+   * ft, and those three numbers do not multiply out. They are not supposed
+   * to. The missing dimension is the 15.5in through the wall, and it is
+   * deliberately not a column — *"Tip4urTime imports whatever the file says;
+   * nothing changes on its side."*
+   *
+   * See `assemblyFaceSqFt` for the switch and why `countsAsPanel` is it.
+   */
+  sqFt: number;
+  /**
    * ⚠ **Whether it counts toward a crew's PANEL COUNT.** Everything in
    * this file is fabricated, claimable and earns its square footage; this
    * column is the one difference.
@@ -83,8 +103,8 @@ export interface Tip4urTimeExportInput {
  * a whole number writes as `32` rather than `32.00`, which is his own
  * example.
  */
-export function tip4urTimeSqFt(widthIn: number, heightIn: number): number {
-  return Number(((widthIn * heightIn) / 144).toFixed(2));
+export function tip4urTimeSqFt(sqFt: number): number {
+  return Number(sqFt.toFixed(2));
 }
 
 /**
@@ -193,6 +213,7 @@ export function tip4urTimePanels(
         label: name,
         widthIn: assembly.widthIn,
         heightIn: assembly.heightIn,
+        sqFt: assemblyFaceSqFt(assembly),
         countsAsPanel: assembly.countsAsPanel,
       });
     });
@@ -218,7 +239,7 @@ export function tip4urTimeExportProblems(input: Tip4urTimeExportInput): string[]
       problems.push(`Code ${panel.code} is used by more than one panel.`);
     }
     seen.add(panel.code);
-    if (!(tip4urTimeSqFt(panel.widthIn, panel.heightIn) > 0)) {
+    if (!(tip4urTimeSqFt(panel.sqFt) > 0)) {
       problems.push(`${panel.label || panel.code} has no face area.`);
     }
   }
@@ -246,7 +267,7 @@ export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
       panel.label,
       Number(panel.widthIn.toFixed(2)),
       Number(panel.heightIn.toFixed(2)),
-      tip4urTimeSqFt(panel.widthIn, panel.heightIn),
+      tip4urTimeSqFt(panel.sqFt),
       panel.countsAsPanel ? 1 : 0,
     ]),
     {
