@@ -22,6 +22,7 @@ than re-derived in every route that touches a project.
 | `migrations/0011_stage6_share_links.sql` | Stage 6: `share_links`, the five share-link functions, view-only grants (`collaborators.can_write`, `via_link_id`), and the four Stage 2/3 objects that had to change. **Applied 2026-11-08.** |
 | `migrations/0012_pricing_v26_and_company_rate.sql` | The redaction row for **file format 26** (the money key was RENAMED `priceModifier` -> `pricePerSqFt`), `companies.price_per_sq_ft`, and `browse_redact`'s belt widened to both key names. **Applied 2026-11-08.** |
 | `migrations/0013_share_link_signup.sql` | Stage 6B: one read-only function, `share_link_permits_signup`, so a live share link is also an invitation to sign up. ⚠ It returns `locked_email` IN FULL — the only place an address leaves the database — and is called from the signup route handler ONLY, never from a page. **Applied 2026-11-09.** |
+| `migrations/0014_proposals.sql` | Stage 7: `proposals`, and the four functions a design with no account travels on — `submit_proposal` (anon), `proposal_preview` (anon, never the document), `proposal_document` (authenticated) and `adopt_proposal` (authenticated, member only). ⚠ RLS on with **no policies at all**: the access rules ARE the four function bodies. ⚠ `submit_proposal` is the first UNAUTHENTICATED write in this schema; rate limiting is deliberately deferred and said so in the file. **Not yet applied.** |
 | `seed.sql` | The four real companies. |
 | `tests/stage1_rls.test.sql` | The Stage 1 verification script. |
 | `tests/stage2_rls.test.sql` | The Stage 2 verification script. Local or staging only. |
@@ -30,6 +31,7 @@ than re-derived in every route that touches a project.
 | `tests/stage3_concurrency.test.sh` | Two connections sharing the same project with the same grantee at once. Local throwaway database only. |
 | `tests/stage4_rls.test.sql` | The Stage 4 verification script, the redactor above all. Local or staging only. |
 | `tests/stage6_rls.test.sql` | The Stage 6 verification script — share links and view-only grants, all five write paths. Local or staging only. |
+| `tests/stage7_proposals.pglite.mjs` | The Stage 7 verification, and the only one that needs **no database of yours at all** — it starts an in-process Postgres (PGlite), applies every migration in order and round-trips all four proposal functions. 37 assertions. `node supabase/tests/stage7_proposals.pglite.mjs`. |
 | `tests/local_shim.sql` | Local-only stand-in for Supabase's `auth` schema and default privileges. Never run on the project. |
 
 ## Running it, first time
