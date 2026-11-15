@@ -314,6 +314,33 @@ export const LEGACY_GABLE_PANEL_MAX_HEIGHT_IN = 96;
  * the smallest height at which the panel this builder makes still exists. */
 export const GABLE_PANEL_MIN_HEIGHT_IN = 2 * SKIN_THICKNESS_IN;
 
+/**
+ * ⚠ **The buildable test, in ONE place instead of at every call site.**
+ *
+ * `buildGablePanelMembers` THROWS on a panel whose taller edge cannot carry
+ * its own two skins, and that throw lands inside a `useMemo` and takes the
+ * page down rather than one panel. The 2026-10-31 crash was fixed in the
+ * builder; the 2026-11-13 one survived it *because the clamp lived at a call
+ * site*, and on 2026-11-14 a third call site was found the same way — the
+ * moment gable windows started being auto-spawned, a window whose head
+ * reaches its own roofline leaves a cap of no height, which is a legitimate
+ * answer and not an error.
+ *
+ * So: ask here. `null` means there is genuinely no panel to build. A caller
+ * that wants the refusal's REASON still calls the builder directly.
+ */
+export function buildGablePanelMembersIfBuildable(
+  widthIn: number,
+  depthIn: number,
+  leftHeightIn: number,
+  rightHeightIn: number,
+  includeNailer: boolean,
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+): PanelMember[] | null {
+  if (Math.max(leftHeightIn, rightHeightIn) < GABLE_PANEL_MIN_HEIGHT_IN) return null;
+  return buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer, girtStyle);
+}
+
 export function buildGablePanelMembers(
   widthIn: number,
   depthIn: number,

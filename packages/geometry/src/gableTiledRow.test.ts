@@ -6,6 +6,7 @@ import {
   GABLE_SHED_SNAP_THRESHOLD_IN,
   gableProfilePointIsShedEnd,
   gableTileTallestHeightIn,
+  seedGableWindows,
   type GableWallJointSpan,
   type GableWindowReservation,
   type RoofProfilePoint,
@@ -1160,5 +1161,139 @@ describe("gableProfilePointIsShedEnd", () => {
     expect({ at: 12, ...slopes(snapped) }).toEqual({ at: 12, rises: false, falls: true });
     expect(gableProfilePointIsShedEnd(96, WALL_IN)).toBe(false);
     expect(gableProfilePointIsShedEnd(12, WALL_IN)).toBe(true);
+  });
+});
+
+/**
+ * ⚠ **A GABLE WINDOW IS A TILE — joint alignment and windows compose,
+ * 2026-11-14.**
+ *
+ * Until this, `computeGableTiledRow` surrendered joint alignment entirely as
+ * soon as the row carried a window, because a window was placed by ordinal
+ * inside a segment and re-dividing the segment renumbered everything after
+ * it. His rule — *wall joints win, a window snaps to the nearest wall joint*
+ * — makes the window the tile between two joints, so there is nothing left to
+ * renumber.
+ *
+ * It had to be settled before windows could be auto-spawned one per 12ft:
+ * under the old rule that would have un-aligned nearly every gable end.
+ */
+describe("⚠ gable windows under joint alignment", () => {
+  /* A 192in wall whose own panels are 15.5 / 28.125 / 32.125 / 28 / 24 /
+     0.75(gap) / 48 / 15.5 — the Tiny House's east wall, measured in the app. */
+  const SPANS: GableWallJointSpan[] = [
+    { xStartIn: 15.5, xEndIn: 43.625 },
+    { xStartIn: 43.625, xEndIn: 75.75 },
+    { xStartIn: 75.75, xEndIn: 103.75 },
+    { xStartIn: 103.75, xEndIn: 127.75 },
+    { xStartIn: 127.75, xEndIn: 128.5, isSafetyGap: true },
+    { xStartIn: 128.5, xEndIn: 176.5 },
+  ];
+  const POINTS: RoofProfilePoint[] = [{ xIn: 96, heightIn: 184 }];
+  const row = (windows: GableWindowReservation[]) =>
+    computeGableTiledRow(192, 120, POINTS, 48, 0, true, 0, "panel-depth", windows, undefined, 0, 192, SPANS);
+
+  const boundaries = (panels: ReturnType<typeof row>) => panels.map((p) => [p.xStartIn, p.xEndIn]);
+
+  it("⚠ puts the tiles in exactly the same places with and without a window", () => {
+    /* The whole point. A window used to re-tile the entire row. */
+    expect(boundaries(row([{ beforeTileCount: 2, widthIn: 24 }]))).toEqual(boundaries(row([])));
+  });
+
+  it("every boundary is still a wall joint, window or not", () => {
+    const jointsIn = new Set(SPANS.flatMap((sp) => [sp.xStartIn, sp.xEndIn]));
+    for (const p of row([{ beforeTileCount: 1, widthIn: 24 }])) {
+      /* Either an exact wall joint, or a subdivision of a bay that had none —
+         the two things `tileAtJoints` produces. The ends of the wall count. */
+      const onAJoint = jointsIn.has(p.xStartIn) || p.xStartIn === 0 || p.xStartIn === 192;
+      if (!onAJoint) continue;
+      expect({ x: p.xStartIn, onAJoint }).toEqual({ x: p.xStartIn, onAJoint: true });
+    }
+  });
+
+  it("⚠ IGNORES the reservation's own width — the wall slot's width wins", () => {
+    /* He asked for the studs to stack. A 24in-wide reservation on a 48in tile
+       would otherwise leave a 24in remainder that lands on no wall joint. */
+    const withWindow = row([{ beforeTileCount: 0, widthIn: 13 }]);
+    const windowTile = withWindow.find((p) => p.isWindow)!;
+    expect(windowTile.xEndIn - windowTile.xStartIn).not.toBeCloseTo(13, 6);
+    const plain = row([])[0]!;
+    expect([windowTile.xStartIn, windowTile.xEndIn]).toEqual([plain.xStartIn, plain.xEndIn]);
+  });
+
+  it("carries the window's height and sill through to its tile", () => {
+    const w = row([{ beforeTileCount: 1, widthIn: 24, heightIn: 36, sillHeightIn: 18 }]).find((p) => p.isWindow)!;
+    expect({ h: w.windowHeightIn, s: w.windowSillHeightIn }).toEqual({ h: 36, s: 18 });
+  });
+
+  it("never lands a window on a safety gap, and counts ordinals past it", () => {
+    for (const p of row([{ beforeTileCount: 4, widthIn: 24 }])) {
+      expect({ id: [p.xStartIn, p.xEndIn], both: p.isWindow === true && p.isSafetyGap === true }).toEqual({
+        id: [p.xStartIn, p.xEndIn],
+        both: false,
+      });
+    }
+    expect(row([{ beforeTileCount: 4, widthIn: 24 }]).filter((p) => p.isWindow)).toHaveLength(1);
+  });
+
+  it("places as many windows as are asked for, each on its own tile", () => {
+    const panels = row([
+      { beforeTileCount: 0, widthIn: 24 },
+      { beforeTileCount: 3, widthIn: 24 },
+    ]);
+    expect(panels.filter((p) => p.isWindow)).toHaveLength(2);
+  });
+});
+
+describe("⚠ seedGableWindows — one per 12ft, at random tiles", () => {
+  /* A fixed sequence, so "random" is testable and the count/eligibility rules
+     are pinned rather than the dice. */
+  const fixed = (values: number[]) => {
+    let i = 0;
+    return () => values[i++ % values.length]!;
+  };
+
+  it("takes its COUNT from the wall's length: one per 12ft, floored", () => {
+    for (const [lengthFt, expected] of [
+      [8, 0],
+      [11.9, 0],
+      [12, 1],
+      [23.9, 1],
+      [24, 2],
+      [40, 3],
+    ] as [number, number][]) {
+      expect({ lengthFt, n: seedGableWindows(20, lengthFt * 12, 48, fixed([0])).length }).toEqual({ lengthFt, n: expected });
+    }
+  });
+
+  it("⚠ never seeds the first or last tile — a gable's end tiles are its shortest", () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const windows = seedGableWindows(6, 40 * 12, 48, fixed([seed / 20, (seed * 7) % 20 / 20, (seed * 13) % 20 / 20]));
+      for (const w of windows) {
+        expect({ seed, ordinal: w.beforeTileCount, inRange: w.beforeTileCount >= 1 && w.beforeTileCount <= 4 }).toEqual({
+          seed,
+          ordinal: w.beforeTileCount,
+          inRange: true,
+        });
+      }
+    }
+  });
+
+  it("never puts two windows on the same tile", () => {
+    const windows = seedGableWindows(8, 40 * 12, 48, fixed([0, 0, 0]));
+    expect(new Set(windows.map((w) => w.beforeTileCount)).size).toBe(windows.length);
+  });
+
+  it("asks for no more than the row can hold", () => {
+    /* A 60ft wall wants 5 windows; a 4-tile row has 2 eligible positions. */
+    expect(seedGableWindows(4, 60 * 12, 48, fixed([0])).length).toBe(2);
+    /* And a row with no interior tile at all gets none rather than throwing. */
+    expect(seedGableWindows(2, 60 * 12, 48, fixed([0]))).toEqual([]);
+  });
+
+  it("is deterministic given its random source, so a saved project reopens the same", () => {
+    const a = seedGableWindows(10, 36 * 12, 48, fixed([0.1, 0.9, 0.5]));
+    const b = seedGableWindows(10, 36 * 12, 48, fixed([0.1, 0.9, 0.5]));
+    expect(a).toEqual(b);
   });
 });

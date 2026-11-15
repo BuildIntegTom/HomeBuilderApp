@@ -257,3 +257,48 @@ export function gableWindowCapHeightsIn(
   }
   return { kind: "cap", leftIn, rightIn };
 }
+
+/**
+ * ⚠ **A GABLE INSTANCE'S HEIGHTS ABOVE ITS OWN BASE — the one place that
+ * knows a window cap measures from a different zero.**
+ *
+ * `PanelInstance.leftEdgeHeightIn`/`rightEdgeHeightIn` are ABSOLUTE for an
+ * ordinary gable tile (heights above the floor, so a consumer subtracts the
+ * eave) and **already LOCAL** for a gable window's cap, which `panelInstances`
+ * stores as `max(0, tile.leftEdgeHeightIn - roTopIn)` because the cap is
+ * anchored at the window's own rough-opening top rather than at the eave.
+ *
+ * Every consumer in `page.tsx` subtracted the eave height unconditionally, so
+ * the moment a gable row carried a window the cap came out
+ * `0 - gableEaveHeightIn` — about **-122in on a 10ft wall** — and
+ * `buildGablePanelMembers` threw inside a `useMemo`, taking the page down.
+ * Found 2026-11-14 the moment windows started being auto-spawned; before that
+ * it needed a hand-toggled gable window to reach.
+ *
+ * Related to `gableWindowCapHeightsIn`, which guards the OTHER end of the same
+ * story (how tall the cap should be at all). This one answers "what do these
+ * two numbers mean", which is a question every consumer was getting wrong.
+ */
+export function gableLocalEdgeHeightIn(
+  edgeHeightIn: number | undefined,
+  /* A gable instance whose source slot is a window IS the cap above that
+     window — the same discriminator the jack-stud derivation already uses. */
+  sourceSlotType: string | undefined,
+  gableEaveHeightIn: number,
+): number {
+  const baseIn = sourceSlotType === "window" ? 0 : gableEaveHeightIn;
+  return Math.max(0, (edgeHeightIn ?? baseIn) - baseIn);
+}
+
+/** The taller of the two, which is the panel's own height. */
+export function gableLocalTallerHeightIn(
+  leftEdgeHeightIn: number | undefined,
+  rightEdgeHeightIn: number | undefined,
+  sourceSlotType: string | undefined,
+  gableEaveHeightIn: number,
+): number {
+  return Math.max(
+    gableLocalEdgeHeightIn(leftEdgeHeightIn, sourceSlotType, gableEaveHeightIn),
+    gableLocalEdgeHeightIn(rightEdgeHeightIn, sourceSlotType, gableEaveHeightIn),
+  );
+}

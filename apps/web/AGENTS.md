@@ -77,6 +77,37 @@
   taking an explicit context object, which removed the dependency instead of
   listing it. `useCallback` would have traded a banned rule for a rationed one.
 
+  ⚠ **Recorded exception, 2026-11-14 — the gable-window seed, +10.**
+  `preserve-manual-memoization` 62 -> 72. Every other rule byte-identical and
+  no correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1). It is **one call**:
+  `seedGableWindowsForFootprint(fp, autoGableWallIds, nextSlots, …)` inside
+  `applyRoofDefaultsForFootprint`.
+
+  ⚠ **This one is NOT a new `useMemo` and not a copied pattern**, so it does
+  not fit either case above. It is recorded as an exception on the strength of
+  the bisect rather than waved through, and the bisect is the useful part:
+
+  - Removing that one call returns the count to **exactly 62**.
+  - A bare `setGableWindowAnchorsByWallId((prev) => prev)` in the same place
+    costs **nothing**, so it is not "a second writer of that state".
+  - Moving the body into its own module, replacing the options object with
+    positional arguments, and moving the `existing` read inside the updater
+    each changed **nothing** — all three were tried and all three read 72.
+  - What it leaves is `nextSlots`, the whole freshly-tiled slot record,
+    escaping into a function the compiler cannot see through. That record is
+    also this function's RETURN value and feeds `setBaseWallSlots`, so every
+    memo downstream of the building's slots stops being preservable. The ten
+    are all memos keyed on `gableEaveHeightIn` / the gable row.
+
+  ⚠ **How to bisect this rule cheaply, which was the real find.** The
+  whole-app run takes ~10 minutes, but linting **`app/page.tsx` alone**
+  finishes in about a minute and reproduces this rule's count exactly
+  (62 at `d3dfff8`). The warning further up about a single-file run taking
+  over ten minutes was at 4GB; at 6144 it is fast. Copy `page.tsx` aside,
+  `git checkout HEAD -- app/page.tsx` to confirm the baseline, then put
+  changes back in groups.
+
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately

@@ -217,7 +217,7 @@ import {
   type GablePeakTopProfile,
   buildCornerPanelMembers,
   buildDoorHeaderMembers,
-  buildGablePanelMembers,
+  buildGablePanelMembersIfBuildable,
   buildJackStudMembers,
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
@@ -457,9 +457,12 @@ import {
 import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
 import { placeColumnUnderPeak } from "./gableColumnPlacement";
+import { seedGableWindowsForFootprint } from "./gableWindowSeed";
 import {
   capGableTileHeights,
   computeRiseFtForPitch,
+  gableLocalEdgeHeightIn,
+  gableLocalTallerHeightIn,
   gableTileRoofTopLiftIn,
   resolveGableProfilePoints,
   resolveHeelSeat,
@@ -4178,7 +4181,8 @@ export default function LayoutEditor() {
       trussPlateInsetIn,
     );
     const runForPitchIn = (form.kind === "shed" ? wallWidthIn : wallWidthIn / 2) - seat.runOffsetIn;
-    setRoofProfilePointHeightsFt([computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn)]);
+    const riseFt = computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn);
+    setRoofProfilePointHeightsFt([riseFt]);
 
     /* ⚠ **A SHED'S TWO GABLE WALLS NEED THE POINT AT OPPOSITE ENDS OF
        THEMSELVES**, because a profile point's x is measured from each wall's
@@ -4196,7 +4200,7 @@ export default function LayoutEditor() {
     const shedOptions = { form: "shed" as const, pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt };
     const shedPlane = form.kind === "shed" ? simpleRoofPlanes(fp, shedOptions).planes[0] : undefined;
     const cornerPointOf = (cornerId: string) => fp.corners.find((c) => c.id === cornerId)?.point;
-    setGableProfilePositionsInByWallId(
+    const profilePositionsInByWallId: Record<string, number[]> =
       form.kind === "shed" && shedPlane
         ? Object.fromEntries(
             autoGableWallIds.map((id) => {
@@ -4211,8 +4215,8 @@ export default function LayoutEditor() {
               return [id, [startIsHigh ? 0 : wall.lengthFt * 12]];
             }),
           )
-        : {},
-    );
+        : {};
+    setGableProfilePositionsInByWallId(profilePositionsInByWallId);
 
     /* ⚠ A PEAKED ROOF SPAWNS ITS GABLE COLUMN PANELS WITH THE BUILDING.
        *"the ridge beam should land on top of a Gable column panel... there
@@ -4248,6 +4252,28 @@ export default function LayoutEditor() {
     setGableStructuralPanelWallIds(isPeaked ? new Set(autoGableWallIds) : new Set());
     /* A new ridge means a column dragged on the old one points at nothing. */
     setRidgeColumnOverridesAlongIn({});
+
+    /* One gable window per 12ft of wall, seeded with the building — see
+       `seedGableWindowsForFootprint`. Computed OUTSIDE the state updater and
+       merged with `prev` winning, so a wall the user has already answered
+       keeps its answer and nothing here reads that state back. */
+    const seededGableWindows = seedGableWindowsForFootprint(
+      fp,
+      autoGableWallIds,
+      nextSlots,
+      {},
+      thicknessIn,
+      gableEaveHeightIn,
+      riseFt,
+      profilePositionsInByWallId,
+      standardWidthIn,
+      gableEndsFullHeight ? 0 : trussPlateInsetIn,
+      effectiveHeelHeightIn,
+      roofBearingAnchorMode,
+      isPeaked ? COLUMN_TOTAL_WIDTH_IN : undefined,
+    );
+    setGableWindowAnchorsByWallId((prev) => ({ ...seededGableWindows, ...prev }));
+
     return nextSlots;
   };
 
@@ -7547,14 +7573,17 @@ export default function LayoutEditor() {
    * the row tiled 192in of wall from a 161in description. The gable came out
    * on its own 48in module instead of the wall's.
    *
-   * `wallGeometryFor` already knows the number — `startInsetIn` is 0 when
-   * this wall owns its corner and the wall thickness when it butts — and the
-   * elevation drawing has been using it to place the "adjacent wall" filler
-   * sliver all along. The two now read the same offset.
+   * `runStartOffsetIn` is the number, and it is the field with the doc comment
+   * naming *"the gable column alignment"* among the things that measure from
+   * it. Not `startInsetIn`: the two are equal on a plain rectangle, but a
+   * reflex-corner winner has inset 0 and a negative extension, and a start
+   * stop moves the run without changing the inset — the same wall-thickness
+   * disagreement `WallElevationDiagram` already warns about on its own
+   * `gableBuiltStartIn` prop.
    */
   const gableWallJointSpansFor = (wallId: string): GableWallJointSpan[] => {
     const slots = stories[stories.length - 1]?.wallSlots[wallId] ?? [];
-    let atIn = wallGeometryFor(wallId)?.startInsetIn ?? 0;
+    let atIn = wallGeometryFor(wallId)?.runStartOffsetIn ?? 0;
     return slots.map((slot) => {
       const span = {
         xStartIn: atIn,
@@ -8551,11 +8580,16 @@ export default function LayoutEditor() {
                                 thicknessIn,
                                 Math.max(inst.leftEdgeHeightIn!, inst.rightEdgeHeightIn!) - gableEaveHeightIn,
                               )
-                            : buildGablePanelMembers(
+                            : /* ⚠ Through the shared reader, and through the
+                                 builder's own buildable test: a gable WINDOW
+                                 cap's two heights are ALREADY LOCAL, and
+                                 subtracting the eave from them put this
+                                 builder 122in underground. */
+                              buildGablePanelMembersIfBuildable(
                                 inst.widthIn,
                                 thicknessIn,
-                                inst.leftEdgeHeightIn! - gableEaveHeightIn,
-                                inst.rightEdgeHeightIn! - gableEaveHeightIn,
+                                gableLocalEdgeHeightIn(inst.leftEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
+                                gableLocalEdgeHeightIn(inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
                                 includeNailer,
                                 girtStyle,
                               )
@@ -8571,7 +8605,7 @@ export default function LayoutEditor() {
            tile really is empty, and is skipped the same way the wall's own
            safety gaps are. */
         if (inst.panelType === "gable" && !inst.isSafetyGap) {
-          const tileHeightIn = Math.max(inst.leftEdgeHeightIn ?? 0, inst.rightEdgeHeightIn ?? 0) - gableEaveHeightIn;
+          const tileHeightIn = gableLocalTallerHeightIn(inst.leftEdgeHeightIn, inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn);
           if (tileHeightIn > 0) {
             const volume = computeStandardPanelStrawVolume(instMembers, {
               heightIn: tileHeightIn,
@@ -8727,7 +8761,7 @@ export default function LayoutEditor() {
         // Same formula panelFabricationGroups' own panelHeightInFor
         // already uses for gable (line ~3460), so board-footage/pricing
         // and shipping packing can never disagree.
-        map.set(inst.name, Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn);
+        map.set(inst.name, gableLocalTallerHeightIn(inst.leftEdgeHeightIn, inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn));
       } else {
         map.set(inst.name, mainHeightIn);
       }
@@ -8747,8 +8781,8 @@ export default function LayoutEditor() {
     for (const inst of allInstances) {
       if (inst.panelType !== "gable") continue;
       map.set(inst.name, {
-        leftIn: Math.max(0, (inst.leftEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn),
-        rightIn: Math.max(0, (inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn),
+        leftIn: gableLocalEdgeHeightIn(inst.leftEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
+        rightIn: gableLocalEdgeHeightIn(inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
       });
     }
     return map;
@@ -9023,7 +9057,11 @@ export default function LayoutEditor() {
   ) => {
     const heightIn = heightInOverride ?? wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
-    const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
+    /* ⚠ Through the shared reader, because a gable WINDOW cap's edge heights
+       arrive here ALREADY LOCAL — see `gableInstanceLocalEdgeHeightsIn`. This
+       subtraction put the shop-drawing build 122in underground the moment a
+       gable row carried a window. */
+    const gableLeftLocalIn = gableLocalEdgeHeightIn(leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn, sourceSlotType, gableEaveHeightIn);
     /**
      * ⚠ **How far below a full-height gable panel's TOP the roofline sits.**
      *
@@ -9043,7 +9081,7 @@ export default function LayoutEditor() {
     const gablePeakRooflineBelowTopIn = gableEndsFullHeight
       ? thicknessIn * Math.hypot(1, (deckPanelTakeoffInput.roofPitchIn12 ?? 0) / 12)
       : 0;
-    const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
+    const gableRightLocalIn = gableLocalEdgeHeightIn(rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn, sourceSlotType, gableEaveHeightIn);
     /**
      * ⚠ **The ridge inside a Gable Peak column tile, as the three rises the
      * builder wants** — see `GablePeakTopProfile`.
@@ -9154,7 +9192,10 @@ export default function LayoutEditor() {
             : panelTypeId === "gable"
               ? isSafetyGapOverride
                 ? buildSafetyGapMembers(thicknessIn, Math.max(gableLeftLocalIn, gableRightLocalIn))
-                : buildGablePanelMembers(widthIn, thicknessIn, gableLeftLocalIn, gableRightLocalIn, includeNailer, girtStyle)
+                : /* A cap too short to be a panel is no panel, not a throw
+                     inside a memo — the legitimate case of a window whose head
+                     reaches its own roofline. */
+                  (buildGablePanelMembersIfBuildable(widthIn, thicknessIn, gableLeftLocalIn, gableRightLocalIn, includeNailer, girtStyle) ?? [])
               : panelTypeId === "header"
                 ? sourceSlotType === "door"
                   ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
@@ -9386,7 +9427,7 @@ export default function LayoutEditor() {
                       (inst.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value) +
                       (inst.includeSillOnBigHeader === true ? sillDefaultHeightIn.value : 0)
                     : panelTypeId === "gable"
-                      ? Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn
+                      ? gableLocalTallerHeightIn(inst.leftEdgeHeightIn, inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn)
                       : (inst.heightOverrideIn ?? wallHeightFt * 12),
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: woodWeightKgFor(
@@ -9736,7 +9777,9 @@ export default function LayoutEditor() {
             );
       }
       if (panelTypeId === "gable") {
-        return Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
+        /* ⚠ Shared reader — a gable WINDOW cap's heights are already local,
+           so this sheet used to be headed with a negative height. */
+        return gableLocalTallerHeightIn(inst.leftEdgeHeightIn, inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn);
       }
       /* B33 — a Big Header is a SHORT assembly in a full-height slot, so its
          sheet height is its own, never the wall's. The opt-in sill is added

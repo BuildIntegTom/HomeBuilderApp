@@ -946,6 +946,17 @@ export function computeGableTiledRow(
           anchorMode,
           windowReservations,
           columnReservationWidthIn,
+          /* Unclamped, which is the point of the recursion. */
+          0,
+          wallWidthIn,
+          /* ⚠ **And tiled the SAME WAY, which it was not.** This call
+             dropped `wallSlotsIn` and `columnTopDropIn`, so on a joint-aligned
+             row it measured the windows' "true" x positions off an evenly
+             tiled row the building does not have, and a clamped row then put
+             them at those wrong positions. Invisible until joints and windows
+             were allowed to compose (2026-11-14). */
+          wallSlotsIn,
+          columnTopDropIn,
         )
           .filter((p) => p.isWindow)
           .map((p) => ({ xStartIn: p.xStartIn, xEndIn: p.xEndIn, heightIn: p.windowHeightIn, sillHeightIn: p.windowSillHeightIn }))
@@ -979,7 +990,25 @@ export function computeGableTiledRow(
   // everywhere — including the `naturalCounts` pass, whose per-segment
   // counts set the window ordinals, so skipping a segment in one place and
   // not the other would silently renumber every window after it.
-  const alignToJoints = wallSlotsIn.length > 0 && windowReservations.length === 0;
+  /**
+   * ⚠ **JOINT ALIGNMENT AND WINDOWS NOW COMPOSE — 2026-11-14.**
+   *
+   * This used to be `&& windowReservations.length === 0`: a gable row that
+   * carried a window gave up alignment entirely, because a window was placed
+   * by ORDINAL inside a segment and re-dividing the segment would renumber
+   * every window after it.
+   *
+   * His rule settles it — **wall joints win, a window snaps to the nearest
+   * wall joint** — and under alignment that has an exact meaning: a gable
+   * window IS a tile, the one between two wall joints, exactly as a wall
+   * window is a whole slot. Nothing is inserted and no width is reserved, so
+   * there is nothing left to renumber. See the aligned branch below.
+   *
+   * It mattered because he asked for a window every 12ft of gable: with the
+   * old rule, auto-spawning them would have silently un-aligned nearly every
+   * gable end in the app.
+   */
+  const alignToJoints = wallSlotsIn.length > 0;
   const tilesForSegment = (seg: { segStartIn: number; segEndIn: number; gapEnd: "start" | "end" }): GableTiledPanel[] => {
     if (seg.segEndIn - seg.segStartIn <= 0) return [];
     if (alignToJoints) {
@@ -1074,6 +1103,52 @@ export function computeGableTiledRow(
         isColumn: true,
       };
     }
+  }
+
+  if (alignToJoints) {
+    /**
+     * ⚠ **A WINDOW IS A TILE, NOT AN INSERTION.**
+     *
+     * `w.widthIn` is deliberately ignored here. The tile's width is the wall
+     * slot's width below it, which is what *"wall joints win"* means and what
+     * keeps the studs stacked. A joint-aligned tile is already at or under
+     * the 4ft gable-window ceiling, because `tileAtJoints` subdivides any bay
+     * wider than the target.
+     *
+     * The ordinal space is the same one the unaligned path uses: non-safety-
+     * gap tiles produced by the segments, with the ridge column outside it
+     * (it is pushed separately, and a window does not belong in the panel the
+     * ridge beam bears on).
+     */
+    const asWindow = (
+      tile: GableTiledPanel,
+      w: { heightIn?: number; sillHeightIn?: number },
+    ): GableTiledPanel => ({
+      ...tile,
+      isWindow: true,
+      ...(w.heightIn !== undefined && { windowHeightIn: w.heightIn }),
+      ...(w.sillHeightIn !== undefined && { windowSillHeightIn: w.sillHeightIn }),
+    });
+    /* Clamped: match by the window's TRUE x on the building, so a stop at one
+       end cannot slide a window at the other — his 2026-09-25 rule. Unclamped:
+       by ordinal, which is what the stored reservation carries. */
+    const positionedByStart = new Map(positionedWindows.map((w) => [toEighths(w.xStartIn), w]));
+    const byOrdinal = new Map(windowReservations.map((w) => [w.beforeTileCount, w]));
+    const panels: GableTiledPanel[] = [];
+    let realTileCount = 0;
+    for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+      for (const tile of tilesForSegment(segments[segIdx]!)) {
+        if (tile.isSafetyGap) {
+          panels.push(tile);
+          continue;
+        }
+        const match = isClamped ? positionedByStart.get(toEighths(tile.xStartIn)) : byOrdinal.get(realTileCount);
+        realTileCount++;
+        panels.push(match === undefined ? tile : asWindow(tile, match));
+      }
+      if (segIdx === 0 && columnTile) panels.push(columnTile);
+    }
+    return panels;
   }
 
   if (isClamped && windowReservations.length > 0) {
@@ -1214,4 +1289,53 @@ export function classifyGableWindowsAgainstRunStop(
     }
   }
   return result;
+}
+
+/**
+ * ⚠ **ONE GABLE WINDOW PER 12 FT OF WALL, AT RANDOM TILES.**
+ *
+ * > *"My understanding of how second story panels populate based on the first
+ * > rows width, it would be fun to randomly generate one window for every 12
+ * > ft of wall length in the second story/Gable section."* — Tommy,
+ * > 2026-11-14
+ *
+ * A seed for a FRESH gable row, mirroring `seedDefaultOpenings` in
+ * `retile.ts`, which does the same job for a wall: a count from the wall's own
+ * length, placed at random among the eligible positions, and **stored**, never
+ * re-derived — a random number re-rolled on every render is a building that
+ * changes while you look at it.
+ *
+ * ⚠ **The first and last tile are not eligible**, the same exclusion
+ * `seedDefaultOpenings` keeps and for a sharper reason here: a gable row's end
+ * tiles are its SHORTEST, down at the eave where the roofline runs out, and
+ * they are the least able to hold a window. The ridge column is excluded by
+ * construction, since it is not in the tile ordinal space at all.
+ *
+ * ⚠ **No width is chosen**, because under joint alignment a window IS its
+ * tile — the wall slot's width below it. `widthIn` is carried only for the
+ * unaligned path and for the 4ft ceiling a hand edit is clamped to.
+ */
+export const GABLE_WINDOW_PER_WALL_FT = 12;
+
+export function seedGableWindows(
+  /** The row's own tile count, EXCLUDING safety gaps and the ridge column —
+   *  the same ordinal space `GableWindowReservation.beforeTileCount` uses. */
+  tileCount: number,
+  wallLengthIn: number,
+  /** The width a reservation carries when nothing aligns it; the caller's
+   *  standard panel width. */
+  defaultWidthIn: number,
+  randomFn: () => number = Math.random,
+): GableWindowReservation[] {
+  const wanted = Math.floor(wallLengthIn / (GABLE_WINDOW_PER_WALL_FT * 12));
+  if (!(wanted > 0) || !(tileCount > 2)) return [];
+  const candidates: number[] = [];
+  for (let ordinal = 1; ordinal < tileCount - 1; ordinal++) candidates.push(ordinal);
+  const chosen: number[] = [];
+  for (let i = 0; i < wanted && candidates.length > 0; i++) {
+    chosen.push(candidates.splice(Math.floor(randomFn() * candidates.length), 1)[0]!);
+  }
+  return chosen
+    .sort((a, b) => a - b)
+    .map((beforeTileCount) => ({ beforeTileCount, widthIn: defaultWidthIn }));
 }

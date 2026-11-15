@@ -123,13 +123,32 @@ is cut, what sets the radius) was answering the wrong question.
       wall whose panels are 28.125 / 32.125 / 28 / 24 / 0.75 / 48, even while
       the model was aligned. The prop is threaded now and the two agree.
 
+11. **Gable windows** — **BUILT 2026-11-14.** *"Gable Windows should be an
+    easy build... it would be fun to randomly generate one window for every 12
+    ft of wall length in the second story/Gable section."* One window per 12ft
+    of wall, at random tiles (never the first or last — a gable row's end
+    tiles are its shortest), seeded with the building and stored.
+    ⚠ The real work was the composition: `computeGableTiledRow` used to
+    switch joint alignment OFF as soon as a row carried a window, so
+    auto-spawning them would have un-aligned nearly every gable end. Under his
+    rule — **wall joints win** — a gable window IS its tile and its own width
+    is ignored, so nothing is reserved and nothing renumbers.
+    ⚠ It also surfaced a crash: a gable window cap's edge heights are stored
+    LOCAL to the rough-opening top, and three readers subtracted the eave
+    anyway, putting the builder 122in underground. The buildable test now
+    lives in the builder module rather than at a call site — the third time a
+    call-site clamp failed to cover the next call site.
+
 ## D. Open questions that are not blocking anything
 
 - **Shipping bundles**: *"full panel height x 3 panel depths tall"* — on the
   interview list, not sized. ⚠ Lands on packing maths still flagged
   illustrative and truck-bed dimensions that are industry-typical placeholders.
-- **Gable window** — spec given 2026-11-01 (gable panel + header body, no sill,
-  bottom edge on the truss plate). Not built.
+- **Gable window's own BODY** — the opening, the cap, the sills, the jack
+  studs and now the seeding are built (2026-11-14). What is still only a spec
+  from 2026-11-01 is the *header body* reading: *"gable panel + header body,
+  no sill, bottom edge on the truss plate."* Today a gable window gets sill
+  instances like a wall window does.
 - **A header's straw** — B33, 2026-11-06. A Big Header is given **zero** straw
   and a window/door header a **member-aware volume**, for the same kind of
   cavity, and he has said the two *"are really the same thing."* Which way they
