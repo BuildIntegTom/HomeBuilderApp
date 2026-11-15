@@ -48,5 +48,6 @@ export * from "./csv";
 export * from "./dxf";
 export * from "./projectCutListCsv";
 export * from "./shopItemFace";
+export * from "./materialCosts";
 export * from "./tip4urTimeCsv";
 export * from "./strawFillBox";

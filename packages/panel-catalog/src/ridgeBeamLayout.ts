@@ -1,9 +1,12 @@
 import {
+  ROOF_CATCHER_BEAM_DEPTH_IN,
   ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   computeRoofCatcherBeamPostPositions,
   computeRoofCatcherBeamSegments,
 } from "./roofCatcherBeamMembers";
 import { STRUCTURAL_COLUMN_WIDTH_IN } from "./structuralColumnMembers";
+import { COLUMN_TOTAL_WIDTH_IN } from "./columnPanelMembers";
+import { gablePeakBeamTopBelowRidgeIn } from "./gablePeakPanelMembers";
 
 /**
  * Where the ridge beam and its columns actually land on a building.
@@ -269,4 +272,36 @@ export function columnStorySegments(storyHeightsFt: readonly number[], beamUnder
     });
   }
   return segments;
+}
+
+
+/**
+ * ⚠ **WHERE THE BEAM'S UNDERSIDE SITS — the one derivation, for every
+ * consumer.**
+ *
+ * The beam hangs inside the gable peak panel's plywood box rather than
+ * balancing on top of a column: *"a furred out slot inside the straw... to
+ * house the beam"* (2026-11-10), and *"The housing of the beam goes all the
+ * way to the peak and matches the other panels"* (2026-11-12). So its top is
+ * the ridge less the box's lid and his quarter inch of clearance, and its
+ * underside is one beam depth below that.
+ *
+ * ⚠ **It exists as a named function because the B9 fault was exactly this
+ * arithmetic written twice.** The beam floated 0.75in above the column that
+ * carried it, on nominal-versus-actual, and the fix was to derive the offset
+ * once. A second copy here — one in the renderer, one in whatever prices or
+ * cuts the beam — would reintroduce it in the one place nobody looks, since
+ * a beam priced at the wrong elevation still prices.
+ *
+ * ⚠ **The column width is the COLUMN PANEL's 25.5in, not the structural
+ * post's 15.5in**, because what sets the drop is the width of the panel the
+ * peak box is cut into, not the post standing under it. The two are
+ * deliberately different numbers (see `structuralColumnMembers`' own header)
+ * and swapping them moves the beam.
+ */
+export function ridgeBeamUndersideFt(ridgeHeightFt: number, pitchIn12: number): number {
+  return (
+    ridgeHeightFt -
+    (gablePeakBeamTopBelowRidgeIn(COLUMN_TOTAL_WIDTH_IN, pitchIn12) + ROOF_CATCHER_BEAM_DEPTH_IN) / 12
+  );
 }

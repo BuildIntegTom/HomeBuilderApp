@@ -310,7 +310,7 @@ import {
   plasterMixPartsDefaults,
   plasterPriceDefaults,
   priceRates,
-  shopItemRates,
+  shopItemMaterialsMarkup,
   referenceDensities,
   roofCatcherBeamShapeDefault,
   roofCatcherBeamShapeOptions,
@@ -360,7 +360,12 @@ import {
   type PanelMember,
   type PanelStructuralStatus,
   ridgeBeamLayout,
+  ridgeBeamUndersideFt,
+  columnStorySegments,
+  buildRoofCatcherBeamMembers,
+  buildStructuralColumnMembers,
   ROOF_CATCHER_BEAM_DEPTH_IN,
+  STRUCTURAL_COLUMN_WIDTH_IN,
   ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   decideRoofForm,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
@@ -766,24 +771,38 @@ const phase2Assumptions = () => [
      its place is the entry immediately below, which is about the READING of
      his rates rather than about an invented area. */
   {
-    label: "Shop-item rates: PER PIECE is a reading of his instruction, and a Truss Plate moves 2.3x",
+    label: "Shop-item prices now rest on RESEARCHED stock prices, not Building Integrity's own",
     status: "pending-BI-confirmation" as const,
     note:
-      "His 2026-11-15 table — plywood jack studs and safety gaps $4/sq ft, LVLs $10/sq ft per LVL, beams and " +
-      "columns built from dimensional lumber $60/sq ft, each on \"the piece's largest face\" — is applied PER " +
-      "PIECE, so a Box Beam is four prices (two LVL webs, two plywood caps) and a Truss Plate is three (two 2x4 " +
-      "chords, one skin). That is his own wording twice over, including his answer on what \"per LVL\" means: " +
-      "\"each LVL is priced on its own largest face: a header made of two LVLs is two of them.\" ⚠ But the other " +
-      "reading — one rate on the assembled thing's biggest face — is not absurd, and the two differ a lot: per " +
-      "10ft, a Box Beam goes $177.08 -> $253.33 either way, while a TRUSS PLATE goes $177.08 -> $401.67 per piece " +
-      "against roughly $775 on its envelope. The $60 rate on a single 2x4's 3 1/2in x 10ft face is about $175 a " +
-      "stick, which is the number to put in front of him: if $60 was meant for a built-up beam rather than for " +
-      "each board in one, every roof in the app is over-quoted. Nothing in the printed arithmetic distinguishes " +
-      "the two readings. ⚠ Also unasked: no rate exists for wire mesh, wood fiber board or fasteners, so those " +
-      "price at zero (no shop item contains one today, asserted by a test); and a PLYWOOD JACK STUD is now " +
-      "charged $4/sq ft although his 2026-11-08 answer had it \"explicitly rolled into the $25\" — the newer " +
-      "table names it, so the newer table wins, and it is an addition to a panel's price rather than a " +
-      "re-slicing of it.",
+      "Tommy, 2026-11-15: \"lets research some prices and set some prices where the price we come up with the app " +
+      "is somewhere roughly 2.2x the raw materials cost of lumber and nails.\" Every shop item - safety gaps, " +
+      "plywood jack studs, beams, truss plates, ridge beams and ridge posts - is now priced at 2.2x what it is " +
+      "made of. The 2.2 is HIS number and is confirmed. \u26a0 WHAT IT MULTIPLIES IS NOT: the stock prices are " +
+      "researched November 2026 RETAIL midpoints (framing lumber $0.95/board foot, sheet goods $1.88/sq ft per " +
+      "inch, LVL $0.54 per sq in of section per foot) and a fabricator buying by the unit pays less, so every " +
+      "quote is high by whatever that gap is. A 20% error in the stock price is a 20% error in the sell price, " +
+      "straight through the 2.2. These are the numbers most worth replacing with real supplier quotes. " +
+      "\u26a0 THE FASTENER ALLOWANCE IS A PLACEHOLDER: 5% of a piece's lumber and sheet cost, because his " +
+      "instruction says \"lumber and nails\". This app has real fastener schedules, but they describe " +
+      "panel-to-panel connections rather than the nails inside one built-up beam, so counting from them would be " +
+      "precise about the wrong thing. \u26a0 AND IT IS A MARKUP ON STOCK, NOT A MARGIN: no labour, shop overhead, " +
+      "waste factor or delivery is in the base, so nothing here says whether a job is profitable.",
+  },
+  {
+    label: "The $4/$10/$60 per-square-foot shop-item table was live for about four hours and was wrong by 13x",
+    status: "confirmed" as const,
+    note:
+      "Recorded because it REACHED main and therefore reached quotes. His 2026-11-15 table priced shop items by " +
+      "the piece's largest face at $4/sq ft (plywood), $10/sq ft per LVL and $60/sq ft (dimensional lumber). " +
+      "Measured against researched stock prices the same day: one 10ft 2x4 was charged $175.00, which is 27.6x " +
+      "its materials; a 10ft 2x12 was charged $562.50, 29.6x; and a 2x9 LVL web was charged $75.00, which is " +
+      "0.8x - BELOW COST. Only the plywood rate was close, at 2.8x. A truss plate sits on essentially every " +
+      "building this app draws, so the over-charge was not a corner case. \u26a0 THE LESSON IS THE UNIT, NOT THE " +
+      "VALUES: a rate per square foot is a rate per unit of SURFACE and lumber is sold by VOLUME, so no single " +
+      "number covers a 3/4in sheet and a 2x12 of the same face area - they differ in cost by about fifteen " +
+      "times. Splitting it three ways by material narrowed the error without removing it. \u26a0 The LARGEST-FACE " +
+      "rule from the same instruction was NOT the error and still stands: it is what the exported Sq ft column " +
+      "reports, because that column is about what a crew handles and is credited for, not about what a piece cost.",
   },
   {
     label: "A spanning header's rate has changed hands twice, and this is the third answer",
@@ -796,19 +815,17 @@ const phase2Assumptions = () => [
       "from his own table rather than from a question he was asked, and it quietly reverses a decision he did " +
       "make. Worth one sentence of confirmation.",
   },
-  {
-    label: "The roof-catcher (ridge) beam is drawn and never priced, shipped or cut-listed",
-    status: "pending-BI-confirmation" as const,
-    note:
-      "Found while wiring the 2026-11-15 shop-item rates. `buildRoofCatcherBeamMembers` is called from the 3D " +
-      "view ONLY: the beam a gable column panel is deliberately shortened 11 1/4in to catch (B9) has no " +
-      "fabrication group, so it is in no Shop Fabrication sheet, no cut list, no CSV, no weight and no price. It " +
-      "is three 2x12s of dimensional lumber, which at his $60/sq ft is real money on every peaked roof, and at " +
-      "$0 today. ⚠ NOT caused by the shop-item change — it was missing from the old `beam` price bucket too, " +
-      "which only ever held the roof-bearing run and the mid-wall beams. The shop-item work is just what made it " +
-      "visible, because every other beam in the building now reaches the price through the export seam and this " +
-      "one is not on it.",
-  },
+  /* \u26a0 **"The roof-catcher (ridge) beam is drawn and never priced" WAS HERE,
+     and it was closed the same day it was opened \u2014 2026-11-15.** It had no
+     fabrication group, so it reached no shop sheet, no cut list, no file
+     export, no weight and no price: three 2x12s a bay, plus a 4-pack of 2x8s
+     a post, free on every peaked roof. Both are now real parts on the export
+     seam (`ridgeBeamFabricationGroups`, `ridgeColumnFabricationGroups`), built
+     off the same `ridgeBeamForPlan` the plan view drags, so the posts a user
+     moves and the parts a shop cuts cannot disagree. His words: *"we gotta be
+     charging for all items and panels, good catch on that missing beam."*
+     Deleted rather than reworded, because this list is an inventory of what is
+     NOT done. */
   {
     label: "Wall interior default read as clay plaster",
     status: "pending-BI-confirmation" as const,
@@ -7986,6 +8003,14 @@ export default function LayoutEditor() {
       columnOverridesAlongIn: ridgeColumnOverridesAlongIn,
     });
     if (layout.refusal !== null) return null;
+    /* \u26a0 **The beam's underside, for the columns' heights \u2014 read from the
+       shared helper, never written out here.** The B9 fault was this one
+       subtraction existing twice: the beam floated 0.75in above the column
+       carrying it, on nominal-versus-actual. A second copy in whatever
+       PRICES the column would be worse, because a column cut to the wrong
+       height still prices. */
+    const beamUnderFt = ridgeBeamUndersideFt(plane.highHeightFt, pitchIn12);
+    const storyHeightsFt = secondStory ? [wallHeightFt, secondStory.wallHeightFt] : [wallHeightFt];
     return {
       startFt: plane.highStart,
       endFt: plane.highEnd,
@@ -7994,11 +8019,40 @@ export default function LayoutEditor() {
         atFt: c.atFt,
         widthIn: c.widthIn,
       })),
+      /* \u26a0 **THE PIECES, so the beam can be built and charged for.** Until
+         2026-11-15 this derivation stopped at the plan view's dots and lines,
+         and the beam itself existed nowhere else in the app: no fabrication
+         group, so no shop sheet, no cut list, no CSV row, no weight and no
+         price. Three 2x12s at $0 on every peaked roof. The geometry was
+         always here; only the parts list was missing. */
+      segments: layout.segments.map((seg: { index: number; spanIn: number }) => ({
+        index: seg.index,
+        spanIn: seg.spanIn,
+      })),
+      /* One entry per column PER STORY. A single stick from the foundation to
+         the beam would pass through every floor deck on the way, so the load
+         path is a post per story, each bearing on the one below. */
+      columnPieces: layout.columns.flatMap((c: { index: number }) =>
+        columnStorySegments(storyHeightsFt, beamUnderFt).map((seg) => ({
+          columnIndex: c.index,
+          storyIndex: seg.storyIndex,
+          heightIn: seg.heightIn,
+        })),
+      ),
       /* ⚠ Spans a drag made too long. The beam is cut between its posts, so
          moving one lengthens a bay either side of it. */
       overlongSpansFt: layout.overlongSegments.map((seg: { spanIn: number }) => seg.spanIn / 12),
     };
-  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, ridgeColumnOverridesAlongIn]);
+  }, [
+    footprint,
+    roofEnabled,
+    roofFormFromProfile,
+    roofTrussLayoutContext,
+    gableEaveHeightIn,
+    ridgeColumnOverridesAlongIn,
+    wallHeightFt,
+    secondStory,
+  ]);
 
 
   // Which gable-enabled walls have at least one tile whose real roofline
@@ -10680,6 +10734,121 @@ export default function LayoutEditor() {
    * it with the panel and the sheet lists it. The takeoff keeps it in its own
    * field only so a consumer can tell the two parts apart.
    */
+  /**
+   * \u26a0 **THE RIDGE BEAM AND ITS COLUMNS, AS PARTS \u2014 new 2026-11-15, and
+   * they were missing entirely.**
+   *
+   * > *"we gotta be charging for all items and panels, good catch on that
+   * > missing beam."* \u2014 Tommy
+   *
+   * `buildRoofCatcherBeamMembers` was called from `Building3DView` and from
+   * nowhere else. The beam a gable column panel is deliberately shortened for
+   * was drawn, and then existed in no shop sheet, no cut list, no file export,
+   * no weight and no price \u2014 three 2x12s per segment at $0 on every peaked
+   * roof, plus a 4-pack of 2x8s per column under it.
+   *
+   * \u26a0 **Grouped by SPAN, not one group per segment.** A 30ft ridge is three
+   * identical 10ft beams, which is one drawing and three copies \u2014 the same
+   * "exact copies together" rule the gable and standard panels use. Three
+   * sheets for one part is how a shop builds the same thing three times and
+   * bills for it once.
+   *
+   * \u26a0 **It reads `ridgeBeamForPlan`**, which is the derivation the plan view
+   * already uses, so the dots a user drags and the parts a shop cuts cannot
+   * disagree about where the beam is split. That also means the user's dragged
+   * column positions are honoured here \u2014 moving a post re-cuts the beam, and
+   * now it re-cuts the parts list too.
+   */
+  const ridgeBeamFabricationGroups = useMemo(() => {
+    if (!ridgeBeamForPlan) return [];
+    const groups = new Map<string, { spanIn: number; instances: { name: string }[] }>();
+    for (const segment of ridgeBeamForPlan.segments) {
+      const key = segment.spanIn.toFixed(3);
+      const existing = groups.get(key);
+      const name = `Ridge bay ${segment.index + 1}`;
+      if (existing) existing.instances.push({ name });
+      else groups.set(key, { spanIn: segment.spanIn, instances: [{ name }] });
+    }
+    return [...groups.values()].map(({ spanIn, instances }) => {
+      const members = buildRoofCatcherBeamMembers(spanIn);
+      const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
+      const woodComponent = {
+        label: "Wood (3-ply built-up 2x12)",
+        weightKg: woodWeightKg,
+        weightLb: woodWeightKg * KG_TO_LB,
+      };
+      /* No straw and no insulation fill \u2014 a built-up beam is solid lumber,
+         so the breakdown is hand-built the same way the Truss Plate's is
+         rather than routed through a straw-aware helper. */
+      const weightBreakdown: PanelWeightBreakdown = {
+        strawOnlyWeightKg: 0,
+        strawOnlyWeightLb: 0,
+        components: [woodComponent],
+        totalModeledWeightKg: woodComponent.weightKg,
+        totalModeledWeightLb: woodComponent.weightLb,
+      };
+      return {
+        uniqueKey: `ridge-beam-${spanIn.toFixed(3)}`,
+        lengthIn: spanIn,
+        heightIn: ROOF_CATCHER_BEAM_DEPTH_IN,
+        members,
+        weightBreakdown,
+        instances,
+      };
+    });
+  }, [ridgeBeamForPlan]);
+
+  /**
+   * The posts under the ridge beam, by height.
+   *
+   * \u26a0 **NOT the Column Panel.** That one is 25.5in wide, full of straw and
+   * counts as a panel. This is the 4-pack of 2x8s his 2026-10-25 note asked
+   * for \u2014 *"The columns should be a 4 pack of 2x8s"* \u2014 standing inside the
+   * wall under the beam. The two are different parts with similar names, and
+   * conflating them would put straw in a post and charge a beam's bearing at
+   * a panel's rate.
+   */
+  const ridgeColumnFabricationGroups = useMemo(() => {
+    if (!ridgeBeamForPlan) return [];
+    const groups = new Map<string, { heightIn: number; instances: { name: string }[] }>();
+    for (const piece of ridgeBeamForPlan.columnPieces) {
+      const built = buildStructuralColumnMembers({ heightIn: piece.heightIn });
+      /* A refused column is one the builder will not make \u2014 a zero or
+         negative height from a beam below the floor it stands on. It is not
+         drawn either, so it must not be charged for. */
+      if (built.refusal !== null) continue;
+      const key = piece.heightIn.toFixed(3);
+      const existing = groups.get(key);
+      const name = `Ridge post ${piece.columnIndex + 1}, story ${piece.storyIndex + 1}`;
+      if (existing) existing.instances.push({ name });
+      else groups.set(key, { heightIn: piece.heightIn, instances: [{ name }] });
+    }
+    return [...groups.values()].map(({ heightIn, instances }) => {
+      const members = buildStructuralColumnMembers({ heightIn }).members;
+      const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
+      const woodComponent = {
+        label: "Wood (4-ply 2x8 stud pack)",
+        weightKg: woodWeightKg,
+        weightLb: woodWeightKg * KG_TO_LB,
+      };
+      const weightBreakdown: PanelWeightBreakdown = {
+        strawOnlyWeightKg: 0,
+        strawOnlyWeightLb: 0,
+        components: [woodComponent],
+        totalModeledWeightKg: woodComponent.weightKg,
+        totalModeledWeightLb: woodComponent.weightLb,
+      };
+      return {
+        uniqueKey: `ridge-column-${heightIn.toFixed(3)}`,
+        heightIn,
+        widthIn: STRUCTURAL_COLUMN_WIDTH_IN,
+        members,
+        weightBreakdown,
+        instances,
+      };
+    });
+  }, [ridgeBeamForPlan]);
+
   const exportableAssemblies = useMemo(
     () => [
       ...toExportableAssemblies({
@@ -10726,6 +10895,30 @@ export default function LayoutEditor() {
         heightIn: (g) => g.heightIn,
         countsAsPanel: () => false,
       }),
+      /* \u26a0 Added 2026-11-15. Everything below this comment was already on the
+         seam; the ridge beam and its posts were the two fabricated things in
+         this building that were not, which is exactly why they were free. */
+      ...toExportableAssemblies({
+        panelType: "Ridge beam",
+        groups: ridgeBeamFabricationGroups,
+        typeName: () => "Ridge Beam",
+        label: (g) => `Ridge Beam ${formatLengthIn(g.lengthIn, unitSystem)}`,
+        widthIn: (g) => g.lengthIn,
+        heightIn: (g) => g.heightIn,
+        /* A beam, like every other beam here. */
+        countsAsPanel: () => false,
+      }),
+      ...toExportableAssemblies({
+        panelType: "Ridge post",
+        groups: ridgeColumnFabricationGroups,
+        typeName: () => "Ridge Post",
+        label: (g) => `Ridge Post ${formatLengthIn(g.heightIn, unitSystem)}`,
+        widthIn: (g) => g.widthIn,
+        heightIn: (g) => g.heightIn,
+        /* \u26a0 A post is not a panel, although the thing it is named after is.
+           The 25.5in Column PANEL counts; this 15.5in stud pack does not. */
+        countsAsPanel: () => false,
+      }),
       ...toExportableAssemblies({
         panelType: "Deck panel",
         groups: floorRoofPanelFabricationGroups,
@@ -10752,6 +10945,8 @@ export default function LayoutEditor() {
       spanningHeaderFabricationGroups,
       floorRoofPanelFabricationGroups,
       crossTiltFabricationGroups,
+      ridgeBeamFabricationGroups,
+      ridgeColumnFabricationGroups,
       unitSystem,
     ],
   );
@@ -11441,6 +11636,7 @@ export default function LayoutEditor() {
    */
   const shopItemPrice = useMemo(() => {
     let total = 0;
+    let materialCost = 0;
     let faceSqFt = 0;
     let unpricedFaceSqFt = 0;
     let jackStudTotal = 0;
@@ -11449,11 +11645,12 @@ export default function LayoutEditor() {
       if (members.length === 0) continue;
       const priced = computeShopItemPrice(members, assembly.copies);
       total += priced.total;
+      materialCost += priced.materialCost;
       faceSqFt += priced.faceSqFt;
       unpricedFaceSqFt += priced.unpricedFaceSqFt;
       if (assembly.countsAsPanel) jackStudTotal += priced.total;
     }
-    return { total, faceSqFt, unpricedFaceSqFt, jackStudTotal };
+    return { total, materialCost, faceSqFt, unpricedFaceSqFt, jackStudTotal };
   }, [exportableAssemblies]);
 
   const price = useMemo(() => {
@@ -11630,6 +11827,7 @@ export default function LayoutEditor() {
       panelsTotal: computeCoveragePrice(priceable, effectivePricePerSqFt),
       shopItemsTotal: shopItemPrice.total,
       shopItemsFaceSqFt: shopItemPrice.faceSqFt,
+      shopItemsMaterialCost: shopItemPrice.materialCost,
       total: computeCoveragePrice(priceable, effectivePricePerSqFt) + shopItemPrice.total,
       /* What the same building costs at the catalog's list rate. Equal to
          `total` unless somebody has adjusted the rate, which is exactly the
@@ -16587,7 +16785,7 @@ export default function LayoutEditor() {
              products."* */
           priceNote={`Panels: ${price.areaSqFt.toLocaleString()} sq ft of coverage × $${effectivePricePerSqFt.toFixed(2)}/sq ft = $${price.panelsTotal.toFixed(2)}. Wall panels and the gable row by their standing face, floor and roof panels by what they cover (a roof up its real slope).${
             price.shopItemsTotal > 0
-              ? ` Shop items (safety gaps, plywood jack studs and the beams): ${price.shopItemsFaceSqFt.toFixed(1)} sq ft of piece faces = $${price.shopItemsTotal.toFixed(2)}, each piece on its own largest face - plywood $${shopItemRates.sheetPerSqFt}/sq ft, LVL $${shopItemRates.lvlPerSqFt}/sq ft per LVL, dimensional lumber $${shopItemRates.dimensionalLumberPerSqFt}/sq ft.`
+              ? ` Shop items (safety gaps, plywood jack studs, the beams and the columns): $${price.shopItemsMaterialCost.toFixed(2)} of lumber, sheet goods and fasteners × ${shopItemMaterialsMarkup.value} = $${price.shopItemsTotal.toFixed(2)}. Priced by what each piece is made of rather than by area, because stock is sold by volume.`
               : ""
           }${
             Math.abs(price.total - price.listTotal) >= 0.01
@@ -16735,11 +16933,11 @@ export default function LayoutEditor() {
                           panel, beam and truss plate" came to be false. */}
                       {price.shopItemsTotal > 0 && (
                         <div className={styles.note} data-price-shop-items="">
-                          Plus shop items — safety gaps, plywood jack studs and the beams —{" "}
-                          {price.shopItemsFaceSqFt.toFixed(1)} sq ft of piece faces = $
-                          {price.shopItemsTotal.toFixed(2)}. Each piece on its own largest face: plywood $
-                          {shopItemRates.sheetPerSqFt}/sq ft, LVL ${shopItemRates.lvlPerSqFt}/sq ft per LVL,
-                          dimensional lumber ${shopItemRates.dimensionalLumberPerSqFt}/sq ft
+                          Plus shop items — safety gaps, plywood jack studs, the beams and the columns — $
+                          {price.shopItemsMaterialCost.toFixed(2)} of lumber, sheet goods and fasteners ×{" "}
+                          {shopItemMaterialsMarkup.value} = ${price.shopItemsTotal.toFixed(2)}. Priced by what each
+                          piece is made of rather than by area, because stock is sold by volume. Stock prices are
+                          researched market rates, not a supplier quote — see Review Log
                         </div>
                       )}
                       {/* ⚠ BOTH, LABELLED — his answer when asked what a

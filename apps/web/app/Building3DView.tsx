@@ -52,12 +52,10 @@ import {
   GABLE_PANEL_MAX_HEIGHT_IN,
   GABLE_PANEL_MIN_HEIGHT_IN,
   ridgeBeamLayout,
+  ridgeBeamUndersideFt,
   columnStorySegments,
   divideRingFacet,
   buildTaperedPanelMembers,
-  COLUMN_TOTAL_WIDTH_IN,
-  gablePeakBeamTopBelowRidgeIn,
-  ROOF_CATCHER_BEAM_DEPTH_IN,
   STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
@@ -2346,11 +2344,16 @@ export default function Building3DView({
        beam drops into is `apexRise + lid` further down — 5.04in on The Tank
        at 4:12. Holding the constant here would have drawn the beam up
        through the lid of its own box, which is the B9 fault that was caught
-       at 0.75in. `gablePeakBeamTopBelowRidgeIn` is the one derivation both
-       the renderer and the builder read. */
-    const beamUnderFt =
-      plane.highHeightFt -
-      (gablePeakBeamTopBelowRidgeIn(COLUMN_TOTAL_WIDTH_IN, roofPitchIn12 ?? 0) + ROOF_CATCHER_BEAM_DEPTH_IN) / IN_PER_FT;
+       at 0.75in. `ridgeBeamUndersideFt` is the one derivation the renderer,
+       the shop sheets and the price all read. */
+    /* ⚠ **ONE DERIVATION, shared with whatever prices and cuts this beam.**
+       This was three lines of arithmetic here, and on 2026-11-15 the ridge
+       beam gained a fabrication group that needs the same answer to work out
+       its posts' heights. Two copies of this subtraction is precisely the B9
+       fault — the beam floated 0.75in above the column carrying it on
+       nominal-versus-actual — and a second copy on the PRICING side would be
+       worse, because a post cut to the wrong height still prices. */
+    const beamUnderFt = ridgeBeamUndersideFt(plane.highHeightFt, roofPitchIn12 ?? 0);
 
     for (const segment of layout.segments) {
       out.push({

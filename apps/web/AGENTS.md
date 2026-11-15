@@ -100,6 +100,30 @@
     memo downstream of the building's slots stops being preservable. The ten
     are all memos keyed on `gableEaveHeightIn` / the gable row.
 
+  ⚠ **Recorded exception, 2026-11-15 — the ridge beam's parts list, +1.**
+  `preserve-manual-memoization` 72 -> 73. Every other rule byte-identical and
+  no correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1, `no-unused-vars` 35).
+
+  It is ONE dependency: **`secondStory` at `page.tsx:8054:5`**, added to
+  `ridgeBeamForPlan`'s dep array so that memo can work out how tall the ridge
+  posts are per story. That is the 2026-09-30 note's own case — adding an
+  already-flagged value to a dep array flags *there* while its neighbours do
+  not. `wallHeightFt`, added on the line above it, costs nothing, because it is
+  a plain number.
+
+  ⚠ **It is not a choice between +1 and 0.** The dependency is REQUIRED: drop
+  it and `exhaustive-deps` rises instead, and that rule may never rise. So the
+  trade is one rationed error against one banned one.
+
+  ⚠ **And the useful half: TWO BRAND-NEW `useMemo`s cost NOTHING** —
+  `ridgeBeamFabricationGroups` and `ridgeColumnFabricationGroups`, both added
+  in the same change. Each reads exactly one already-memoised value
+  (`ridgeBeamForPlan`) and nothing else. That is worth knowing against the
+  2026-09-30 note's *"expect one new memo to cost two errors"*: the cost is not
+  in the memo, it is in how many already-flagged values its dependency array
+  touches. A memo with one clean dep is free.
+
   ⚠ **How to bisect this rule cheaply, which was the real find.** The
   whole-app run takes ~10 minutes, but linting **`app/page.tsx` alone**
   finishes in about a minute and reproduces this rule's count exactly

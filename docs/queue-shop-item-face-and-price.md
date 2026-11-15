@@ -100,3 +100,43 @@ on every peaked roof. **Not caused by this change**: it was missing from the old
 `beam` price bucket too, which only ever held the roof-bearing run and the
 mid-wall beams. The shop-item work is what made it visible, because every other
 beam now reaches the price through the export seam and this one is not on it.
+
+---
+
+## ⚠ SUPERSEDED THE SAME DAY — the three rates were wrong
+
+He asked, hours after this shipped, for the prices to be checked against
+reality: *"lets research some prices and set some prices where the price we
+come up with the app is somewhere roughly 2.2x the raw materials cost of lumber
+and nails for each beam/column/truss plate/safety gap."*
+
+Against researched November 2026 stock prices, the table did not survive:
+
+| piece | this table charged | multiple of its materials |
+|---|---|---|
+| one 2x4, 10ft | $175.00 | **27.6x** |
+| one 2x12, 10ft | $562.50 | **29.6x** |
+| a safety gap sheet | $51.67 | 2.8x |
+| one 2x9 LVL web | $75.00 | **0.8x — below cost** |
+
+⚠ **A truss plate sits on essentially every building this app draws**, so the
+over-charge was not a corner case. It was live on `main` for about four hours.
+
+⚠ **The unit was the error, not the values.** A rate per square foot is a rate
+per unit of SURFACE; lumber is sold by VOLUME. A 3/4in sheet and a 2x12 of the
+same face area differ in cost by roughly fifteen times, so no single number
+covers both — at any value. Splitting three ways by material narrowed the error
+without removing it.
+
+**What replaced it:** shop items price at **2.2x their real stock cost**
+(`packages/panel-catalog/src/materialCosts.ts`), which is the first cost data
+this app has ever carried.
+
+**What survived:** the **largest-face** rule, unchanged. It is still what the
+exported `Sq ft` column reports, because that column is about what a crew
+handles and is credited for, not about what the piece cost. His acceptance
+check still passes.
+
+**And the ridge beam below is now built** — Ridge Beam and Ridge Post are on
+the export seam, so they are fabricated, cut-listed, exported, weighed and
+charged for.

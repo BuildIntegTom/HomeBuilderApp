@@ -1111,56 +1111,39 @@ export const priceRates = {
 };
 
 /**
- * ⚠ **THE ONE EXCEPTION TO THE FLAT RATE — shop items, priced by material.**
+ * ⚠ **`shopItemRates` IS GONE — it lived for about four hours and it was
+ * wrong by a factor of thirteen.**
  *
- * > *"Square feet should be the piece's largest face ... Plywood jack studs
- * > and safety gaps $4/sq ft. LVLs $10/sq ft, per LVL. Beams and columns
- * > built from dimensional lumber $60/sq ft."* — Tommy, 2026-11-15
+ * It held Tommy's 2026-11-15 table: plywood jack studs and safety gaps $4/sq
+ * ft, LVLs $10/sq ft per LVL, beams and columns from dimensional lumber $60/sq
+ * ft, each charged on the piece's largest face. Asked the same day to check
+ * those against reality — *"lets research some prices and set some prices
+ * where the price we come up with the app is somewhere roughly 2.2x the raw
+ * materials cost"* — the answer was that they did not survive contact with a
+ * lumber yard:
  *
- * `priceRates.coveragePerSqFt` above is still the price of a **straw panel**,
- * and his *"Flat $25 for absolutely everything"* is unchanged for everything
- * that counts as a panel. What moved is the set of pieces that are NOT straw
- * panels — a Safety Gap's filler sheet, a plywood jack stud, and the beams —
- * which he has now priced by what they are made of instead.
+ *   one 2x4, 10ft        $175.00 charged       27.6x its materials
+ *   one 2x12, 10ft       $562.50 charged       29.6x its materials
+ *   a safety gap sheet    $51.67 charged        2.8x its materials
+ *   one 2x9 LVL web      $ 75.00 charged        0.8x — BELOW COST
  *
- * ⚠ **These are PER PIECE, on each piece's own largest face**, which is his
- * own wording twice over: *"the piece's largest face"*, and, asked what "per
- * LVL" means, *"each LVL is priced on its own largest face: a header made of
- * two LVLs is two of them."* So a Box Beam is its two webs plus its two caps,
- * four prices, not one price on the assembly's envelope. Said out loud because
- * the other reading — one rate on the whole beam's biggest face — differs by
- * roughly 3x on a truss plate, and nothing in the arithmetic would show which
- * one was meant.
+ * ⚠ **A square-foot rate was never going to work for stock, at any value.**
+ * A rate per square foot is a rate per unit of SURFACE; lumber is sold by
+ * VOLUME. A 3/4in plywood sheet and a 2x12 of the same face area differ in
+ * cost by roughly fifteen times, so no single number covers both, and the
+ * three-way split by material only narrowed the error rather than removing it.
  *
- * ⚠ **LVL IS A `speciesGrade`, NOT A MATERIAL.** A Box Beam's web carries
- * `material: "dimensional_lumber"` with `speciesGrade: "LVL"` (see
- * `boxBeamMembers.ts`), because an LVL is dimensional lumber as far as every
- * other consumer in this app is concerned. Classifying on `material` alone
- * would charge every LVL at the $60 dimensional rate — 6x — and the
- * arithmetic would still reconcile.
+ * Shop items are now priced at 2.2x their real stock cost — see
+ * `materialCosts.ts` for the researched prices and `shopItemPrice.ts` for the
+ * arithmetic and for why items and panels deliberately use different methods.
+ * `priceRates.coveragePerSqFt` below is unchanged and still prices every straw
+ * panel.
  *
- * ⚠ **NO RATE FOR `wire_mesh`, `wood_fiber_board` OR `fastener`**, because he
- * named none. Nothing in today's shop items contains one (asserted by
- * `shopItemPrice.test.ts`); if one appears it prices at zero and the Review
- * Log says so, rather than being quietly folded into a neighbouring rate.
+ * ⚠ The LARGEST-FACE rule from that same instruction SURVIVES and is not
+ * part of what was wrong. It is still what the exported `Sq ft` column reports
+ * for a shop item (`shopItemFace.ts`), because that column is about what a
+ * crew handles and is credited for, not about what the piece cost.
  */
-export const shopItemRates = {
-  /** Plywood and OSB pieces: a Safety Gap's sheet, a plywood jack stud, a
-   *  beam's cap or skin. */
-  sheetPerSqFt: 4,
-  /** Each LVL, on its own largest face. */
-  lvlPerSqFt: 10,
-  /** Beams and columns built from dimensional lumber — each stick. */
-  dimensionalLumberPerSqFt: 60,
-  status: "confirmed" as const,
-  note:
-    "SHOP ITEMS ONLY - the pieces that are not straw panels. Plywood/OSB $4/sq ft, LVL $10/sq ft per LVL, " +
-    "dimensional lumber $60/sq ft, each on that PIECE's own largest face - Tommy 2026-11-15. Straw panels are " +
-    "unaffected and still price at priceRates.coveragePerSqFt by their standing/covered face. A plywood jack " +
-    "stud moves OUT of the flat rate by this decision: his 2026-11-08 answer had it \"explicitly rolled into " +
-    "the $25\", and the $4 line supersedes that. No rate exists for wire mesh, wood fiber board or fasteners " +
-    "because he named none.",
-};
 
 /**
  * ⚠ **`beamPriceRatePerSqFt` IS GONE, AND THAT RETIRES A REVIEW LOG ENTRY.**
