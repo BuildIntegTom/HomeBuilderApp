@@ -41,6 +41,12 @@ export interface AssemblyDescriptor<T extends GroupLike> {
   label: (group: T) => string;
   widthIn: (group: T) => number;
   heightIn: (group: T) => number;
+  /** Whether these pieces count toward the building's PANEL COUNT — see
+   *  `ExportableAssembly.countsAsPanel`. Required, and a function rather
+   *  than a flag, because a wall pipeline carries both answers: a Safety
+   *  Gap slot and a gable row's filler tile sit in the same groups as real
+   *  panels. A new pipeline has to decide rather than inherit. */
+  countsAsPanel: (group: T) => boolean;
 }
 
 /**
@@ -78,6 +84,7 @@ export function toExportableAssemblies<T extends GroupLike>(descriptor: Assembly
          list length always equals `copies` and a per-panel export cannot
          quietly come up short. */
       instanceNames: group.instances.map((i) => i.name ?? ""),
+      countsAsPanel: descriptor.countsAsPanel(group),
       members: group.members,
     }));
 }

@@ -50,6 +50,22 @@ export interface Tip4urTimePanel {
   label: string;
   widthIn: number;
   heightIn: number;
+  /**
+   * ⚠ **Whether it counts toward a crew's PANEL COUNT.** Everything in
+   * this file is fabricated, claimable and earns its square footage; this
+   * column is the one difference.
+   *
+   * > *"Safety gaps should also populate in the things to make in the shop as
+   * > well as beams and stuff like that. Those simply don't count as panels.
+   * > But maybe they count as surface area! It should show that they have
+   * > done it and claimed it, it just doesn't count for panel count. That's
+   * > all."* — Tommy, 2026-11-14
+   *
+   * It matters on the crew side beyond a tally: Tip4urTime's builder titles
+   * are a curve in PANELS (level n at 2·n²), so a ¾ in filler strip
+   * advancing someone toward a career title is the thing being ruled out.
+   */
+  countsAsPanel: boolean;
 }
 
 export interface Tip4urTimeExportInput {
@@ -177,6 +193,7 @@ export function tip4urTimePanels(
         label: name,
         widthIn: assembly.widthIn,
         heightIn: assembly.heightIn,
+        countsAsPanel: assembly.countsAsPanel,
       });
     });
   }
@@ -208,7 +225,17 @@ export function tip4urTimeExportProblems(input: Tip4urTimeExportInput): string[]
   return problems;
 }
 
-export const TIP4URTIME_HEADERS = ["Panel code", "Panel type", "Label", "Width (in)", "Height (in)", "Sq ft"] as const;
+export const TIP4URTIME_HEADERS = [
+  "Panel code",
+  "Panel type",
+  "Label",
+  "Width (in)",
+  "Height (in)",
+  "Sq ft",
+  /* ⚠ Added after his first brief, so a reader that predates it sees one
+     extra column rather than a changed one. A missing column means 1. */
+  "Counts as panel",
+] as const;
 
 export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
   return buildCsv(
@@ -220,6 +247,7 @@ export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
       Number(panel.widthIn.toFixed(2)),
       Number(panel.heightIn.toFixed(2)),
       tip4urTimeSqFt(panel.widthIn, panel.heightIn),
+      panel.countsAsPanel ? 1 : 0,
     ]),
     {
       /* See this module's own doc comment: a program reads this, and a BOM

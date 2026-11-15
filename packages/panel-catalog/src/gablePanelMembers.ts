@@ -16,6 +16,8 @@ import {
   plumbEndedSlopedBoardCornersIn,
   cutRingGirtsAroundVerticals,
   girtRowTopAboveCentreIn,
+  centreNailerStudSpansIn,
+  MAX_STUD_SPACING_IN,
 } from "./panelMemberHelpers";
 
 /**
@@ -483,6 +485,218 @@ export function buildGablePanelMembers(
     };
   };
 
+  /* ─────────────────────────────────────────────────────────────────────────
+     ⚠ **WHERE THE TWO PLATES WOULD CROSS, THEY ARE ONE BOARD.**
+
+     > *"Let two plates become one board."* — Tommy, 2026-11-14, choosing
+     > between that and refusing the tile outright.
+
+     A gable tile whose LOW edge is only a few inches tall runs its sloped top
+     plate down THROUGH its own flat bottom plate: the two want the same wood.
+     Found by the height sweep (`gable sliver`) on 2026-11-14, over a low edge
+     of 1.5 to 4in — a band nothing in this app had ever built.
+
+     It is local to the low end — over the rest of the panel the two plates are
+     properly apart — so the merge is a ZONE, not a whole-panel rule, and the
+     cavity above the bottom plate survives everywhere it already exists. In
+     the zone the pair becomes a single board **tapered** between the bottom
+     skin's top face and the top skin's underside: the shop rips one wedge
+     rather than cutting two boards that occupy the same wood. The same move as
+     a header too shallow to brace becoming a solid beam, shipped the same day.
+
+     ⚠ **The wedge stops where it runs out of thickness**, not at the panel's
+     end. Inboard of the x at which the top skin's own underside reaches the
+     bottom skin's top face there is no board at all, only the two skins —
+     forcing one in there is what drew a negative-thickness member.
+     ─────────────────────────────────────────────────────────────────────── */
+  const plateFromXIn = PLATE_END_CLEARANCE_IN;
+  const plateToXIn = widthIn - PLATE_END_CLEARANCE_IN;
+  /** The underside of a sloped top plate hanging beneath the top skin. */
+  const plateUndersideAtXIn = (xIn: number) => topUndersideAtXIn(xIn) - plateVerticalThicknessIn;
+  /** The top face of the flat bottom plate, which is what it has to clear. */
+  const bottomPlateTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const lowIsLeft = leftHeightIn <= rightHeightIn;
+  const lowPlateXIn = lowIsLeft ? plateFromXIn : plateToXIn;
+  const highPlateXIn = lowIsLeft ? plateToXIn : plateFromXIn;
+  const undersideAtLowIn = plateUndersideAtXIn(lowPlateXIn);
+  const undersideAtHighIn = plateUndersideAtXIn(highPlateXIn);
+  const platesCross = undersideAtLowIn < bottomPlateTopZIn;
+  /* Linear in x, so one division finds the crossover. Clamped to the high end
+     for the degenerate tile where even there the two do not fit: the pair then
+     disappears entirely and the wedge IS the whole plate run. */
+  const crossFraction =
+    undersideAtHighIn > undersideAtLowIn
+      ? Math.min(1, Math.max(0, (bottomPlateTopZIn - undersideAtLowIn) / (undersideAtHighIn - undersideAtLowIn)))
+      : 1;
+  const crossXIn = platesCross ? lowPlateXIn + crossFraction * (highPlateXIn - lowPlateXIn) : lowPlateXIn;
+  /**
+   * ⚠ **AND THE TWO SKINS, at a triangle's feather edge.**
+   *
+   * Nothing had built this band before 2026-11-14 either. Where the tile
+   * tapers toward nothing, the sloped top skin's underside drops below the
+   * flat bottom skin's top face: two 3/4in sheets in less than 1 1/2in of
+   * panel. Same answer as the plates, and physically the only one — at the
+   * feather edge there is one sheet of plywood, so the BOTTOM skin stops where
+   * it no longer fits and the top skin runs on alone to the point.
+   *
+   * It is the top skin that continues because its top face IS the panel's
+   * stated edge height, the surface the roof above sits on.
+   */
+  const skinMergeXIn = (() => {
+    const slopePerIn = (rightHeightIn - leftHeightIn) / widthIn;
+    if (slopePerIn === 0) return lowIsLeft ? 0 : widthIn;
+    const xIn = (SKIN_THICKNESS_IN + skinVerticalThicknessIn - leftHeightIn) / slopePerIn;
+    return Math.min(widthIn, Math.max(0, xIn));
+  })();
+  const bottomSkinFromXIn = lowIsLeft ? skinMergeXIn : 0;
+  const bottomSkinLengthIn = lowIsLeft ? widthIn - skinMergeXIn : skinMergeXIn;
+  /** The wedge's thin end: where the top skin's underside meets the bottom
+   *  skin's top face. Clamped into the plate run at both ends. */
+  const wedgeThinXIn = (() => {
+    const slopePerIn = (rightHeightIn - leftHeightIn) / widthIn;
+    if (slopePerIn === 0) return lowPlateXIn;
+    const xIn = (SKIN_THICKNESS_IN + skinVerticalThicknessIn - leftHeightIn) / slopePerIn;
+    return lowIsLeft ? Math.max(lowPlateXIn, Math.min(crossXIn, xIn)) : Math.min(lowPlateXIn, Math.max(crossXIn, xIn));
+  })();
+  const wedgeSpansIn = Math.abs(crossXIn - wedgeThinXIn);
+  const hasMergedPlate = platesCross && wedgeSpansIn > 1e-9;
+  /** The span the ORDINARY pair still covers: the whole plate run when the two
+   *  do not cross, and everything inboard of the crossover when they do. */
+  const platedFromXIn = lowIsLeft ? crossXIn : plateFromXIn;
+  const platedToXIn = lowIsLeft ? plateToXIn : crossXIn;
+  const platedLengthIn = platedToXIn - platedFromXIn;
+  const hasPlatePair = platedLengthIn > 1e-9;
+  /* The rip callout has to describe the board that is actually cut, so it is
+     taken over the plated span rather than the full run — identical when
+     nothing merged, and short by the wedge when something did. */
+  const { lengthIn: platedRipLengthIn } = computeGableRipCallout(
+    platedLengthIn,
+    heightAtXIn(platedFromXIn),
+    heightAtXIn(platedToXIn),
+  );
+  /** The tapered board the pair becomes: flat on the bottom skin, following
+   *  the top skin's underside above it. */
+  const mergedPlate = (memberId: string, nearDepthIn: number): PanelMember => {
+    const x0 = Math.min(wedgeThinXIn, crossXIn);
+    const x1 = Math.max(wedgeThinXIn, crossXIn);
+    const cornersIn: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
+      { xIn: x0, zIn: Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(x0)) },
+      { xIn: x1, zIn: Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(x1)) },
+      { xIn: x1, zIn: SKIN_THICKNESS_IN },
+      { xIn: x0, zIn: SKIN_THICKNESS_IN },
+    ];
+    const thinIn = Math.max(0, topUndersideAtXIn(lowIsLeft ? x0 : x1) - SKIN_THICKNESS_IN);
+    const thickIn = Math.max(0, topUndersideAtXIn(lowIsLeft ? x1 : x0) - SKIN_THICKNESS_IN);
+    return {
+      memberId,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: x1 - x0 },
+      orientation: "diagonal",
+      position: {
+        xIn: (x0 + x1) / 2,
+        yIn: nearDepthIn + PLATE_2X4_WIDTH_IN / 2,
+        zIn: (SKIN_THICKNESS_IN + Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn((x0 + x1) / 2))) / 2,
+        rotationDeg: 0,
+        tiltDeg: 0,
+        trapezoidCornersIn: cornersIn,
+        trapezoidDepthIn: PLATE_2X4_WIDTH_IN,
+      },
+      role: "plate",
+      qty: 1,
+      notes:
+        `${memberId.endsWith("_ext") ? "exterior" : "interior"}-wythe edge — ONE BOARD where the top and bottom plates ` +
+        `would otherwise cross. Rip a 2x4 to a taper: ${thickIn.toFixed(2)}in thick at the inboard end, ` +
+        `${thinIn.toFixed(2)}in at the low end, ${(x1 - x0).toFixed(2)}in long. It lies flat on the bottom skin and ` +
+        `follows the top skin's underside. Tommy, 2026-11-14: "Let two plates become one board."`,
+    };
+  };
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ⚠ **THE GABLE ROW GETS THE SAME CENTRE STUDS THE WALL BELOW HAS.**
+
+     > *"I really want to see these studs lining up perfectly with the row
+     > below them, it does not appear that way on the app live right now."*
+     > — Tommy, 2026-11-14
+
+     Measured 2026-11-14 and he is right: a 48in wall panel carries a PAIR of
+     centre studs at x = 22.25, one per wythe, and the 48in gable tile sitting
+     on it carried **none** — four corner studs and nothing between them. The
+     row joints had been aligned since B3; the studs INSIDE the tiles never
+     were, so a gable end showed a stud under every tile edge and a 48in hole
+     everywhere a wall panel's own centre stud came up to meet it.
+
+     Same rule, same x: `MAX_STUD_SPACING_IN` over the tile's own width, and a
+     gable tile's width IS a wall slot's width (B3, `computeGableTiledRow`
+     takes the wall's joints), so the two land on each other by construction
+     rather than by coincidence. That is the load path his module decision was
+     for — *"load bearing as straight down as possible"*.
+
+     ⚠ **The one difference is the TOP**, and it is why this cannot just call
+     `buildCentreNailerStuds`: a gable's top plate is sloped, so each stud is
+     cut to the plate's underside AT ITS OWN X, and a stud whose x has no room
+     left (inside the merged-plate wedge at a tapering end) is omitted rather
+     than built at a negative length.
+     ─────────────────────────────────────────────────────────────────────── */
+  const gableCentreStuds = (): PanelMember[] => {
+    const out: PanelMember[] = [];
+    for (const [spanIndex, [fromXIn, toXIn]] of centreNailerStudSpansIn(widthIn).entries()) {
+      /* The LOWER of the stud's own two x edges, so it never pokes up through
+         the sloped plate on its high side. */
+      const ceilingZIn = Math.min(plateUndersideAtXIn(fromXIn), plateUndersideAtXIn(toXIn));
+      const lengthIn = ceilingZIn - bottomPlateTopZIn;
+      /* No room at all: this x is inside the taper, where the two plates have
+         already become one board. Nothing to stand. */
+      if (!(lengthIn > 0)) continue;
+      /* Raked to the plate above, like the corner studs beside it — a square
+         top would leave a wedge up to 3 1/2in x the pitch open under the
+         plate it is meant to carry. Corner order matches
+         `buildGableCornerStuds`: 0 and 1 the level bottom, 2 and 3 the rake. */
+      const cornersIn: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
+        { xIn: fromXIn, zIn: bottomPlateTopZIn },
+        { xIn: toXIn, zIn: bottomPlateTopZIn },
+        { xIn: toXIn, zIn: plateUndersideAtXIn(toXIn) },
+        { xIn: fromXIn, zIn: plateUndersideAtXIn(fromXIn) },
+      ];
+      const longPointIn = Math.max(plateUndersideAtXIn(fromXIn), plateUndersideAtXIn(toXIn)) - bottomPlateTopZIn;
+      for (const [face, centreYIn] of [
+        ["exterior", PLATE_2X4_THICKNESS_IN / 2],
+        ["interior", depthIn - PLATE_2X4_THICKNESS_IN / 2],
+      ] as [string, number][]) {
+        out.push({
+          memberId: `stud_centre_${spanIndex + 1}_${face}`,
+          material: "dimensional_lumber",
+          speciesGrade: LUMBER_SPECIES_GRADE,
+          plySpec: null,
+          nominalSize: "2x4",
+          /* The LONG POINT, like every other rake-cut member here. */
+          actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: longPointIn },
+          orientation: "vertical",
+          position: {
+            xIn: fromXIn,
+            yIn: centreYIn,
+            zIn: bottomPlateTopZIn,
+            rotationDeg: 90,
+            trapezoidCornersIn: cornersIn,
+            /* Laid FLAT (B30): 3 1/2in along the wall, 1 1/2in into the panel,
+               which is what gives a seam above it a 3 1/2in face to bear on. */
+            trapezoidDepthIn: PLATE_2X4_THICKNESS_IN,
+          },
+          role: "stud",
+          qty: 1,
+          notes:
+            spanIndex === 0 && face === "exterior"
+              ? `centre nailer — same ${MAX_STUD_SPACING_IN}in rule and same x as the wall panel below, so the studs stack. ` +
+                `Long point ${longPointIn.toFixed(2)}in, top cut to the roof rake so it lands flush under the top plate.`
+              : undefined,
+        });
+      }
+    }
+    return out;
+  };
+
   const members: PanelMember[] = [
     {
       memberId: "bottom_plate_skin",
@@ -490,39 +704,58 @@ export function buildGablePanelMembers(
       speciesGrade: null,
       plySpec: SKIN_PLY_SPEC,
       nominalSize: null,
-      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
+      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: bottomSkinLengthIn },
       orientation: "flat",
-      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+      position: { xIn: bottomSkinFromXIn, yIn: 0, zIn: 0, rotationDeg: 0 },
       role: "skin",
       qty: 1,
+      /* Short of the full width only on a tile that tapers below its own two
+         sheets — see `skinMergeXIn`. On every ordinary panel this is the full
+         width and the note is absent. */
+      ...(bottomSkinLengthIn < widthIn - 1e-9 && {
+        notes:
+          `Cut ${bottomSkinLengthIn.toFixed(2)}in, not the panel's full ${widthIn.toFixed(2)}in: the tile tapers below ` +
+          `1 1/2in before its ${lowIsLeft ? "left" : "right"} end, and the top skin alone carries the last ` +
+          `${(widthIn - bottomSkinLengthIn).toFixed(2)}in to the point. One sheet, not two.`,
+      }),
     },
-    {
-      memberId: "bottom_plate_2x4_ext",
-      material: "dimensional_lumber",
-      speciesGrade: LUMBER_SPECIES_GRADE,
-      plySpec: null,
-      nominalSize: "2x4",
-      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: plateLengthIn },
-      orientation: "flat",
-      position: { xIn: PLATE_END_CLEARANCE_IN, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
-      role: "plate",
-      qty: 1,
-      notes: "exterior-wythe edge",
-    },
-    {
-      memberId: "bottom_plate_2x4_int",
-      material: "dimensional_lumber",
-      speciesGrade: LUMBER_SPECIES_GRADE,
-      plySpec: null,
-      nominalSize: "2x4",
-      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: plateLengthIn },
-      orientation: "flat",
-      position: { xIn: PLATE_END_CLEARANCE_IN, yIn: depthIn - PLATE_2X4_WIDTH_IN, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
-      role: "plate",
-      qty: 1,
-      notes: "interior-wythe edge",
-    },
+    /* ⚠ The pair is absent on a tile whose whole plate run merged — see
+       `hasPlatePair`. A zero-length board is not a board. */
+    ...(hasPlatePair
+      ? ([
+          {
+            memberId: "bottom_plate_2x4_ext",
+            material: "dimensional_lumber",
+            speciesGrade: LUMBER_SPECIES_GRADE,
+            plySpec: null,
+            nominalSize: "2x4",
+            actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: platedLengthIn },
+            orientation: "flat",
+            position: { xIn: platedFromXIn, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
+            role: "plate",
+            qty: 1,
+            notes: "exterior-wythe edge",
+          },
+          {
+            memberId: "bottom_plate_2x4_int",
+            material: "dimensional_lumber",
+            speciesGrade: LUMBER_SPECIES_GRADE,
+            plySpec: null,
+            nominalSize: "2x4",
+            actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: platedLengthIn },
+            orientation: "flat",
+            position: { xIn: platedFromXIn, yIn: depthIn - PLATE_2X4_WIDTH_IN, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
+            role: "plate",
+            qty: 1,
+            notes: "interior-wythe edge",
+          },
+        ] as PanelMember[])
+      : []),
+    ...(hasMergedPlate ? [mergedPlate("merged_plate_ext", 0), mergedPlate("merged_plate_int", depthIn - PLATE_2X4_WIDTH_IN)] : []),
     ...buildGableCornerStuds(widthIn, depthIn, leftStudSpanIn, rightStudSpanIn, topUndersideAtXIn),
+    ...gableCentreStuds(),
+    ...(hasPlatePair
+      ? [
     slopedTopBoard(
       "top_plate_2x4_ext",
       "dimensional_lumber",
@@ -530,12 +763,12 @@ export function buildGablePanelMembers(
       "2x4",
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
-      PLATE_END_CLEARANCE_IN,
-      widthIn - PLATE_END_CLEARANCE_IN,
-      topUndersideAtXIn(PLATE_END_CLEARANCE_IN),
+      platedFromXIn,
+      platedToXIn,
+      topUndersideAtXIn(platedFromXIn),
       PLATE_2X4_WIDTH_IN / 2,
       "plate",
-      `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
+      `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${platedRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
     slopedTopBoard(
       "top_plate_2x4_int",
@@ -544,13 +777,15 @@ export function buildGablePanelMembers(
       "2x4",
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
-      PLATE_END_CLEARANCE_IN,
-      widthIn - PLATE_END_CLEARANCE_IN,
-      topUndersideAtXIn(PLATE_END_CLEARANCE_IN),
+      platedFromXIn,
+      platedToXIn,
+      topUndersideAtXIn(platedFromXIn),
       depthIn - PLATE_2X4_WIDTH_IN / 2,
       "plate",
-      `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
+      `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${platedRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
+        ]
+      : []),
     slopedTopBoard(
       "top_plate_skin",
       "plywood",
@@ -604,7 +839,15 @@ export function buildGablePanelMembers(
       return buildGirtRows(plan.rowCount, widthIn, depthIn, shorterStudSpanIn, plan.centerZsIn ?? undefined, girtStyle);
     })(),
   ];
-  if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
+  /* ⚠ The optional nailer is SKIPPED once a centre stud already stands at
+     mid-width: it is the same board at the same x, and B21's own rule is that
+     the overlay is a guarantee rather than a generator — it adds a board only
+     where the stud rule does not already put one. (A standard panel still
+     builds both; that pre-existing duplicate is pinned as
+     `stud_centre_N_exterior x nailer` in the overlap sweep.) */
+  if (includeNailer && centreNailerStudSpansIn(widthIn).length === 0) {
+    members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
+  }
   /* See `buildStandardPanelMembers` — a ring's rails are cut around the
      panel's verticals once the panel is whole. */
   return cutRingGirtsAroundVerticals(members, depthIn);

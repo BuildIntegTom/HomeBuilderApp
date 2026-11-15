@@ -385,10 +385,25 @@ const HEIGHT_CASES: HeightCase[] = [
     hiIn: WALL_HI,
     anchorIn: 48,
   },
+  /* ⚠ **From ZERO**, not from `GABLE_PANEL_MIN_HEIGHT_IN`. The floor is on the
+     TALLER edge (which is h + 24 here), so the LOW edge is allowed all the way
+     down — *"we can take little gable end panels all the way to the end"* —
+     and a low edge of 0 is an ordinary triangular tile at a shed's low corner
+     or above a gable window. Starting at 1.5 only grazed the band where the
+     two plates cross; this covers the triangle itself. */
   {
     name: "gable sliver",
     at: (h) => buildGablePanelMembers(48, D, h, h + 24, false, "blocking"),
-    loIn: GABLE_PANEL_MIN_HEIGHT_IN,
+    loIn: 0,
+    hiIn: WALL_LO,
+    anchorIn: 48,
+  },
+  /* The same wedge mirrored, so the merge is pinned at both orientations the
+     way the full-height gable cases already are. */
+  {
+    name: "gable sliver right-low",
+    at: (h) => buildGablePanelMembers(48, D, h + 24, h, false, "blocking"),
+    loIn: 0,
     hiIn: WALL_LO,
     anchorIn: 48,
   },
@@ -508,9 +523,12 @@ function sweepFindings({ at, loIn, hiIn }: HeightCase): string[] {
  * by fabricated panel name, and the per-slot note says "solid blocking, no
  * truss web" instead of printing 0 peaks at 0.0deg.
  *
- * ⚠ **ONE NEW FINDING, pinned not fixed** — see `gable sliver`. A gable tile
- * under about 4 1/2in of low edge draws its sloped top plate through its own
- * bottom plate. The band below `WALL_LO` had never been built by anything.
+ * ⚠ **The `gable sliver` finding is FIXED, 2026-11-14.** A gable tile under
+ * about 4 1/2in of low edge drew its sloped top plate through its own bottom
+ * plate, and under 1 1/2in its two skins through each other. His answer was
+ * *"Let two plates become one board"*, and the sweep now runs from a low edge
+ * of **0** — the triangular tile itself, which is what the 1.5in floor had
+ * been hiding — in both orientations, at zero findings.
  * ──────────────────────────────────────────────────────────────────────────
  */
 const SWEEP_FINDINGS: Record<string, string[]> = {
@@ -564,16 +582,8 @@ const SWEEP_FINDINGS: Record<string, string[]> = {
      corner hands this builder a legitimate near-zero edge, which is why the
      builder deliberately does not refuse one. Which gives way is his call:
      refuse a tile this short, or let the two plates become one board. */
-  "gable sliver": [
-    "bottom_plate_2x4_ext x top_plate_2x4_ext @ 1.5..4",
-    "bottom_plate_2x4_ext x top_plate_skin @ 1.5..2",
-    "bottom_plate_2x4_int x top_plate_2x4_int @ 1.5..4",
-    "bottom_plate_2x4_int x top_plate_skin @ 1.5..2",
-    "bottom_plate_skin x top_plate_2x4_ext @ 1.5..2.5",
-    "bottom_plate_skin x top_plate_2x4_int @ 1.5..2.5",
-    /* At the geometric floor itself the two SKINS are the same board. */
-    "bottom_plate_skin x top_plate_skin @ 1.5..1.5",
-  ],
+  "gable sliver": [],
+  "gable sliver right-low": [],
 
   /* ⚠ **Finding 3 is FIXED and finding 2 is now UNREACHABLE from the app.**
      Every `brace x brace`, `brace x end_stud` and `brace x jack_stud` entry

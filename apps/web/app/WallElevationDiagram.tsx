@@ -15,6 +15,7 @@ import {
   zoneFromSlot,
   type BoxBeamCoverage,
   type GableTiledPanel,
+  type GableWallJointSpan,
   type GableWindowReservation,
   type PanelSlot,
   type PanelSlotZone,
@@ -239,6 +240,22 @@ export interface WallElevationDiagramProps {
    * because those two are not the same number on a reflex-corner winner
    * (inset 0, extension > 0) and the drawing would then disagree with the
    * model by a wall thickness. Undefined = the whole wall. */
+  /**
+   * ✦ **The wall's own slots below the gable row — B3's input, finally
+   * threaded into the DRAWING too (2026-11-14).**
+   *
+   * > *"I really want to see these studs lining up perfectly with the row
+   * > below them, it does not appear that way on the app live right now."*
+   * > — Tommy
+   *
+   * The model's row has been joint-aligned since B3; this preview passed `[]`
+   * and said so in a comment, so the elevation — the view he actually looks
+   * at — drew an evenly-tiled row the fabrication data did not agree with.
+   * Measured on a 24 x 16 Tiny House: the drawing showed four equal 48in
+   * tiles over a wall whose own panels are 28.125 / 24 / 28 / 32.125 / 0.75 /
+   * 48.
+   */
+  gableWallJointSpansIn?: GableWallJointSpan[];
   gableBuiltStartIn?: number;
   gableBuiltEndIn?: number;
   /** This wall's own second-story slots/height, if a second story exists
@@ -520,6 +537,7 @@ export default function WallElevationDiagram({
   startInsetIn,
   endInsetIn,
   startStopIn = 0,
+  gableWallJointSpansIn,
   gableBuiltStartIn,
   gableBuiltEndIn,
   endStopIn = 0,
@@ -1038,11 +1056,11 @@ export default function WallElevationDiagram({
         // with the model by a full wall thickness.
         gableBuiltStartIn ?? 0,
         gableBuiltEndIn ?? wallWidthIn,
-        /* ⚠ This preview does NOT receive the wall's own slots, so its row
-           tiles unaligned where the model's is joint-aligned (B3). Named
-           rather than quietly left: it is a separate piece of work from B9
-           and wiring it needs the slots threaded in as a prop. */
-        [],
+        /* ✦ B3's joints, which this preview went without until 2026-11-14
+           — see `gableWallJointSpansIn`. The same array page.tsx hands the
+           model, so the drawing and the fabrication data cannot disagree
+           about where a gable joint is. */
+        gableWallJointSpansIn ?? [],
         /* ⚠ **FULL HEIGHT TO THE PEAK — 0, matching page.tsx's own call.**
            Tommy, 2026-11-12: *"The housing of the beam goes all the way to
            the peak and matches the other panels - yes."*

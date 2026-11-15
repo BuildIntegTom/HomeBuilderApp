@@ -47,6 +47,24 @@ export interface ExportableAssembly {
    * truncating it would silently drop panels from a crew's pay.
    */
   instanceNames: readonly string[];
+  /**
+   * ⚠ **Whether these pieces count toward the building's PANEL COUNT** — not
+   * whether they are fabricated, shipped, claimable or paid for, all of which
+   * are true for every assembly in this list.
+   *
+   * > *"Safety gaps should also populate in the things to make in the shop as
+   * > well as beams and stuff like that. Those simply don't count as panels.
+   * > But maybe they count as surface area! It should show that they have done
+   * > it and claimed it, it just doesn't count for panel count."* — Tommy,
+   * > 2026-11-14
+   *
+   * So it is false for a Safety Gap (a plywood filler sheet) and for every
+   * beam — Box Beam, Truss Plate, Mid-Wall Beam, Spanning Header — which is
+   * exactly the set the Project Summary's own `panelCounts` leaves out. The
+   * two are derived from one place on purpose: a crew's panel count and the
+   * number on the Summary have to be the same number.
+   */
+  countsAsPanel: boolean;
   members: PanelMember[];
 }
 

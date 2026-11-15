@@ -37,6 +37,7 @@ function assembly(over: Partial<ExportableAssembly> = {}): ExportableAssembly {
     usedAt: "N1, N3",
     typeName: "Standard Panel",
     instanceNames: ["N1", "N3"],
+    countsAsPanel: true,
     members: buildStandardPanelMembers(48, DEPTH_IN, 96, false),
     ...over,
   };

@@ -20,6 +20,7 @@ function assembly(
   instanceNames: string[],
   widthIn = 48,
   heightIn = 96,
+  countsAsPanel = true,
 ): ExportableAssembly {
   return {
     panelType,
@@ -30,6 +31,7 @@ function assembly(
     copies: instanceNames.length,
     usedAt: instanceNames.join(", "),
     instanceNames,
+    countsAsPanel,
     members: [],
   };
 }
@@ -150,7 +152,7 @@ describe("⚠ the file's own shape", () => {
   it("leads with the two header rows he specified, then the column header", () => {
     expect(lines[0]).toBe("Project,Rogers-Sehorn ADU");
     expect(lines[1]).toBe("Project ID,abc-123");
-    expect(lines[2]).toBe("Panel code,Panel type,Label,Width (in),Height (in),Sq ft");
+    expect(lines[2]).toBe("Panel code,Panel type,Label,Width (in),Height (in),Sq ft,Counts as panel");
   });
 
   it("⚠ has NO column named 'Used at'", () => {
@@ -168,8 +170,8 @@ describe("⚠ the file's own shape", () => {
   });
 
   it("writes a row per panel with a plain numeric square footage", () => {
-    expect(lines[3]).toBe("P-0001,Standard Panel,N1,48,96,32");
-    expect(lines[4]).toBe("P-0002,Standard Panel,N2,48,96,32");
+    expect(lines[3]).toBe("P-0001,Standard Panel,N1,48,96,32,1");
+    expect(lines[4]).toBe("P-0002,Standard Panel,N2,48,96,32,1");
   });
 
   it("quotes a project name containing a comma rather than shifting a column", () => {
@@ -179,7 +181,7 @@ describe("⚠ the file's own shape", () => {
 });
 
 describe("tip4urTimeExportProblems — his acceptance check, enforced before the file leaves", () => {
-  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96 };
+  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, countsAsPanel: true };
 
   it("passes a sound export", () => {
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [ok] })).toEqual([]);
@@ -204,5 +206,39 @@ describe("tip4urTimeExportProblems — his acceptance check, enforced before the
 
   it("catches a panel that never got a code", () => {
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [{ ...ok, code: "" }] })).toHaveLength(1);
+  });
+});
+
+describe("⚠ a Safety Gap is claimable, earns its square footage, and is NOT a panel", () => {
+  /* > "Safety gaps should also populate in the things to make in the shop as
+     >  well as beams and stuff like that. Those simply don't count as panels.
+     >  But maybe they count as surface area! It should show that they have
+     >  done it and claimed it, it just doesn't count for panel count."
+     The row has to EXIST for a crew to claim it, which is why this is a
+     column and not a filter. */
+  const assemblies = [
+    assembly("Wall panel", "Standard Panel", ["N1"]),
+    assembly("Wall panel", "Safety Gap", ["N2"], 0.75, 120, false),
+    assembly("Roof bearing", "Box Beam", ["B1"], 240, 15.5, false),
+  ];
+  const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
+  const panels = tip4urTimePanels(assemblies, ledger);
+
+  it("exports a row for it, with its own code", () => {
+    expect(panels).toHaveLength(3);
+    expect(new Set(panels.map((p) => p.code)).size).toBe(3);
+  });
+
+  it("writes 0 in the last column for the gap and the beam, 1 for the panel", () => {
+    const csv = buildTip4urTimeCsv({ projectName: "P", projectId: "id", panels });
+    const lines = csv.trimEnd().split("\r\n");
+    expect(lines[3]!.endsWith(",1")).toBe(true);
+    expect(lines[4]).toBe("P-0002,Safety Gap,N2,0.75,120,0.63,0");
+    expect(lines[5]!.endsWith(",0")).toBe(true);
+  });
+
+  it("still carries a real square footage, because a crew earns it", () => {
+    expect(tip4urTimeSqFt(0.75, 120)).toBe(0.63);
+    expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels })).toEqual([]);
   });
 });

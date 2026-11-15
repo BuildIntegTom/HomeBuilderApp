@@ -7531,17 +7531,30 @@ export default function LayoutEditor() {
    * gable row is carried by the upper wall, and handing it the ground floor's
    * joints would line the gable up with a wall it never touches.
    *
-   * ⚠ Cumulative from 0, which is the convention every other slot-indexed
-   * record in this file uses. On a wall that BUTTS a longer neighbour the
-   * slots really begin a wall thickness in, so those joints are reported
-   * that much off — the same pre-existing offset the roof-bearing render
-   * carries and names rather than hides. It costs alignment on a butting
-   * gable wall; it cannot mis-cut anything, because the gable row still sums
-   * to its own wall exactly.
+   * ⚠ **Cumulative from the wall's own RUN START, not from 0 — fixed
+   * 2026-11-14.** It used to count from 0, with a note saying that on a wall
+   * which BUTTS a longer neighbour the joints come out a wall thickness off
+   * and that this "costs alignment on a butting gable wall". It did, and that
+   * is every gable wall on an ordinary rectangle:
+   *
+   * > *"I really want to see these studs lining up perfectly with the row
+   * > below them, it does not appear that way on the app live right now."*
+   * > — Tommy, 2026-11-14
+   *
+   * Measured on the 24 x 16 Tiny House, wall E: its own slots run 15.5 to
+   * 176.5 (the N and S walls own both corners), so every joint handed to the
+   * tiler sat **15 1/2in left of where the panel below it actually is**, and
+   * the row tiled 192in of wall from a 161in description. The gable came out
+   * on its own 48in module instead of the wall's.
+   *
+   * `wallGeometryFor` already knows the number — `startInsetIn` is 0 when
+   * this wall owns its corner and the wall thickness when it butts — and the
+   * elevation drawing has been using it to place the "adjacent wall" filler
+   * sliver all along. The two now read the same offset.
    */
   const gableWallJointSpansFor = (wallId: string): GableWallJointSpan[] => {
     const slots = stories[stories.length - 1]?.wallSlots[wallId] ?? [];
-    let atIn = 0;
+    let atIn = wallGeometryFor(wallId)?.startInsetIn ?? 0;
     return slots.map((slot) => {
       const span = {
         xStartIn: atIn,
@@ -9911,6 +9924,13 @@ export default function LayoutEditor() {
           return {
             uniqueKey: `${panelType.id}-${key}`,
             panelType,
+            /* ⚠ A gable row's dedicated filler tile is a "gable" instance
+               like any other — the flag is the only thing that tells it from
+               a real Gable End Panel, and the panel COUNT and the crew export
+               both need to know (Tommy, 2026-11-14: a safety gap "simply
+               doesn't count as a panel"). It is grouped on already, so every
+               instance in a group agrees with the first. */
+            isSafetyGap: panelType.id === "safety-gap" || first.isSafetyGap === true,
             identity,
             distinctName: distinctPanelName(identity, unitSystem),
             accentColor: panelSheetAccentColor(panelType.id),
@@ -10091,18 +10111,36 @@ export default function LayoutEditor() {
    * counted, so the one number on the Project Summary that says how big the
    * job is was the only one that did not know about two thirds of it.
    *
-   * A safety gap counts as a panel here, on both the wall and the gable row,
-   * because it is fabricated and shipped like one — the same call
-   * `WALL_PANEL_SLOT_TYPES` already makes.
+   * ⚠ **A safety gap is NOT a panel here — reversed 2026-11-14.** It used to
+   * be counted on both the wall and the gable row, on the grounds that it is
+   * fabricated and shipped like one. It still is, and still gets its own shop
+   * sheet, its own export row and its own claim; it just is not a panel:
    *
-   * Plain arithmetic rather than a memo: these are six array lengths, and the
+   * > *"Safety gaps should also populate in the things to make in the shop as
+   * > well as beams and stuff like that. Those simply don't count as panels.
+   * > But maybe they count as surface area! It should show that they have done
+   * > it and claimed it, it just doesn't count for panel count. That's all."*
+   *
+   * That puts it with the beams, which have never been in this total. It is
+   * counted separately rather than dropped, because a wall's ¾ in filler
+   * sheets are real parts and a number that silently disappears is the defect
+   * this whole block was written to fix. `countsAsPanel` on the export seam is
+   * the same decision, so a crew's panel count and this number agree.
+   *
+   * Plain arithmetic rather than a memo: these are array lengths, and the
    * arrays they come from are already memoised.
    */
+  const gableTilesAll = Object.values(gableTilesAsFabricatedByWallId).flat();
   const panelCounts = {
-    wall: allWallPanelSlots.length,
+    wall: allWallPanelSlots.filter((s) => s.type !== "safety-gap").length,
     windowPairs: openingCounts.windows,
     doors: openingCounts.doors,
-    gable: Object.values(gableTilesAsFabricatedByWallId).reduce((sum, tiles) => sum + tiles.length, 0),
+    gable: gableTilesAll.filter((t) => t.isSafetyGap !== true).length,
+    /** Fabricated, shipped, claimable — and deliberately outside
+     *  `panelsTotal`. Wall slots plus the gable row's own filler tiles. */
+    safetyGap:
+      allWallPanelSlots.filter((s) => s.type === "safety-gap").length +
+      gableTilesAll.filter((t) => t.isSafetyGap === true).length,
     floor: deckPanelTakeoff.instances.filter((i) => i.kind === "floor").length,
     roof: deckPanelTakeoff.instances.filter((i) => i.kind === "roof").length,
     /* The cross-tilted row on a shed's tall wall — real fabricated panels,
@@ -10137,7 +10175,13 @@ export default function LayoutEditor() {
     panelCounts.bigHeader > 0 ? `${panelCounts.bigHeader} big header${panelCounts.bigHeader === 1 ? "" : "s"}` : null,
   ]
     .filter((part) => part !== null)
-    .join(" + ") + ".";
+    .join(" + ") +
+    "." +
+    /* ⚠ Named, not hidden. It is built in the shop and claimed by a crew;
+       it is only the PANEL count it stays out of. */
+    (panelCounts.safetyGap > 0
+      ? ` Plus ${panelCounts.safetyGap} safety gap${panelCounts.safetyGap === 1 ? "" : "s"}, built and shipped with the walls but not counted as panels.`
+      : "");
 
   /**
    * The Shop Fabrication sheet for every unique floor and roof panel.
@@ -10539,10 +10583,17 @@ export default function LayoutEditor() {
       ...toExportableAssemblies({
         panelType: "Wall panel",
         groups: panelFabricationGroups,
-        typeName: (g) => g.panelType.label,
+        /* ⚠ A gable row's filler tile is a "gable" instance, so it inherited
+           the name "Gable End Panel" at 3/4in wide — which reads to a crew as
+           a panel they did not get. It is a safety gap and says so. */
+        typeName: (g) => (g.isSafetyGap && g.panelType.id === "gable" ? "Gable Safety Gap" : g.panelType.label),
         label: (g) => `${g.panelType.label} ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.heightIn,
+        /* ⚠ The one pipeline that carries BOTH answers — a wall's Safety
+           Gap slot and a gable row's filler tile are in these groups
+           beside real panels. */
+        countsAsPanel: (g) => !g.isSafetyGap,
       }),
       ...toExportableAssemblies({
         panelType: "Roof bearing",
@@ -10551,6 +10602,9 @@ export default function LayoutEditor() {
         label: (g) => `${g.kind === "box-beam" ? "Box Beam" : "Truss Plate"} ${formatLengthIn(g.lengthIn, unitSystem)}`,
         widthIn: (g) => g.lengthIn,
         heightIn: (g) => g.heightIn,
+        /* A beam is fabricated, shipped and claimable, and has never been in
+           `panelCounts`. "as well as beams and stuff like that." */
+        countsAsPanel: () => false,
       }),
       ...toExportableAssemblies({
         panelType: "Mid-wall beam",
@@ -10559,6 +10613,7 @@ export default function LayoutEditor() {
         label: (g) => `Mid-Wall Beam ${formatLengthIn(g.lengthIn, unitSystem)}`,
         widthIn: (g) => g.lengthIn,
         heightIn: (g) => g.heightIn,
+        countsAsPanel: () => false,
       }),
       ...toExportableAssemblies({
         panelType: "Spanning header",
@@ -10567,6 +10622,7 @@ export default function LayoutEditor() {
         label: (g) => `Spanning Header ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.heightIn,
+        countsAsPanel: () => false,
       }),
       ...toExportableAssemblies({
         panelType: "Deck panel",
@@ -10575,6 +10631,7 @@ export default function LayoutEditor() {
         label: (g) => `${g.kind === "floor" ? "Floor" : "Roof"} Panel ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.spanIn,
+        countsAsPanel: () => true,
       }),
       ...toExportableAssemblies({
         panelType: "Tilted gable",
@@ -10583,6 +10640,7 @@ export default function LayoutEditor() {
         label: (g) => `Tilted Gable Panel ${formatLengthIn(g.widthIn, unitSystem)}`,
         widthIn: (g) => g.widthIn,
         heightIn: (g) => g.highHeightIn,
+        countsAsPanel: () => true,
       }),
     ],
     [
@@ -15957,6 +16015,10 @@ export default function LayoutEditor() {
                   endInsetIn={wallGeometryFor(elevationWall.id)?.endInsetIn ?? 0}
                   startStopIn={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
                   endStopIn={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
+                  /* ✦ The SAME array the model's row is tiled from, so the
+                     drawing cannot show a gable joint the fabrication data
+                     does not have. */
+                  gableWallJointSpansIn={gableWallJointSpansFor(elevationWall.id)}
                   gableBuiltStartIn={gableRunStopByWallId[elevationWall.id]?.builtStartIn}
                   gableBuiltEndIn={gableRunStopByWallId[elevationWall.id]?.builtEndIn}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
@@ -16338,7 +16400,7 @@ export default function LayoutEditor() {
              panels)", which was true of the number beside it and said
              nothing about the gable row, the floor, the roof or the beams,
              because none of them were in it. */
-          weightNote={`Straw: ${((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb. Wood in the ${panelCounts.wall + panelCounts.gable} wall and gable panels: ${((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor and roof panels, beams and headers: ${(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from its own fabrication sheet.`}
+          weightNote={`Straw: ${((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb. Wood in the ${panelCounts.wall + panelCounts.gable + panelCounts.safetyGap} wall and gable panels: ${((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor and roof panels, beams and headers: ${(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from its own fabrication sheet.`}
           price={price.total}
           /* ⚠ The arithmetic on THIS sheet too — "on every sheet, client and
              shop" (Tommy, 2026-11-08). A total with no working cannot be
@@ -16446,7 +16508,7 @@ export default function LayoutEditor() {
                         still approximate is the HEIGHT the wall is weighed at;
                         see the Review Log. */}
                     Straw: {((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb.
-                    Wood in the {panelCounts.wall + panelCounts.gable} wall and gable panels
+                    Wood in the {panelCounts.wall + panelCounts.gable + panelCounts.safetyGap} wall and gable panels
                     {includeNailer ? ", with nailer" : ""}:{" "}
                     {((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor
                     and roof panels, beams and headers: {(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from

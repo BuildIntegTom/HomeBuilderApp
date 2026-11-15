@@ -249,7 +249,7 @@ describe("⚠ gableTileRoofTopLiftIn — the gable's own top, as fabricated", ()
     const rightLocalIn = corner.rightEdgeHeightIn + liftIn - EAVE_IN;
     expect(leftLocalIn).toBeGreaterThanOrEqual(GABLE_PANEL_MIN_HEIGHT_IN);
     const lifted = buildGablePanelMembers(corner.widthIn, DEPTH_IN, leftLocalIn, rightLocalIn, false);
-    expect(lifted.filter((m) => m.role === "stud")).toHaveLength(4);
+    expect(lifted.filter((m) => m.memberId.startsWith("stud_corner_"))).toHaveLength(4);
     /* ...and UNLIFTED the same tile is a sliver: it still builds, because a
        gable tapering to nothing is a real triangle rather than an error, but
        its tapered edge carries no stud at all. That is the panel the cut list

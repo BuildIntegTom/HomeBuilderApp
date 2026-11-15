@@ -76,7 +76,11 @@ is cut, what sets the radius) was answering the wrong question.
    ⚠ It also turned out `jackStudConfig` was **never saved with the project
    at all**, so a design drawn with 2x4 jack studs reopened as plywood and
    quietly became a different building. Persisted now.
-7. **The shallow-shed cross-tilt hole** — his cross-tilt answer resolved to
+7. ~~**The shallow-shed cross-tilt hole**~~ — **CLOSED 2026-11-14 on his
+   call**: *"Item 7 I like your recommendation here."* No filler is built.
+   The original text, for the record:
+
+   **The shallow-shed cross-tilt hole** — his cross-tilt answer resolved to
    *no change* (the low edge is the roof plane; thickening it pushes the
    panel through the roof it carries). What is left is the other direction:
    below the derived minimum the row is left UNDRAWN. ⚠ **Measured
@@ -86,6 +90,38 @@ is cut, what sets the radius) was answering the wrong question.
    a near-flat roof on a tiny footprint, and when it fires it already names
    both numbers as a disclaimer in the Roof section. His call. Numbers in
    `Claude outputs/jack-stud-2x4-option-and-cross-tilt-2026-11-14.md`.
+
+8. **Safety gaps are shop items, not panels** — **DONE 2026-11-14.**
+   *"Safety gaps should also populate in the things to make in the shop as
+   well as beams and stuff like that. Those simply don't count as panels. But
+   maybe they count as surface area!"* They already had their own shop sheets;
+   what changed is the COUNT. A Tiny House went from 80 panels to **74 panels
+   + 6 safety gaps named separately**, and the Tip4urTime export gained a
+   `Counts as panel` column that is 0 for a safety gap and for every beam —
+   derived from the same place as the Summary's own count, so a crew's panel
+   tally and the Summary agree row for row (measured: 84 rows − 10 = 74).
+9. **The gable sliver** — **FIXED 2026-11-14.** *"Let two plates become one
+   board."* Where a tile's taper makes the top and bottom plates want the same
+   wood they are now ONE tapered rip, and at the feather edge the two skins
+   become one sheet. The overlap sweep runs the sliver band from a low edge of
+   **0** (the triangular tile itself, which the old 1.5in floor hid) in both
+   orientations, at zero findings.
+10. **Gable studs line up with the wall below** — **FIXED 2026-11-14.**
+    *"I really want to see these studs lining up perfectly with the row below
+    them, it does not appear that way on the app live right now."* Three
+    separate defects:
+    - A gable tile had **no centre studs at all** — four corner studs and
+      nothing between, while the 48in wall panel under it carries a pair at
+      x = 22.25. It now builds them on the same `MAX_STUD_SPACING_IN` rule and
+      at the same x, cut to the sloped plate above.
+    - The joint spans handed to the tiler were **cumulative from 0**, so on a
+      wall that butts a longer neighbour every joint sat a wall thickness
+      (15.5in) left of the panel below it. They start at the wall's own run
+      start now.
+    - The **elevation preview passed `[]`** for those joints and said so in a
+      comment — so the drawing he looks at tiled four equal 48in tiles over a
+      wall whose panels are 28.125 / 32.125 / 28 / 24 / 0.75 / 48, even while
+      the model was aligned. The prop is threaded now and the two agree.
 
 ## D. Open questions that are not blocking anything
 

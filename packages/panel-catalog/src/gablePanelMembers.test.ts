@@ -9,6 +9,8 @@ import {
   gableGirtPlan,
 } from "./gablePanelMembers";
 import { memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
+import { buildStandardPanelMembers } from "./standardPanelMembers";
+import type { PanelMember } from "./componentSchema";
 import { standardPanelHeightIn } from "./data";
 import { overlappingMemberPairs } from "./memberPrism";
 
@@ -77,7 +79,7 @@ describe("buildGablePanelMembers", () => {
   it("places each edge's real height at its own true local x position — mirrors correctly when the taller edge is on the left", () => {
     // A tile whose real roofline rises left-to-right (e.g. left of a peak).
     const rising = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
-    const risingStuds = rising.filter((m) => m.role === "stud");
+    const risingStuds = rising.filter((m) => m.memberId.startsWith("stud_corner_"));
     const risingLeftStud = risingStuds.find((m) => m.position.xIn === 0)!;
     const risingRightStud = risingStuds.find((m) => m.position.xIn === WIDTH_IN - 1.5)!;
     expect(risingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(
@@ -94,7 +96,7 @@ describe("buildGablePanelMembers", () => {
     // still on the right, or the panel renders backwards once placed at
     // its own real (mirrored) world position.
     const falling = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, false);
-    const fallingStuds = falling.filter((m) => m.role === "stud");
+    const fallingStuds = falling.filter((m) => m.memberId.startsWith("stud_corner_"));
     const fallingLeftStud = fallingStuds.find((m) => m.position.xIn === 0)!;
     const fallingRightStud = fallingStuds.find((m) => m.position.xIn === WIDTH_IN - 1.5)!;
     expect(fallingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(
@@ -144,7 +146,7 @@ describe("buildGablePanelMembers", () => {
         }
         /* The tapered edge carries no stud rather than a zero-length one, and
            the standing edge still carries its pair. */
-        const studs = members.filter((m) => m.role === "stud");
+        const studs = members.filter((m) => m.memberId.startsWith("stud_corner_"));
         expect(studs).toHaveLength(2);
         /* ⚠ The LONG POINT of a raked stud, not the flat-box height. On a
            tile this steep the rake across the stud's own 1 1/2in is worth
@@ -186,7 +188,7 @@ describe("buildGablePanelMembers", () => {
 
   it("gives the low-edge and high-edge corner stud pairs their own distinct heights", () => {
     const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
-    const studs = members.filter((m) => m.role === "stud");
+    const studs = members.filter((m) => m.memberId.startsWith("stud_corner_"));
     expect(studs).toHaveLength(4);
     const lowStuds = studs.filter((m) => m.position.xIn === 0);
     const highStuds = studs.filter((m) => m.position.xIn === WIDTH_IN - 1.5);
@@ -286,7 +288,7 @@ describe("buildGablePanelMembers", () => {
       expect({ id, z: plate[0]!.zIn }).toEqual({ id, z: undersideAt(plate[0]!.xIn) });
       expect({ id, z: plate[1]!.zIn }).toEqual({ id, z: undersideAt(plate[1]!.xIn) });
     }
-    for (const stud of members.filter((m) => m.role === "stud")) {
+    for (const stud of members.filter((m) => m.memberId.startsWith("stud_corner_"))) {
       const c = stud.position.trapezoidCornersIn!;
       // Corners 2 and 3 are the raked top; 0 and 1 the level bottom.
       expect({ id: stud.memberId, z: c[2]!.zIn }).toEqual({ id: stud.memberId, z: undersideAt(c[2]!.xIn) });
@@ -329,8 +331,17 @@ describe("buildGablePanelMembers", () => {
     expect(withoutNailer.some((m) => m.role === "nailer")).toBe(false);
     expect(withoutNailer.filter((m) => m.role === "girt")).toHaveLength(0);
 
+    /* ⚠ **The overlay board is GONE on a panel wide enough to need a centre
+       stud — 2026-11-14.** A 40in tile gets one `stud_centre_1_*` pair at the
+       same x the wall panel below puts its own, which is what the overlay was
+       guaranteeing; building both put two boards in one place. A narrow tile,
+       with no centre stud, still takes the optional nailer. */
     const withNailer = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, true);
-    const nailer = withNailer.find((m) => m.role === "nailer")!;
+    expect(withNailer.some((m) => m.role === "nailer")).toBe(false);
+    expect(withNailer.some((m) => m.memberId === "stud_centre_1_exterior")).toBe(true);
+
+    const narrow = buildGablePanelMembers(24, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, true);
+    const nailer = narrow.find((m) => m.role === "nailer")!;
     expect(nailer).toBeDefined();
     expect(nailer.actualDimsIn.lengthIn).toBeLessThan(LOW_EDGE_IN);
   });
@@ -520,10 +531,72 @@ describe("⚠ a gable panel at the new ceiling", () => {
       const members = buildGablePanelMembers(48, DEPTH_IN, tallerIn, tallerIn - 16, false);
       expect({ tallerIn, overlaps: overlappingMemberPairs(members) }).toEqual({ tallerIn, overlaps: [] });
       /* Four corner studs: both edges carry a real pair at these heights. */
-      expect({ tallerIn, studs: members.filter((m) => m.role === "stud").length }).toEqual({ tallerIn, studs: 4 });
+      expect({ tallerIn, studs: members.filter((m) => m.memberId.startsWith("stud_corner_")).length }).toEqual({
+        tallerIn,
+        studs: 4,
+      });
       /* And girts, which is the point of the span rule — a 96in-plus panel
          with no lateral member would be a worse part than a flat one. */
       expect({ tallerIn, girts: members.some((m) => m.role === "girt") }).toEqual({ tallerIn, girts: true });
     }
+  });
+});
+
+/**
+ * ⚠ **THE GABLE ROW'S STUDS LAND ON THE WALL'S STUDS — 2026-11-14.**
+ *
+ * > *"I really want to see these studs lining up perfectly with the row below
+ * > them, it does not appear that way on the app live right now."* — Tommy
+ *
+ * He was right, and the gap was bigger than a position error: a gable tile had
+ * **no centre studs at all**. The row's JOINTS had landed on the wall's joints
+ * since B3, so the tile edges stacked; everything between them did not.
+ *
+ * This compares the two builders directly rather than asserting a number,
+ * because the number is only right while both read `MAX_STUD_SPACING_IN`.
+ */
+describe("⚠ a gable tile's studs stack on the wall panel below it", () => {
+  const verticalXsIn = (members: PanelMember[]) =>
+    [...new Set(members.filter((m) => m.memberId.startsWith("stud_centre_")).map((m) => m.position.xIn))].sort(
+      (a, b) => a - b,
+    );
+
+  for (const widthIn of [24, 32, 40, 48, 72, 96]) {
+    it(`${widthIn}in: every centre stud is at the same x in both`, () => {
+      const wall = buildStandardPanelMembers(widthIn, DEPTH_IN, 120, false);
+      const gable = buildGablePanelMembers(widthIn, DEPTH_IN, 30, 30 + widthIn / 2, false, "blocking");
+      expect({ widthIn, gable: verticalXsIn(gable) }).toEqual({ widthIn, gable: verticalXsIn(wall) });
+    });
+  }
+
+  it("⚠ a 48in tile really does carry a pair, which is what was missing", () => {
+    const gable = buildGablePanelMembers(48, DEPTH_IN, 30, 54, false, "blocking");
+    const centres = gable.filter((m) => m.memberId.startsWith("stud_centre_"));
+    expect(centres).toHaveLength(2);
+    expect(centres.map((m) => m.position.xIn)).toEqual([22.25, 22.25]);
+  });
+
+  it("is cut to the sloped plate above it, not to a wall panel's full height", () => {
+    const gable = buildGablePanelMembers(48, DEPTH_IN, 30, 54, false, "blocking");
+    const stud = gable.find((m) => m.memberId === "stud_centre_1_exterior")!;
+    const c = stud.position.trapezoidCornersIn!;
+    /* Level on the bottom plate, raked on top: the two top corners differ by
+       the pitch across the stud's own 3 1/2in. */
+    expect(c[0]!.zIn).toBe(c[1]!.zIn);
+    expect(c[2]!.zIn).toBeGreaterThan(c[3]!.zIn);
+    expect(c[2]!.zIn - c[3]!.zIn).toBeCloseTo((24 / 48) * 3.5, 6);
+    /* And it reaches the top plate's own underside, so nothing floats. */
+    const plate = gable.find((m) => m.memberId === "top_plate_2x4_ext")!.position.trapezoidCornersIn!;
+    const plateUndersideAt = (xIn: number) =>
+      plate[3]!.zIn + ((plate[2]!.zIn - plate[3]!.zIn) * (xIn - plate[3]!.xIn)) / (plate[2]!.xIn - plate[3]!.xIn);
+    expect(c[3]!.zIn).toBeCloseTo(plateUndersideAt(c[3]!.xIn), 6);
+  });
+
+  it("⚠ omits the stud where the taper has already made the two plates one board", () => {
+    /* A tile 3in at its low edge: at x = 22.25 there is no room between the
+       bottom plate and the merged wedge, so no board is invented. */
+    const sliver = buildGablePanelMembers(48, DEPTH_IN, 1.5, 25.5, false, "blocking");
+    for (const m of sliver) expect({ id: m.memberId, neg: m.actualDimsIn.lengthIn < 0 }).toEqual({ id: m.memberId, neg: false });
+    expect(overlappingMemberPairs(sliver)).toEqual([]);
   });
 });
