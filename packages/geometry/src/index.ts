@@ -60,3 +60,4 @@ export * from "./uncombineSafetyGaps";
 export * from "./panelTypeChoices";
 export * from "./panelTypeTransition";
 export * from "./upperRowWidths";
+export * from "./wallRoofPlane";
