@@ -15894,9 +15894,29 @@ export default function LayoutEditor() {
               <strong>pair</strong> of 2x6s, top and bottom, so every seam between two installed panels
               carries four of them. Straw goes in loose and is compressed in the table, one joist laid in
               each side. Both lids are structural: a plywood skin faced with 2x4s laid edge to edge across
-              the whole lid, the last ripped to fit. {group.kind === "floor"
-                ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a PAIR of structural girts at each end, where a wall lands on it — one under the wall's exterior toe-up board and one set in flush with its interior face, so the whole toe-up bears on framing.`
+              the whole lid, the last ripped to fit. {/* ⚠ **A MITRED PANEL'S SPAN IS NOT WHAT IT IS CUT TO**, so it must not be
+                  the first number on the sheet. `spanIn` is the ENVELOPE the panel is laid out
+                  in; on the 16ft Octagon's leading deck panel that reads 192in while the piece
+                  is 110½in long. Leading with the envelope invites cutting to it. */}
+              {group.kind === "floor"
+                ? `This one ${group.options.mitreIn ? `measures ${formatLengthIn(group.cutLengthIn, unitSystem)} at its long point (laid out in a ${formatLengthIn(group.spanIn, unitSystem)} span)` : `spans ${formatLengthIn(group.spanIn, unitSystem)}`} and carries a PAIR of structural girts at each end, where a wall lands on it — one under the wall's exterior toe-up board and one set in flush with its interior face, so the whole toe-up bears on framing.`
                 : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
+              {/* ⚠ **A MITRED PANEL IS NOT A RECTANGLE, and the sheet has to
+                  say so or the shop cuts it square.** His cut-to-fit decision
+                  of 2026-11-15: the deck stops at the building rather than at
+                  its bounding box, so a panel over an octagon's corner facet
+                  is a trapezoid. `spanIn` above is the ENVELOPE it is laid out
+                  in; these are the two numbers a saw needs. */}
+              {group.options.mitreIn ? (
+                <>
+                  <strong>This panel is mitred in plan</strong>{" "}
+                  — its ends are cut on an angle so the deck
+                  stops at the building rather than overhanging it, which makes it a trapezoid rather than a
+                  rectangle. Each joist is cut to its own length and bevelled to meet the rim flush, and the
+                  angled lid&apos;s 2x4s run <em>along</em> the cut rather than across the width. Every
+                  member carries its own bevel angle and long/short points in the cut list.{" "}
+                </>
+              ) : null}
               It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
               {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)}{" "}
               {group.kind === "roof" ? "eave" : "run"}

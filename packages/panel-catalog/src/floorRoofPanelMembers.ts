@@ -1,4 +1,4 @@
-import type { PanelComponentSchema, PanelMember, SectionSpacePoint2D } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D, SectionSpacePoint2D } from "./componentSchema";
 import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, SKIN_PLY_SPEC, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
 /**
@@ -194,6 +194,135 @@ export interface FloorRoofPanelOptions {
    * beam under it wants.
    */
   bearingSeatDepthIn?: number;
+  /**
+   * ⚠ **A MITRED SPAN END — the panel cut on an angle IN PLAN, so the deck
+   * stops at the building instead of at its bounding box.**
+   *
+   * > *"can we have the roof be basically cut to fit the raised octagon gable
+   * > perimeter?"* — Tommy, 2026-11-15, choosing mitred ends over a stepped
+   * > edge or a volunteer overhang, and asking for the floor to match.
+   *
+   * Each number is how far this panel is **pulled back** from its full
+   * `lengthIn` rectangle at one corner, measured along Z. `near` is the
+   * panel's `x = 0` edge and `far` its `x = widthIn` edge, so a pair that
+   * differs is a sloped cut and a pair that matches is a square one set back.
+   * All four zero — or the whole field absent — is the rectangle every deck
+   * panel was before this existed, which is what a BOX building still gets.
+   *
+   * ⚠ **`lengthIn` stays the panel's full ENVELOPE along Z**, the same
+   * convention the plumb end cut already follows: the 3D placement, the
+   * sheathing module and the run arithmetic all measure the envelope, and
+   * only the parts inside it move. What the shop cuts to is
+   * `floorRoofPanelCutLengthIn`, the long point.
+   *
+   * ⚠ **HOW THE END IS MADE — his answers of 2026-11-15, both of them
+   * decisions I refused to guess at:**
+   *
+   * > *joist bevelled to meet the rim flush* — so each of the two joists is
+   * > cut to its OWN length at the plan angle, and they differ by the width
+   * > of the panel times the cut's slope. No notching, no square joist with
+   * > a scribed rim.
+   *
+   * > *one bevelled board* for the end lid — so a mitred lid's 2x4 face
+   * > turns to run ALONG the cut line instead of stepping across the width
+   * > in 3 1/2in jumps. On a 48in panel over a 45° facet that is five long
+   * > boards rather than fourteen short ones, which is the "fewest parts,
+   * > one angled rip" he picked.
+   *
+   * ⚠ **A MITRE AND A ROOF'S OWN END CUTS CANNOT BOTH BE DRAWN YET, and
+   * that is refused rather than approximated.** The plumb tall end and the
+   * eave are cuts in the Y-Z plane (`sectionCornersIn`); a mitre is a cut in
+   * the X-Z plane (`trapezoidCornersIn`); `MemberPosition` says in its own
+   * doc comment that those two are mutually exclusive, because a member
+   * carrying both renders as whichever is checked first. Composing them
+   * needs a general polyhedron, so `buildFloorRoofPanelMembers` refuses the
+   * combination out loud. The FLOOR, whose ends are plain lids, is built.
+   */
+  mitreIn?: FloorRoofPanelMitre;
+}
+
+/**
+ * How far a mitred panel is pulled back from its rectangle at each of its
+ * four plan corners, in inches along Z. See `FloorRoofPanelOptions.mitreIn`.
+ */
+export interface FloorRoofPanelMitre {
+  /** At the span's START (z = 0): the pull-back at x = 0 and at x = widthIn. */
+  startNearIn: number;
+  startFarIn: number;
+  /** At the span's END (z = lengthIn), measured back from that end. */
+  endNearIn: number;
+  endFarIn: number;
+}
+
+/** Nothing cut back: what every rectangle gets, and the identity for a merge. */
+export const NO_FLOOR_ROOF_MITRE: FloorRoofPanelMitre = {
+  startNearIn: 0,
+  startFarIn: 0,
+  endNearIn: 0,
+  endFarIn: 0,
+};
+
+/**
+ * True when this panel really is cut on an angle somewhere.
+ *
+ * ⚠ **A mitre of all zeros is NOT a mitre**, and that matters beyond tidiness:
+ * every rectangle building would otherwise take the mitred code path, change
+ * its group key, and rebuild parts that are supposed to be byte-identical.
+ */
+export function hasFloorRoofMitre(o: FloorRoofPanelOptions): boolean {
+  const m = o.mitreIn;
+  if (!m) return false;
+  return (
+    Math.abs(m.startNearIn) > 1e-9 ||
+    Math.abs(m.startFarIn) > 1e-9 ||
+    Math.abs(m.endNearIn) > 1e-9 ||
+    Math.abs(m.endFarIn) > 1e-9
+  );
+}
+
+/**
+ * Where the panel's material starts and ends along Z, at one position across
+ * its width.
+ *
+ * ⚠ **Linear across the width, and that is only honest because the deck run
+ * has been split at every corner of the building** — see
+ * `deckRunSplitPointsIn` in the geometry package. Between two corners the
+ * outline is a straight line; a panel straddling a corner would need a
+ * five-sided end, and this function would quietly describe a trapezoid
+ * instead, cutting inside the wall at that corner.
+ */
+export function floorRoofMitreZRangeIn(o: FloorRoofPanelOptions, xIn: number): { startIn: number; endIn: number } {
+  const m = o.mitreIn;
+  if (!m) return { startIn: 0, endIn: o.lengthIn };
+  /* Clamped so a member reaching a hair past an edge reads that edge's own
+     cut rather than extrapolating the line beyond the panel. */
+  const t = o.widthIn > 0 ? Math.min(Math.max(xIn / o.widthIn, 0), 1) : 0;
+  return {
+    startIn: m.startNearIn + t * (m.startFarIn - m.startNearIn),
+    endIn: o.lengthIn - (m.endNearIn + t * (m.endFarIn - m.endNearIn)),
+  };
+}
+
+/**
+ * The longest this panel is along Z — its **long point**, which is the number
+ * the shop measures to before swinging the saw over, exactly as a plumb-cut
+ * joist's `actualDimsIn.lengthIn` already is.
+ */
+export function floorRoofPanelCutLengthIn(o: FloorRoofPanelOptions): number {
+  const near = floorRoofMitreZRangeIn(o, 0);
+  const far = floorRoofMitreZRangeIn(o, o.widthIn);
+  return Math.max(near.endIn - near.startIn, far.endIn - far.startIn);
+}
+
+/**
+ * The plan angle of one mitred end, in degrees off square — the number that
+ * goes on the shop sheet and that the saw is set to. 0 is a square cut.
+ */
+export function floorRoofMitreAngleDeg(o: FloorRoofPanelOptions, atEnd: "start" | "end"): number {
+  const m = o.mitreIn;
+  if (!m || !(o.widthIn > 0)) return 0;
+  const riseIn = atEnd === "start" ? m.startFarIn - m.startNearIn : m.endFarIn - m.endNearIn;
+  return (Math.atan2(Math.abs(riseIn), o.widthIn) * 180) / Math.PI;
 }
 
 /**
@@ -799,6 +928,97 @@ const sheet = (
  * makes the "double double" at the seam, which is where the installed
  * structure gets its depth.
  */
+/**
+ * ⚠ **THE TWO MITRED ENDS OF A PANEL, AS BANDS RATHER THAN AS PLANES.**
+ *
+ * A square end is a plane at constant Z, so a lid 2 1/4in thick occupies
+ * 2 1/4in of the panel's span and every part measures off that. A MITRED end
+ * is a plane at an angle in plan, and a lid built against it occupies
+ * `thickness / cos(angle)` of the span — 3 3/16in at 45° for the same
+ * 2 1/4in lid. Measuring the band along Z instead would make the lid too thin
+ * and leave the joists running out past it.
+ *
+ * ⚠ **Both ends are handled even when only one is cut.** An octagon's first
+ * deck panel is cut at BOTH ends (the two corner facets nearest the run's
+ * start), its middle panels at neither, and the panels between at one. A
+ * helper that assumed one cut end would be right for a third of them.
+ */
+interface MitredEnds {
+  /** The span available to a joist at one position across the width: inboard
+   *  of whichever lid each end carries. */
+  clearRangeIn: (xIn: number) => { startIn: number; endIn: number };
+  /** The plan ring of one end's lid layer, from `perpStartIn` to
+   *  `perpEndIn` measured PERPENDICULAR to the cut — 0 being the cut face
+   *  itself, so the plywood skin is the layer nearest it. */
+  bandPolygon: (
+    atEnd: "start" | "end",
+    perpStartIn: number,
+    perpEndIn: number,
+  ) => [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+  /** How long a board running ALONG one end's cut has to be. */
+  cutLineLengthIn: (atEnd: "start" | "end") => number;
+  angleDeg: (atEnd: "start" | "end") => number;
+  isMitred: (atEnd: "start" | "end") => boolean;
+  describeEnds: () => string;
+}
+
+function mitredEndBands(o: FloorRoofPanelOptions, lidThicknessIn: number): MitredEnds {
+  const m = o.mitreIn ?? NO_FLOOR_ROOF_MITRE;
+  const widthIn = o.widthIn;
+  const riseIn = (atEnd: "start" | "end") =>
+    atEnd === "start" ? m.startFarIn - m.startNearIn : m.endFarIn - m.endNearIn;
+  /* The cut line's own length over the panel's width, and the factor that
+     turns a perpendicular thickness into a distance along Z. They are the
+     same ratio, which is why one `hypot` serves both. */
+  const hyp = (atEnd: "start" | "end") => Math.hypot(widthIn, riseIn(atEnd));
+  const alongZPerPerp = (atEnd: "start" | "end") => (widthIn > 0 ? hyp(atEnd) / widthIn : 1);
+  /* Where the cut face itself sits, at one x. Measured from the panel's own
+     ends so a square end reads exactly 0 and `lengthIn`, unchanged. */
+  const cutAtIn = (atEnd: "start" | "end", xIn: number) => {
+    const t = widthIn > 0 ? Math.min(Math.max(xIn / widthIn, 0), 1) : 0;
+    return atEnd === "start"
+      ? m.startNearIn + t * (m.startFarIn - m.startNearIn)
+      : o.lengthIn - (m.endNearIn + t * (m.endFarIn - m.endNearIn));
+  };
+  const bandAlongZ = (atEnd: "start" | "end", perpIn: number) => perpIn * alongZPerPerp(atEnd);
+
+  return {
+    clearRangeIn: (xIn: number) => ({
+      startIn: cutAtIn("start", xIn) + bandAlongZ("start", lidThicknessIn),
+      endIn: cutAtIn("end", xIn) - bandAlongZ("end", lidThicknessIn),
+    }),
+    bandPolygon: (atEnd, perpStartIn, perpEndIn) => {
+      /* Inboard is +Z at the start end and −Z at the far end. */
+      const dir = atEnd === "start" ? 1 : -1;
+      const nearCut = cutAtIn(atEnd, 0);
+      const farCut = cutAtIn(atEnd, widthIn);
+      const a = dir * bandAlongZ(atEnd, perpStartIn);
+      const b = dir * bandAlongZ(atEnd, perpEndIn);
+      return [
+        { xIn: 0, zIn: nearCut + a },
+        { xIn: widthIn, zIn: farCut + a },
+        { xIn: widthIn, zIn: farCut + b },
+        { xIn: 0, zIn: nearCut + b },
+      ];
+    },
+    cutLineLengthIn: (atEnd) => hyp(atEnd),
+    angleDeg: (atEnd) => (Math.atan2(Math.abs(riseIn(atEnd)), widthIn) * 180) / Math.PI,
+    isMitred: (atEnd) => Math.abs(riseIn(atEnd)) > 1e-9,
+    describeEnds: () => {
+      const parts: string[] = [];
+      for (const atEnd of ["start", "end"] as const) {
+        const deg = (Math.atan2(Math.abs(riseIn(atEnd)), widthIn) * 180) / Math.PI;
+        parts.push(
+          Math.abs(riseIn(atEnd)) > 1e-9
+            ? `${atEnd} end mitred ${deg.toFixed(2)}deg off square in plan`
+            : `${atEnd} end square`,
+        );
+      }
+      return parts.join(", ");
+    },
+  };
+}
+
 function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
   const out: PanelMember[] = [];
   /* ⚠ The joists run BETWEEN the two lids, not past them.
@@ -817,6 +1037,7 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
   const joistLengthIn = o.lengthIn - 2 * lidThicknessIn;
   const plumb = plumbEndCut(o, "end");
   const eave = eaveCut(o);
+  const mitre = hasFloorRoofMitre(o) ? mitredEndBands(o, lidThicknessIn) : null;
   const edges: [string, number][] = [
     ["left", 0],
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
@@ -826,6 +1047,65 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
       ["bottom", 0],
       ["top", o.depthIn - JOIST_2X6_WIDTH_IN],
     ] as [string, number][]) {
+      if (mitre) {
+        /* ⚠ **A MITRED JOIST IS BEVELLED, AND THE TWO JOISTS OF A PANEL ARE
+           DIFFERENT LENGTHS.** His 2026-11-15 answer: *joist bevelled to meet
+           the rim flush*. The cut line sweeps across the panel's width, so the
+           left joist and the right joist meet it at different distances — on a
+           48in panel over a 45° facet, 48in apart. One length for both would
+           be right for neither, which is the same failure the plumb end cut
+           already documents one chord at a time.
+
+           The bevel is in the X-Z plane, so these corners are
+           `trapezoidCornersIn` rather than `sectionCornersIn` — see
+           `MemberPosition`, where the three extrusion axes are spelled out.
+
+           ⚠ **`yIn` IS THE CENTRE for a trapezoid, not the min corner.**
+           `memberPrism` reads `yIn ± trapezoidDepthIn / 2`; every box in this
+           file anchors on its min corner instead. Keeping the box's `yIn`
+           here would push the joist half its own 5 1/2in out of the panel,
+           which the overlap audit would report and the picture would hide. */
+        const nearXIn = xIn;
+        const farXIn = xIn + JOIST_2X6_THICKNESS_IN;
+        const nearZ = mitre.clearRangeIn(nearXIn);
+        const farZ = mitre.clearRangeIn(farXIn);
+        const longPointIn = Math.max(nearZ.endIn - nearZ.startIn, farZ.endIn - farZ.startIn);
+        const shortPointIn = Math.min(nearZ.endIn - nearZ.startIn, farZ.endIn - farZ.startIn);
+        out.push({
+          memberId: `joist-${side}-${face}`,
+          material: "dimensional_lumber",
+          speciesGrade: LUMBER_SPECIES_GRADE,
+          plySpec: null,
+          nominalSize: "2x6",
+          /* The piece AS CUT: its long point. */
+          actualDimsIn: {
+            thicknessIn: JOIST_2X6_THICKNESS_IN,
+            widthIn: JOIST_2X6_WIDTH_IN,
+            lengthIn: longPointIn,
+          },
+          orientation: "vertical",
+          position: {
+            xIn,
+            yIn: yIn + JOIST_2X6_WIDTH_IN / 2,
+            zIn: Math.min(nearZ.startIn, farZ.startIn),
+            rotationDeg: 0,
+            trapezoidDepthIn: JOIST_2X6_WIDTH_IN,
+            trapezoidCornersIn: [
+              { xIn: nearXIn, zIn: nearZ.startIn },
+              { xIn: farXIn, zIn: farZ.startIn },
+              { xIn: farXIn, zIn: farZ.endIn },
+              { xIn: nearXIn, zIn: nearZ.endIn },
+            ],
+          },
+          role: "stud",
+          qty: 1,
+          notes:
+            `${side} joist, ${face} member of the pair — ` +
+            `${mitre.describeEnds()}. Long point ${longPointIn.toFixed(3)}in, short point ` +
+            `${shortPointIn.toFixed(3)}in`,
+        });
+        continue;
+      }
       if (!plumb) {
         out.push(
           lumber(
@@ -947,6 +1227,70 @@ function girtSpanIn(o: FloorRoofPanelOptions): { lengthIn: number; xIn: number }
 }
 
 /**
+ * ⚠ **A GIRT IN A MITRED PANEL IS SHORTER, OR IS NOT THERE AT ALL.**
+ *
+ * A girt runs across the panel's width at one station along the span. In a
+ * rectangle the panel exists across that whole width, so the girt is cut to
+ * the clear space between the joists and that is the end of it. In a mitred
+ * panel the span available varies with x, so a station near a cut end runs
+ * out of panel partway across — and a station outside the cut altogether has
+ * no panel to sit in.
+ *
+ * Returns the girt's clipped x range, or **null when there is not enough left
+ * to build one**. The floor is the case that matters: measured on the 16ft
+ * Octagon, the leading deck panel's blocking stations fall partly outside the
+ * cut, and a girt emitted at its full width would hang out past the building
+ * exactly the way the uncut deck did.
+ *
+ * ⚠ **Clipped against the girt ASSEMBLY'S whole Z extent, not each layer's**,
+ * so a web and its two 2x4 edges can never be cut to three different widths.
+ * They are one part.
+ *
+ * ⚠ **The minimum is the part's own, not a tidiness rule.** A structural girt
+ * carries a 2x4 at each edge, so below `2 * PLATE_2X4_WIDTH_IN` there is no
+ * girt to make — only two boards touching. Returning a sliver would put an
+ * unbuildable part on a shop sheet.
+ */
+function mitredGirtXRangeIn(
+  o: FloorRoofPanelOptions,
+  zStartIn: number,
+  zEndIn: number,
+  minLengthIn: number,
+): { xIn: number; lengthIn: number } | null {
+  const span = girtSpanIn(o);
+  if (!hasFloorRoofMitre(o)) return span;
+  const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const bands = mitredEndBands(o, lidThicknessIn);
+  /* Both bounds are linear in x, so the x values that satisfy them form an
+     interval — found by solving each bound at the panel's two edges rather
+     than by sampling, which would miss a narrow window. */
+  let loIn = span.xIn;
+  let hiIn = span.xIn + span.lengthIn;
+  for (const [atX0, atX1, needed, wantAtMost] of [
+    [bands.clearRangeIn(0).startIn, bands.clearRangeIn(o.widthIn).startIn, zStartIn, true],
+    [bands.clearRangeIn(0).endIn, bands.clearRangeIn(o.widthIn).endIn, zEndIn, false],
+  ] as [number, number, number, boolean][]) {
+    /* `wantAtMost` — the start of the clear span must be at or before the
+       girt's near face; the end of it at or after the girt's far face. */
+    const slope = o.widthIn > 0 ? (atX1 - atX0) / o.widthIn : 0;
+    const ok = (xIn: number) => (wantAtMost ? atX0 + slope * xIn <= needed + 1e-9 : atX0 + slope * xIn >= needed - 1e-9);
+    if (Math.abs(slope) < 1e-12) {
+      if (!ok(0)) return null;
+      continue;
+    }
+    /* The crossing point, and which side of it is the good side. */
+    const crossIn = (needed - atX0) / slope;
+    if (ok(loIn) && ok(hiIn)) continue;
+    if (ok(loIn)) hiIn = Math.min(hiIn, crossIn);
+    else if (ok(hiIn)) loIn = Math.max(loIn, crossIn);
+    else return null;
+  }
+  const lengthIn = hiIn - loIn;
+  if (!(lengthIn >= minLengthIn)) return null;
+  return { xIn: loIn, lengthIn };
+}
+
+/**
  * A structural girt: 3/4in CDX across the panel's section, with a 2x4 at each
  * of its left and right edges.
  *
@@ -961,7 +1305,10 @@ function buildStructuralGirt(
   label: string,
   webNote = "structural girt web — carries the wall above, cut to the space between the joists",
 ): PanelMember[] {
-  const span = girtSpanIn(o);
+  const span = mitredGirtXRangeIn(o, zIn, zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN, 2 * PLATE_2X4_WIDTH_IN);
+  /* ⚠ No girt rather than a girt hanging out of the building. See
+     `mitredGirtXRangeIn` — in a rectangle this is never null. */
+  if (!span) return [];
   return [
     sheet(
       `structural-girt-${label}-web`,
@@ -1105,7 +1452,16 @@ export function wallBearingGirtStationsIn(o: FloorRoofPanelOptions): WallBearing
  * which is simpler than the question assumed.
  */
 function buildAntiTwistGirt(o: FloorRoofPanelOptions, zIn: number, index: number): PanelMember[] {
-  const span = girtSpanIn(o);
+  const span = mitredGirtXRangeIn(
+    o,
+    zIn,
+    zIn + ANTI_TWIST_WEB_THICKNESS_IN + PLATE_2X4_THICKNESS_IN,
+    /* An anti-twist girt's own part is a web with a 2x4 at the top and the
+       bottom of the DEPTH, not at its ends, so its minimum is the web's —
+       one 2x4's width of something to nail to. */
+    PLATE_2X4_WIDTH_IN,
+  );
+  if (!span) return [];
   return [
     sheet(
       `anti-twist-${index}-web`,
@@ -1146,10 +1502,30 @@ function buildAntiTwistGirt(o: FloorRoofPanelOptions, zIn: number, index: number
 function buildBlocking(o: FloorRoofPanelOptions, zIn: number, index: number): PanelMember[] {
   const fitIn = o.depthIn - 2 * JOIST_2X6_WIDTH_IN;
   if (fitIn <= 0) return [];
+  /* ⚠ Blocking sits INSIDE each joist, so each side is tested on its own
+     joist's span rather than on the panel's. On a mitred panel the two
+     joists end in different places, so a station can be inside one and
+     outside the other — and a single test would then either drop a real
+     block or place one in thin air. */
+  const mitre = hasFloorRoofMitre(o)
+    ? mitredEndBands(o, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN)
+    : null;
   return ([
     ["left", 0],
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
-  ] as [string, number][]).map(([side, xIn]) =>
+  ] as [string, number][])
+    .filter(([, xIn]) => {
+      if (!mitre) return true;
+      /* Taken at the joist's two faces and required at BOTH, so a block
+         never pokes out of the bevelled end it sits against. */
+      for (const atXIn of [xIn, xIn + JOIST_2X6_THICKNESS_IN]) {
+        const clear = mitre.clearRangeIn(atXIn);
+        if (zIn < clear.startIn - 1e-9) return false;
+        if (zIn + PLATE_2X4_THICKNESS_IN > clear.endIn + 1e-9) return false;
+      }
+      return true;
+    })
+    .map(([side, xIn]) =>
     lumber(
       `blocking-${index}-${side}`,
       "blocking",
@@ -1176,6 +1552,101 @@ function buildBlocking(o: FloorRoofPanelOptions, zIn: number, index: number): Pa
  * full 2x4s and a sixth ripped, which the builder emits at its real ripped
  * width rather than rounding the count.
  */
+/**
+ * ⚠ **A MITRED END LID: ONE BEVELLED BOARD PER LAYER, RUN ALONG THE CUT.**
+ *
+ * His choice of 2026-11-15, over stepped blocking:
+ *
+ * > *one bevelled board* — *"A single board ripped to the facet angle runs
+ * > the length of the cut. Fewest parts, one angled rip per panel."*
+ *
+ * ⚠ **So the 2x4 face TURNS.** A square lid's face is boards laid across the
+ * width, each running through the depth — fourteen of them on a 48in panel.
+ * Keeping that orientation at a mitre would step the closure in 3 1/2in
+ * jumps, which is precisely the option he rejected. Run along the cut
+ * instead, the same face is five long boards tiled through the DEPTH, each
+ * bevel-cut at both ends to the one saw setting. Fewer parts and a
+ * continuous plane, which is what he asked for and what the membrane needs.
+ *
+ * ⚠ **The last board is RIPPED, not dropped**, exactly as the square lid's
+ * last one is: *"the last may need to be ripped"*. A 15 1/2in depth takes
+ * four 3 1/2in boards and a fifth at 1 1/2in.
+ *
+ * ⚠ **Plywood outermost**, his rule of 2026-11-05 — which here means nearest
+ * the CUT FACE, measured perpendicular to it rather than along Z. That is
+ * the whole reason these layers are placed by perpendicular depth: at 45° a
+ * 3/4in skin occupies 1 1/16in of span, and placing it by its own 3/4in
+ * would leave a wedge of air outside the plywood.
+ */
+function buildMitredLid(
+  o: FloorRoofPanelOptions,
+  atEnd: "start" | "end",
+  bands: MitredEnds,
+): PanelMember[] {
+  const cutLengthIn = bands.cutLineLengthIn(atEnd);
+  const angleDeg = bands.angleDeg(atEnd);
+  const bevel = `both ends bevelled ${angleDeg.toFixed(2)}deg off square — the panel's ${atEnd} end is mitred in plan`;
+
+  const out: PanelMember[] = [
+    {
+      memberId: `lid-${atEnd}-skin`,
+      material: "plywood",
+      speciesGrade: null,
+      plySpec: SKIN_PLY_SPEC,
+      nominalSize: null,
+      /* The sheet AS CUT: a parallelogram `cutLengthIn` along the cut by the
+         panel's full depth. Its own 3/4in is the thickness. */
+      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: o.depthIn, lengthIn: cutLengthIn },
+      orientation: "flat",
+      position: {
+        xIn: 0,
+        /* ⚠ CENTRE through the depth, not the min corner — `memberPrism`
+           reads a trapezoid as `yIn ± trapezoidDepthIn / 2`. */
+        yIn: o.depthIn / 2,
+        zIn: Math.min(...bands.bandPolygon(atEnd, 0, SKIN_THICKNESS_IN).map((c) => c.zIn)),
+        rotationDeg: 0,
+        trapezoidDepthIn: o.depthIn,
+        trapezoidCornersIn: bands.bandPolygon(atEnd, 0, SKIN_THICKNESS_IN),
+      },
+      role: "skin",
+      qty: 1,
+      notes: `${atEnd} lid skin — the OUTER layer, plywood facing out; ${bevel}`,
+    },
+  ];
+
+  /* The face of 2x4s, now laid ALONG the cut and tiled through the depth. */
+  let yIn = 0;
+  let index = 0;
+  while (yIn < o.depthIn - 1e-9) {
+    const boardWidthIn = Math.min(PLATE_2X4_WIDTH_IN, o.depthIn - yIn);
+    const ripped = boardWidthIn < PLATE_2X4_WIDTH_IN - 1e-9;
+    const corners = bands.bandPolygon(atEnd, SKIN_THICKNESS_IN, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN);
+    out.push({
+      memberId: `lid-${atEnd}-face-${index}`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: boardWidthIn, lengthIn: cutLengthIn },
+      orientation: "flat",
+      position: {
+        xIn: 0,
+        yIn: yIn + boardWidthIn / 2,
+        zIn: Math.min(...corners.map((c) => c.zIn)),
+        rotationDeg: 0,
+        trapezoidDepthIn: boardWidthIn,
+        trapezoidCornersIn: corners,
+      },
+      role: "stud",
+      qty: 1,
+      notes: ripped ? `ripped to ${boardWidthIn}in wide — the last one on the lid; ${bevel}` : bevel,
+    });
+    yIn += PLATE_2X4_WIDTH_IN;
+    index += 1;
+  }
+  return out;
+}
+
 function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): PanelMember[] {
   /* ⚠ The TALL end's lid stands PLUMB, and is the *"vertical structural top
      plate"* of his 2026-10-29 note — the same skin-plus-2x4-faces lid every
@@ -1204,6 +1675,15 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
      and B23's girt stations still measure off `lidFaceIn`. The eave fascia and
      the plumb tall-end plate were already built this way (skin at perpendicular
      0, outermost) — only this plain lid disagreed with them. */
+  const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  if (hasFloorRoofMitre(o)) {
+    const bands = mitredEndBands(o, lidThicknessIn);
+    if (bands.isMitred(atEnd)) return buildMitredLid(o, atEnd, bands);
+    /* A square end on an otherwise mitred panel falls through to the plain
+       lid below — which is the common case on an octagon, where a panel is
+       cut at one end and square at the other. */
+  }
+
   const isStart = atEnd === "start";
   const skinZIn = isStart ? 0 : o.lengthIn - SKIN_THICKNESS_IN;
   const faceZIn = isStart ? SKIN_THICKNESS_IN : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
@@ -1327,8 +1807,44 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
  * the roof's own pitch — a parameter this builder does not take yet. Built
  * next, not forgotten.
  */
+/**
+ * ⚠ **WHY A MITRE AND A ROOF'S OWN END CUTS CANNOT BOTH BE BUILT YET — said
+ * out loud rather than approximated into the picture.**
+ *
+ * A roof panel already carries two cuts in the Y-Z plane: the plumb tall end
+ * and the eave. A mitre is a cut in the X-Z plane. `MemberPosition` states in
+ * its own doc comment that `sectionCornersIn` and `trapezoidCornersIn` are
+ * MUTUALLY EXCLUSIVE — `memberLocalCornersIn` checks the trapezoid first, so a
+ * member carrying both renders as a trapezoid and the plumb cut vanishes.
+ * Composing them needs a general polyhedron, which nothing in this schema
+ * expresses.
+ *
+ * And it is not only the drawing. A mitred eave would have to run its fascia,
+ * its bearing wedge and its cap ALONG the cut line, where the apparent pitch
+ * is no longer the roof's pitch — a wedge sized on 4:12 would not sit level
+ * on a 45° facet. That is a fabrication question, not a rendering one.
+ *
+ * So: a FLOOR panel's mitre is built (its ends are plain lids), and a roof
+ * panel's is refused here. Returns the reason, or null when the panel is
+ * buildable as asked.
+ */
+export function floorRoofMitreUnsupportedReason(o: FloorRoofPanelOptions): string | null {
+  if (!hasFloorRoofMitre(o)) return null;
+  if (o.kind !== "roof") return null;
+  return (
+    "A roof panel cannot be mitred yet: its tall end is plumb-cut and its eave is cut back, " +
+    "and a mitre is a cut in the other plane. The floor deck is cut to the building; the roof deck " +
+    "is still laid across its bounding box."
+  );
+}
+
 export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
-  const o = options;
+  /* ⚠ The mitre is DROPPED, not approximated, where it cannot be composed
+     with a roof's own end cuts — and `floorRoofMitreUnsupportedReason` is
+     what makes that visible instead of silent. The takeoff does not pass one
+     here; this is the belt to that braces. */
+  const o: FloorRoofPanelOptions =
+    floorRoofMitreUnsupportedReason(options) === null ? options : { ...options, mitreIn: undefined };
   const plumb = plumbEndCut(o, "end");
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
   if (plumb) members.push(...buildTallEndWedge(o, plumb));

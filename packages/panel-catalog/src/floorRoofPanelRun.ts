@@ -120,6 +120,28 @@ export interface FloorRoofPanelRunOptions {
   /** Floor only, and passed straight through: which span ends have a wall
    * above. */
   structuralGirtEnds?: ("start" | "end")[];
+  /**
+   * ⚠ **Widths the CALLER has already planned, for a run whose joints are
+   * not free.**
+   *
+   * A deck over a mitred building has to land a joint on every corner, or a
+   * panel straddles one and its end becomes five-sided — see
+   * `planDeckRunWidths` and `deckRunSplitPointsIn` in the geometry package,
+   * which plan that run. The widths come in here so that **names, roles, the
+   * 8ft sheathing module, the minimum-width check and its warning all stay in
+   * one place** rather than being reimplemented next to the clipper.
+   *
+   * ⚠ **Left out, nothing changes**: the run is planned by
+   * `planFloorRoofPanelWidthsIn` exactly as before, which is what every BOX
+   * building still gets, down to the width.
+   *
+   * ⚠ **The 8ft plywood module is a casualty on a mitred run, and that is
+   * accepted rather than overlooked.** A corner at 56 1/4in is not on the
+   * 24in module, so forcing a joint there moves the seams. The alternative is
+   * a panel with a kinked end, which the shop cannot make. The gable row
+   * above makes the same trade against the wall joints below it.
+   */
+  forcedWidthsIn?: readonly number[];
 }
 
 /**
@@ -164,8 +186,8 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
     return { ...empty, refusal: "This building has no run or span to lay panels across yet." };
   }
 
-  const widths = planFloorRoofPanelWidthsIn(options.runLengthIn, edgeWidthIn);
-  if (widths === null) {
+  const widths = options.forcedWidthsIn ?? planFloorRoofPanelWidthsIn(options.runLengthIn, edgeWidthIn);
+  if (widths === null || widths.length === 0) {
     return {
       ...empty,
       refusal:

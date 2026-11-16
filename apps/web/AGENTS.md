@@ -248,3 +248,25 @@
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
+
+- **2026-11-16, the floor deck cut to the building: ZERO delta.** 181 / 134 / 47,
+  every rule byte-identical to the 2026-11-15 baseline —
+  `preserve-manual-memoization` 76, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1.
+
+  ⚠ Worth recording for the size of it: a new geometry module, a new option on
+  the floor/roof panel builder, three rewritten member builders, a sheared 3D
+  prism, a new group field and a new paragraph of JSX on the fabrication sheet
+  — and **not one flag moved**. That is the rule from the 2026-11-15 entries
+  holding again from the other side: **the budget is spent by `useMemo`s and by
+  what their dep arrays touch, not by how much code there is.** This change
+  added no memo at all.
+
+  ⚠ **The one delta there WAS got fixed rather than recorded.** An intermediate
+  run read `no-unused-vars` **36**: `floorRoofPanelCutLengthIn` imported into
+  `deckPanelTakeoff.ts` and never called. It was a real omission, not a style
+  nit — the panel's long point is the number a shop cuts to, and nothing was
+  carrying it. It became `DeckPanelTakeoffGroup.cutLengthIn` and then a line on
+  the fabrication sheet. **An unused import is sometimes a missing feature;
+  check which before silencing it.**

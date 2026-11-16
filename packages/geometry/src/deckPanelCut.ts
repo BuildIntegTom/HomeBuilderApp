@@ -206,12 +206,37 @@ export function planDeckRunWidths(
   splitAtIn: readonly number[],
   minWidthIn: number,
   maxWidthIn: number,
+  /**
+   * ⚠ **The two panels at the ends of the run, as wide as the wall is
+   * thick** — *"The edge panels for floors and roofs still have to be 15.5"
+   * because thata the wall thickness."* (Tommy, 2026-10-23).
+   *
+   * Passed in, it becomes a forced boundary at each end exactly as a corner
+   * is, so a mitred run still starts and ends with the panel that carries the
+   * wall. Left out, the run is divided from edge to edge — which is what the
+   * unit tests here do, and what a caller with no wall above wants.
+   */
+  edgeWidthIn?: number,
 ): number[] {
   if (!(totalIn > 0) || !(maxWidthIn > 0)) return [];
 
+  /* ⚠ The edge panels are boundaries of the SAME kind as a corner: a joint
+     the run has to land on. Folding them in here rather than handling them
+     separately is what keeps a corner that falls INSIDE an edge panel from
+     being lost — both end up in one sorted list and the sliver rule settles
+     them. */
+  const edgeBounds =
+    edgeWidthIn !== undefined && edgeWidthIn > 0 && 2 * edgeWidthIn < totalIn
+      ? [edgeWidthIn, totalIn - edgeWidthIn]
+      : [];
+
   /* The stretches between corners, with slivers folded into their left
      neighbour so nothing under the minimum survives. */
-  const bounds = [0, ...splitAtIn.filter((v) => v > 1e-6 && v < totalIn - 1e-6).slice().sort((a, b) => a - b), totalIn];
+  const bounds = [
+    0,
+    ...[...splitAtIn, ...edgeBounds].filter((v) => v > 1e-6 && v < totalIn - 1e-6).sort((a, b) => a - b),
+    totalIn,
+  ];
   const segments: number[] = [];
   for (let i = 1; i < bounds.length; i++) {
     const lenIn = bounds[i]! - bounds[i - 1]!;

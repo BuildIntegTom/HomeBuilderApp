@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildRectangleFootprint, simpleRoofPlanes } from "@building-integrity/geometry";
+import {
+  buildOctagonFootprint,
+  buildRectangleFootprint,
+  footprintSpanAndRun,
+  simpleRoofPlanes,
+  type Footprint,
+} from "@building-integrity/geometry";
 import { roofTopAboveRooflineIn } from "@building-integrity/panel-catalog";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 
@@ -293,5 +299,215 @@ describe("⚠ the eave cap is on the sheet and not in the model, deliberately", 
     for (const group of takeoff.groups.filter((g) => g.kind === "floor")) {
       expect({ key: group.key, caps: group.capMembers.length }).toEqual({ key: group.key, caps: 0 });
     }
+  });
+});
+
+describe("⚠ the floor deck is cut to the building it sits on", () => {
+  /**
+   * > *"can we have the roof be basically cut to fit the raised octagon gable
+   * > perimeter?"* — Tommy, 2026-11-15, choosing **mitred ends** over a
+   * > stepped edge or keeping the overhang as an eave, and asking for the
+   * > floor to get the same treatment.
+   *
+   * Measured on the live code before any of it was written: on an octagon the
+   * deck was laid across the bounding SQUARE, so it claimed **20.7%** more
+   * than the building — 256.0 sq ft against 212.05 on the 16ft tile, and
+   * 1024.0 against 848.22 on the 32ft.
+   */
+  const octagonInput = (ft: number): DeckPanelTakeoffInput => ({
+    footprint: buildOctagonFootprint(ft, ft),
+    depthIn: 15.5,
+    roofForm: "shed",
+    roofPitchIn12: 4,
+    roofEaveHeightFt: 10,
+    roofGableEndInsetIn: 0,
+  });
+
+  it("⚠ a BOX is untouched, down to its panel widths", () => {
+    /* THE safety property: every rectangle building in the app goes through
+       this code, and the cut must be invisible to it. 15.5in edge panels,
+       24in field panels and a 17in redistributed tail — his own module and
+       his own tail rule, unchanged. */
+    const takeoff = computeDeckPanelTakeoff(input());
+    const floor = takeoff.instances.filter((i) => i.kind === "floor");
+    expect(takeoff.coverageSqFt.floor).toBeCloseTo(40 * 20, 6);
+    /* His own module and his own tail rule: 15.5in edge panels, 24in field
+       panels, and a 17in redistributed tail. Unchanged by the cut. */
+    expect([...new Set(floor.map((i) => Number(i.widthIn.toFixed(4))))]).toEqual([15.5, 24, 17]);
+    expect(floor).toHaveLength(21);
+    for (const g of takeoff.groups.filter((g) => g.kind === "floor")) {
+      expect(g.options.mitreIn, "a box has no mitred panel").toBeUndefined();
+    }
+  });
+
+  it("⚠ an octagon's floor deck is the OCTAGON's area, not its bounding square", () => {
+    for (const [ft, cut, box] of [
+      [16, 212.05, 256],
+      [32, 848.22, 1024],
+    ] as const) {
+      const takeoff = computeDeckPanelTakeoff(octagonInput(ft));
+      expect(takeoff.floorRefusal).toBeNull();
+      expect(takeoff.coverageSqFt.floor, `${ft}ft octagon`).toBeCloseTo(cut, 1);
+      /* And the overhang this removes, which is the number he was looking
+         at on screen. */
+      expect(box - takeoff.coverageSqFt.floor).toBeCloseTo(box - cut, 1);
+    }
+  });
+
+  it("⚠ every corner of the building lands ON a panel joint", () => {
+    /* Without this a panel straddles a corner, its end is five-sided, and
+       the trapezoid the clipper describes cuts INSIDE the wall there. */
+    const takeoff = computeDeckPanelTakeoff(octagonInput(16));
+    const floor = takeoff.instances.filter((i) => i.kind === "floor");
+    const joints = [0, ...floor.map((i) => i.atIn + i.widthIn)];
+    /* The 16ft Octagon's own two interior corners, in inches along the run:
+       the leg is (16 − 6.625)/2 = 4.6875ft. */
+    for (const cornerIn of [4.6875 * 12, (16 - 4.6875) * 12]) {
+      expect(
+        joints.some((j) => Math.abs(j - cornerIn) < 1e-6),
+        `corner at ${cornerIn}in is not a joint`,
+      ).toBe(true);
+    }
+  });
+
+  it("⚠ a mitred panel is its OWN panel — the group key carries the cut", () => {
+    /* The defect this pins, measured when the cut was first wired: ten floor
+       panels collapsed into THREE groups, because the key knew the width and
+       the span but not the bite the building takes out of the panel. A group
+       builds one member set for all its copies, so the panels over the far
+       corner were fabricated from the near corner's cut. */
+    const takeoff = computeDeckPanelTakeoff(octagonInput(16));
+    const floorGroups = takeoff.groups.filter((g) => g.kind === "floor");
+    const mitred = floorGroups.filter((g) => g.options.mitreIn);
+    expect(takeoff.instances.filter((i) => i.kind === "floor")).toHaveLength(10);
+    expect(mitred).toHaveLength(6);
+    expect(floorGroups).toHaveLength(7);
+    /* Each mitred group is exactly one panel; only the square middle shares. */
+    for (const g of mitred) expect(g.instances).toHaveLength(1);
+    expect(floorGroups.find((g) => !g.options.mitreIn)!.instances).toHaveLength(4);
+  });
+
+  it("⚠ a mitred panel's members really are cut back, not just labelled", () => {
+    const takeoff = computeDeckPanelTakeoff(octagonInput(16));
+    const mitred = takeoff.groups.filter((g) => g.kind === "floor" && g.options.mitreIn);
+    expect(mitred.length).toBeGreaterThan(0);
+    for (const g of mitred) {
+      const joists = g.members.filter((m) => m.memberId.startsWith("joist-"));
+      expect(joists, g.key).toHaveLength(4);
+      /* Bevelled in the X-Z plane, which is what a plan mitre is. */
+      for (const j of joists) expect(j.position.trapezoidCornersIn, `${g.key} ${j.memberId}`).toHaveLength(4);
+      /* And shorter than the envelope they sit in. */
+      expect(Math.max(...joists.map((j) => j.actualDimsIn.lengthIn))).toBeLessThan(g.spanIn);
+    }
+  });
+
+  it("⚠ the ROOF deck is NOT cut yet, and says so rather than looking cut", () => {
+    /* His ask was the roof first. A roof panel's tall end is plumb-cut and
+       its eave is cut back — both in the Y-Z plane — and a mitre is a cut in
+       the X-Z plane, which `MemberPosition` states are mutually exclusive. So
+       the roof is still laid across its bounding box, and the reason is
+       carried in code rather than left to be discovered. */
+    const takeoff = computeDeckPanelTakeoff(octagonInput(16));
+    for (const g of takeoff.groups.filter((g) => g.kind === "roof")) {
+      expect(g.options.mitreIn, "the roof must not claim a mitre it cannot build").toBeUndefined();
+    }
+  });
+});
+
+describe("⚠ which SIDE of the panel the cut lands on", () => {
+  /**
+   * ⚠ **The span's local Z runs BACKWARDS on one of the two run orientations,
+   * and no shape the app can draw today would show it.**
+   *
+   * `deckPanelPlacements` lays a run two ways. With `axis === "y"` the panel
+   * is anchored at `(minX, minY)` unrotated, so its local Z counts up from
+   * `minY` — the same direction the clipper measures. With `axis === "x"` the
+   * panel is anchored at **maxX** and yawed 90°, so its local Z counts DOWN
+   * from `maxX` while the clip still measures up from `minX`.
+   *
+   * ⚠ **An octagon cannot catch this.** It is symmetric across the span as
+   * well as along the run, so swapping a panel's two ends is a no-op on every
+   * panel of one — which a mutation confirmed: reversing the flag left all 23
+   * tests above green. So the shape below is built by hand: a 16ft × 20ft box
+   * with ONE corner chamfered, which is asymmetric across the span and runs
+   * on the `axis === "x"` orientation. Get the flip wrong and its deck is cut
+   * into the opposite wall at the right area.
+   */
+  const chamferedTallBox = (): Footprint => {
+    /* 16ft across, 20ft deep, with the (16, 20) corner cut off. */
+    const points = [
+      { x: 0, y: 0 },
+      { x: 16, y: 0 },
+      { x: 16, y: 16 },
+      { x: 12, y: 20 },
+      { x: 0, y: 20 },
+    ];
+    const corners = points.map((point, i) => ({ id: String(i), point }));
+    const walls = corners.map((corner, i) => {
+      const next = corners[(i + 1) % corners.length]!;
+      return {
+        id: `${corner.id}${next.id}`,
+        startCorner: corner.id,
+        endCorner: next.id,
+        lengthFt: Math.hypot(next.point.x - corner.point.x, next.point.y - corner.point.y),
+      };
+    });
+    return { corners, walls };
+  };
+
+  it("⚠ the cut is on the chamfered side of the building, not its mirror", () => {
+    const fp = chamferedTallBox();
+    /* Depth beats width, so the run goes along Y and this is the reversed
+       orientation — the one the flip exists for. */
+    expect(footprintSpanAndRun(fp).axis).toBe("x");
+
+    const takeoff = computeDeckPanelTakeoff({
+      footprint: fp,
+      depthIn: 15.5,
+      roofForm: "shed",
+      roofPitchIn12: 4,
+      roofEaveHeightFt: 10,
+      roofGableEndInsetIn: 0,
+    });
+    expect(takeoff.floorRefusal).toBeNull();
+
+    /* The LAST panels along the run are the ones over the chamfer: the corner
+       runs from (16, 16) to (12, 20), so it is at the far end of the run and
+       takes material off the HIGH-x side.
+
+       ⚠ **And the high-x side is the panel's own START**, because local Z
+       counts DOWN from `maxX` on this orientation. That is the whole content
+       of the flip, and it reads backwards until you work it through: at
+       y = 20 the building spans x = 0..12, which is local z = 48..192, so
+       48in is missing from the panel's START. */
+    const floor = takeoff.instances.filter((i) => i.kind === "floor");
+    const last = floor.at(-1)!;
+    const group = takeoff.groups.find((g) => g.key === last.groupKey)!;
+    const mitre = group.options.mitreIn;
+    expect(mitre, "the panel over the chamfer must be mitred").toBeDefined();
+    /* ⚠ THE ASSERTION THAT CATCHES THE FLIP. The 4ft chamfer is 48in, and it
+       is the panel's FAR edge (the one deeper into the run) that loses all of
+       it. Reverse the flag and the whole cut moves to the END, mirroring the
+       deck into the opposite wall at exactly the same area. */
+    expect(mitre!.startFarIn).toBeCloseTo(48, 6);
+    expect(mitre!.endNearIn).toBeCloseTo(0, 6);
+    expect(mitre!.endFarIn).toBeCloseTo(0, 6);
+    /* The chamfer is a 45° line, so the pull-back grows exactly one inch per
+       inch along the run — 15.5in of panel, 15.5in of extra set-back. */
+    expect(mitre!.startFarIn - mitre!.startNearIn).toBeCloseTo(last.widthIn, 6);
+  });
+
+  it("and the area is the chamfered building's, either way", () => {
+    /* Which is exactly why the area alone cannot be the test: 320 less the
+       chamfer's 8 sq ft is 312 whichever side it is taken off. */
+    const takeoff = computeDeckPanelTakeoff({
+      footprint: chamferedTallBox(),
+      depthIn: 15.5,
+      roofForm: "shed",
+      roofPitchIn12: 4,
+      roofEaveHeightFt: 10,
+      roofGableEndInsetIn: 0,
+    });
+    expect(takeoff.coverageSqFt.floor).toBeCloseTo(16 * 20 - (4 * 4) / 2, 1);
   });
 });

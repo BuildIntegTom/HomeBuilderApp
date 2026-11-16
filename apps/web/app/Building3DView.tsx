@@ -679,21 +679,46 @@ function renderSimplifiedSlot(
 function DeckOutlinePrism({
   widthFt,
   sectionFt,
+  mitreFt,
   color,
 }: {
   widthFt: number;
   sectionFt: { yFt: number; zFt: number }[];
+  /**
+   * ⚠ **THE PLAN MITRE, which this prism cannot get from the section.**
+   *
+   * `sectionFt` is the panel's silhouette in DEPTH and SPAN, extruded across
+   * the width. A mitre is a cut in the other plane entirely — width against
+   * span — so a mitred panel drew here as its full rectangle while the framed
+   * view beside it drew the cut members. Measured on the 16ft Octagon: the
+   * box view's floor deck was the bounding SQUARE under an octagonal
+   * building, which is exactly the overhang the cut removes.
+   *
+   * The fix is a SHEAR rather than a new mesh: the mitre is linear across the
+   * width, so clamping each ring's span to its own edge's cut gives the true
+   * solid. Undefined leaves the prism exactly as it was.
+   */
+  mitreFt?: { startNearFt: number; startFarFt: number; endNearFt: number; endFarFt: number; lengthFt: number };
   color: string;
 }) {
   const geometry = useMemo(() => {
     const n = sectionFt.length;
     const positions = new Float32Array(n * 2 * 3);
+    /* Each ring's own span window. Clamping (rather than shifting) is what
+       keeps a section that is already bevelled in depth — a roof's plumb end
+       — from being pushed through itself; it is only ever tightened. */
+    const clampTo = (zFt: number, startFt: number, endFt: number) =>
+      Math.min(Math.max(zFt, startFt), endFt);
     sectionFt.forEach(({ yFt, zFt }, i) => {
+      const nearZFt = mitreFt
+        ? clampTo(zFt, mitreFt.startNearFt, mitreFt.lengthFt - mitreFt.endNearFt)
+        : zFt;
+      const farZFt = mitreFt ? clampTo(zFt, mitreFt.startFarFt, mitreFt.lengthFt - mitreFt.endFarFt) : zFt;
       positions[i * 3] = 0;
-      positions[i * 3 + 1] = zFt;
+      positions[i * 3 + 1] = nearZFt;
       positions[i * 3 + 2] = yFt;
       positions[(i + n) * 3] = widthFt;
-      positions[(i + n) * 3 + 1] = zFt;
+      positions[(i + n) * 3 + 1] = farZFt;
       positions[(i + n) * 3 + 2] = yFt;
     });
     const indices: number[] = [];
@@ -712,7 +737,7 @@ function DeckOutlinePrism({
     geom.setIndex(indices);
     geom.computeVertexNormals();
     return geom;
-  }, [widthFt, sectionFt]);
+  }, [widthFt, sectionFt, mitreFt]);
 
   return (
     <mesh geometry={geometry}>
@@ -2180,7 +2205,15 @@ export default function Building3DView({
            * Both views now extrude the SAME outline the framed view is built
            * against, so they cannot disagree about the shape again.
            */
-          outlineIn: { widthIn: instance.widthIn, section: group.sectionIn, capSection: group.capSectionIn },
+          outlineIn: {
+            widthIn: instance.widthIn,
+            section: group.sectionIn,
+            capSection: group.capSectionIn,
+            /* The plan cut, which the section cannot carry — see
+               `DeckOutlinePrism`'s own `mitreFt`. */
+            mitreIn: group.options.mitreIn,
+            lengthIn: group.options.lengthIn,
+          },
           /* ⚠ **THE EAVE CAP IS DRAWN NOW.** It was held out while its pieces
              were all stacked at the panel's end rather than placed as a true
              L — drawing them would have put the web, the seat and every
@@ -3531,6 +3564,17 @@ export default function Building3DView({
                     <DeckOutlinePrism
                       widthFt={outlineIn.widthIn / IN_PER_FT}
                       sectionFt={outlineIn.section.map((c) => ({ yFt: c.yIn / IN_PER_FT, zFt: c.zIn / IN_PER_FT }))}
+                      mitreFt={
+                        outlineIn.mitreIn
+                          ? {
+                              startNearFt: outlineIn.mitreIn.startNearIn / IN_PER_FT,
+                              startFarFt: outlineIn.mitreIn.startFarIn / IN_PER_FT,
+                              endNearFt: outlineIn.mitreIn.endNearIn / IN_PER_FT,
+                              endFarFt: outlineIn.mitreIn.endFarIn / IN_PER_FT,
+                              lengthFt: outlineIn.lengthIn / IN_PER_FT,
+                            }
+                          : undefined
+                      }
                       color={PANEL_TYPE_COLORS.standard}
                     />
                     {/* ⚠ **And the EAVE CAP**, which is why these two views

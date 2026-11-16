@@ -1,8 +1,12 @@
 import {
+  clipDeckPanelsToFootprint,
   deckPanelPlacements,
+  deckRunSplitPointsIn,
   footprintSpanAndRun,
+  planDeckRunWidths,
   simpleRoofPlanes,
   type CompassDirection,
+  type DeckPanelCut,
   type Footprint,
   type RoofForm,
 } from "@building-integrity/geometry";
@@ -10,11 +14,15 @@ import {
   buildFloorRoofPanelMembers,
   buildRoofPanelCapMembers,
   columnBearingGirtPositionsIn,
+  FLOOR_ROOF_PANEL_WIDTH_IN,
+  floorRoofPanelCutLengthIn,
+  floorRoofPanelMinimumWidthIn,
   floorRoofPanelOutlineSection,
   planFloorRoofPanelRun,
   ridgeBeamLayout,
   roofPanelCapOutlineSection,
   roofTopAboveRooflineIn,
+  type FloorRoofPanelMitre,
   type FloorRoofPanelOptions,
   type FloorRoofPanelRole,
   type FloorRoofPanelRunPlan,
@@ -86,6 +94,17 @@ export interface DeckPanelTakeoffGroup {
   role: FloorRoofPanelRole;
   widthIn: number;
   spanIn: number;
+  /**
+   * ⚠ **What the SHOP cuts to — the panel's LONG POINT.**
+   *
+   * Equal to `spanIn` on every square panel, which is every panel on a box
+   * building. On a mitred one `spanIn` is the ENVELOPE and this is the longest
+   * edge inside it: on the 16ft Octagon's leading deck panel, 135.75in against
+   * a 192in envelope. Carried as its own field rather than recomputed at the
+   * sheet, so the number on the drawing and the number in the model cannot
+   * drift apart.
+   */
+  cutLengthIn: number;
   /** The run the first copy belongs to, for the sheet's "panel N of M across
    * a 40ft run" line and its sheathing note. */
   runIndex: number;
@@ -176,6 +195,18 @@ function optionsKey(o: FloorRoofPanelOptions, role: FloorRoofPanelRole): string 
     (o.extraStructuralGirtsAtIn ?? []).map((v) => v.toFixed(2)).join("+") || "none",
     o.pitchIn12 === undefined ? "flat" : o.pitchIn12.toFixed(3),
     o.bearingSeatDepthIn === undefined ? "noseat" : o.bearingSeatDepthIn.toFixed(3),
+    /* ⚠ **THE MITRE IS PART OF THE IDENTITY, and leaving it out cut eight
+       panels in ten to the wrong shape.** Measured on the 16ft Octagon the
+       first time this was wired without it: ten floor panels collapsed into
+       three groups, and a group builds ONE member set for every copy — so the
+       panels over the far corner were fabricated from the near corner's cut.
+       Two panels of the same width and span are only the same panel if the
+       building takes the same bite out of both. */
+    o.mitreIn
+      ? [o.mitreIn.startNearIn, o.mitreIn.startFarIn, o.mitreIn.endNearIn, o.mitreIn.endFarIn]
+          .map((v) => v.toFixed(3))
+          .join("/")
+      : "square",
   ].join("-");
 }
 
@@ -209,6 +240,53 @@ function optionsKey(o: FloorRoofPanelOptions, role: FloorRoofPanelRole): string 
  * This function adds what only the building knows: where each panel lands in
  * the world, which girts a column puts in it, and what its members are.
  */
+/**
+ * Turn one clipped panel into the mitre its members are built from.
+ *
+ * ⚠ **THE PANEL'S OWN Z RUNS BACKWARDS ON ONE OF THE TWO ORIENTATIONS, and
+ * this is the trap of the whole wiring.** `deckPanelPlacements` lays a run
+ * two ways: with `axis === "y"` the panel is anchored at `(minX, minY)`
+ * unrotated, so its local Z counts up from `minY` — exactly the direction
+ * `deckSpanRangeFtAt` measures. With `axis === "x"` the panel is anchored at
+ * **maxX** and yawed 90°, so its local Z counts DOWN from `maxX` while the
+ * clip still measures up from `minX`. Feeding the clip straight through would
+ * mirror the cut: the right AREA, taken off the wrong wall.
+ *
+ * ⚠ **AND NO OCTAGON CAN CATCH IT — measured, not assumed.** An octagon is
+ * symmetric across the span as well as along the run, so swapping a panel's
+ * two ends is a no-op on every panel of one. Reversing this flag left the
+ * whole octagon suite green. The test that does catch it builds a box with a
+ * single chamfered corner by hand; see *"which SIDE of the panel the cut
+ * lands on"* in `deckPanelTakeoff.test.ts`. Until the draw-wall tool can make
+ * such a shape this flip is defensive rather than load-bearing, which is
+ * worth knowing before anyone "simplifies" it away.
+ *
+ * ⚠ **`lengthIn` stays the panel's full envelope** (`spanIn`), so the mitre
+ * is expressed as a pull-back from each end rather than as a new length. See
+ * `FloorRoofPanelOptions.mitreIn`.
+ *
+ * Returns undefined when nothing is cut, so a box building never carries a
+ * mitre field at all — which is what keeps its group keys unchanged.
+ */
+function mitreFromCut(cut: DeckPanelCut, spanIn: number, spanRunsBackwards: boolean): FloorRoofPanelMitre | undefined {
+  const nearStartIn = spanRunsBackwards ? spanIn - cut.nearEndIn : cut.nearStartIn;
+  const nearEndIn = spanRunsBackwards ? spanIn - cut.nearStartIn : cut.nearEndIn;
+  const farStartIn = spanRunsBackwards ? spanIn - cut.farEndIn : cut.farStartIn;
+  const farEndIn = spanRunsBackwards ? spanIn - cut.farStartIn : cut.farEndIn;
+  const mitre: FloorRoofPanelMitre = {
+    startNearIn: nearStartIn,
+    startFarIn: farStartIn,
+    endNearIn: spanIn - nearEndIn,
+    endFarIn: spanIn - farEndIn,
+  };
+  const cutsAnything =
+    Math.abs(mitre.startNearIn) > 1e-6 ||
+    Math.abs(mitre.startFarIn) > 1e-6 ||
+    Math.abs(mitre.endNearIn) > 1e-6 ||
+    Math.abs(mitre.endFarIn) > 1e-6;
+  return cutsAnything ? mitre : undefined;
+}
+
 export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanelTakeoff {
   const { footprint, depthIn, roofForm, roofPitchIn12, roofEaveHeightFt, roofTallSideNorth, roofGableEndInsetIn } =
     input;
@@ -256,16 +334,43 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
   let floorRefusal: string | null = null;
   let floorCoverageSqFt = 0;
   {
-    const { spanFt, runFt } = footprintSpanAndRun(footprint);
+    const { spanFt, runFt, axis } = footprintSpanAndRun(footprint);
+    /* ⚠ **WHERE THE RUN HAS TO LAND A JOINT**, so that no panel straddles a
+       corner of the building — his cut-to-fit decision of 2026-11-15. Empty
+       on a box, which is what keeps every rectangle building planning its
+       widths exactly as it did (the 24in module and the redistributed tail),
+       byte for byte. */
+    const splitAtIn = deckRunSplitPointsIn(footprint);
+    const forcedWidthsIn =
+      splitAtIn.length > 0
+        ? planDeckRunWidths(
+            runFt * IN_PER_FT,
+            splitAtIn,
+            floorRoofPanelMinimumWidthIn(true),
+            /* ⚠ His own floor module, 24in, as the CEILING for a segment — not
+               the 48in a wall panel uses. A segment is divided into as few
+               equal panels as fit under it, so the widths stay as near 24 as
+               a corner-bounded stretch allows. */
+            FLOOR_ROOF_PANEL_WIDTH_IN,
+            depthIn,
+          )
+        : undefined;
     const plan = planFloorRoofPanelRun({
       kind: "floor",
       runLengthIn: runFt * IN_PER_FT,
       spanIn: spanFt * IN_PER_FT,
       depthIn,
+      forcedWidthsIn,
     });
     floorRefusal = plan.refusal;
     if (plan.refusal === null) {
       const placed = deckPanelPlacements(
+        footprint,
+        plan.instances.map((i) => i.widthIn),
+      );
+      /* The cut itself: how far the building reaches across the span at each
+         panel's two edges. A box returns every panel full-span and square. */
+      const cuts = clipDeckPanelsToFootprint(
         footprint,
         plan.instances.map((i) => i.widthIn),
       );
@@ -283,6 +388,8 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
         });
         for (const p of placed.placements) {
           const planned = plan.instances[p.index]!;
+          const cut = cuts[p.index];
+          const mitreIn = cut ? mitreFromCut(cut, p.spanIn, axis === "x") : undefined;
           const options: FloorRoofPanelOptions = {
             kind: "floor",
             widthIn: p.widthIn,
@@ -295,8 +402,16 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             extraStructuralGirtsAtIn: columnGirtAlongIn
               .filter((alongIn) => alongIn >= p.atIn && alongIn < p.atIn + p.widthIn)
               .map(() => p.spanIn / 2),
+            ...(mitreIn ? { mitreIn } : {}),
           };
-          floorCoverageSqFt += (p.widthIn / IN_PER_FT) * (p.spanIn / IN_PER_FT);
+          /* ⚠ **THE AREA IS THE TRAPEZOID'S, NOT THE RECTANGLE'S**, and this
+             is the line that stops the deck overclaiming. Measured before it:
+             on the 16ft Octagon the deck read 256 sq ft against the building's
+             212.1 — 20.7% over, and that number reaches the price. */
+          floorCoverageSqFt += cut
+            ? ((cut.nearEndIn - cut.nearStartIn + (cut.farEndIn - cut.farStartIn)) / 2 / IN_PER_FT) *
+              (p.widthIn / IN_PER_FT)
+            : (p.widthIn / IN_PER_FT) * (p.spanIn / IN_PER_FT);
           push(
             {
               id: `floor-${p.index}`,
@@ -457,6 +572,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
       role,
       widthIn: options.widthIn,
       spanIn: options.lengthIn,
+      cutLengthIn: floorRoofPanelCutLengthIn(options),
       runIndex,
       options,
       /* Built ONCE per unique panel, not once per copy — the whole point of
