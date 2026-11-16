@@ -306,3 +306,124 @@ export function shedTallWallId(footprint: Footprint, options: SimpleRoofOptions)
   }
   return bestId;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   WHAT THE ROOF IS DOING OVER EACH WALL
+
+   > *"Octagon roofs does not meet, correct. I like the shed style on the
+   > octagon though as an option. I think octagon shed is possible, there's
+   > just going to be some very unique gable panels."* — Tommy, 2026-11-15
+
+   ⚠ **Every gable row in this app is built on one assumption that is only
+   true for a box: that a gable wall runs the full way across the roof, so
+   both of its ends sit at the eave.** `computeGableTiledRow` hard-anchors
+   them there. On a rectangle that is right — the gable walls ARE the short
+   walls, corner to corner under the slope.
+
+   On an octagon it is wrong on every wall. The E facet spans only the middle
+   third of the building's depth, so the roof over its two corners is already
+   45in and 19in up a 16ft shed — and the app draws a triangle from 27in down
+   to nothing, meeting the roof at neither end. The four diagonal facets get
+   no row at all.
+
+   These two functions answer the question the gable row should have been
+   asking all along: **how high is the roof at this wall's two corners.**
+   Geometry, so that the gable row, the elevation and the 3D view cannot each
+   have their own opinion — and so the same question can be put to a ring
+   roof when the courtyards are built.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The roof's height in feet at a point on the plan, or `null` if this roof
+ * has no planes to stand on.
+ *
+ * ⚠ **Sampled off the planes themselves, never re-derived from the pitch.**
+ * The planes already encode the ridge axis, which way a shed falls and where
+ * a peak splits; a second derivation here is how the roof and the walls under
+ * it start disagreeing. A point outside every plane's span clamps to the
+ * nearest edge rather than extrapolating — the planes cover the footprint's
+ * bounding box, so this only bites on floating-point slop at a corner.
+ */
+export function roofHeightFtAt(point: Point, roof: SimpleRoofResult): number | null {
+  if (roof.planes.length === 0) return null;
+  /* The roof falls across the ridge, so height varies along the OTHER axis. */
+  const along = (p: Point) => (roof.ridgeAxis === "x" ? p.y : p.x);
+  const here = along(point);
+
+  let best: number | null = null;
+  let bestOutsideBy = Infinity;
+  for (const plane of roof.planes) {
+    const lowAt = along(plane.lowStart);
+    const highAt = along(plane.highStart);
+    /* A plane with no extent along the fall axis is flat; it answers with its
+       own height and cannot be interpolated. */
+    if (Math.abs(highAt - lowAt) < 1e-9) {
+      if (bestOutsideBy > 0) {
+        best = plane.lowHeightFt;
+        bestOutsideBy = 0;
+      }
+      continue;
+    }
+    const t = (here - lowAt) / (highAt - lowAt);
+    const outsideBy = t < 0 ? -t : t > 1 ? t - 1 : 0;
+    if (outsideBy < bestOutsideBy) {
+      bestOutsideBy = outsideBy;
+      const clamped = Math.min(Math.max(t, 0), 1);
+      best = plane.lowHeightFt + clamped * (plane.highHeightFt - plane.lowHeightFt);
+    }
+  }
+  return best;
+}
+
+/** How far the roof stands above the eave at one wall's two corners. */
+export interface WallRoofTop {
+  wallId: string;
+  /** At the wall's START corner, in inches above `eaveHeightFt`. */
+  startAboveEaveIn: number;
+  /** At its END corner. */
+  endAboveEaveIn: number;
+  /** The taller of the two — what has to be filled for this wall to be
+   *  closed. 0 means the wall is already at the roof and needs nothing. */
+  tallerAboveEaveIn: number;
+}
+
+/**
+ * Every wall of a footprint, with the roof's height above the eave at each of
+ * its two corners.
+ *
+ * ⚠ **It returns ALL of them, including the ones that need nothing**, and the
+ * filtering is deliberately left to the caller. Two different callers want
+ * two different subsets — the gable row wants the walls that need a row and
+ * not the shed's tall wall (which the cross-tilt row already closes, see
+ * `shedTallWallId`), while a review or an audit wants to see the whole
+ * building including the walls that are correctly empty. A function that
+ * pre-filtered would force one of them to re-derive the other.
+ *
+ * ⚠ **On a rectangle this agrees with what the app already does**, which is
+ * the property that makes it safe to adopt: a rectangular shed's two gable
+ * walls come back 0 -> rise and rise -> 0, exactly the triangle the row
+ * already draws, and its eave wall comes back 0/0.
+ */
+export function wallRoofTopsFor(footprint: Footprint, roof: SimpleRoofResult, eaveHeightFt: number): WallRoofTop[] {
+  const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
+  const tops: WallRoofTop[] = [];
+  for (const wall of footprint.walls) {
+    const a = byId.get(wall.startCorner);
+    const b = byId.get(wall.endCorner);
+    if (!a || !b) continue;
+    const startFt = roofHeightFtAt(a, roof);
+    const endFt = roofHeightFtAt(b, roof);
+    if (startFt === null || endFt === null) continue;
+    /* Never negative: a roof below its own eave is not a wall to fill, and
+       floating-point slop at a low corner must not read as one. */
+    const startAboveEaveIn = Math.max(0, (startFt - eaveHeightFt) * 12);
+    const endAboveEaveIn = Math.max(0, (endFt - eaveHeightFt) * 12);
+    tops.push({
+      wallId: wall.id,
+      startAboveEaveIn,
+      endAboveEaveIn,
+      tallerAboveEaveIn: Math.max(startAboveEaveIn, endAboveEaveIn),
+    });
+  }
+  return tops;
+}

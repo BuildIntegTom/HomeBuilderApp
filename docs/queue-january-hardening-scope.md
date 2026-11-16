@@ -109,4 +109,60 @@ one reaches at 4:12** — a roof his own rule refuses.
 
 ⚠ **Both Octagon tiles are Home tiles**, so this lands squarely on item 1 above.
 It is pinned by the test's last section so it stays visible and cannot change
-unnoticed. **What an octagon's roof should actually do is his call.**
+unnoticed.
+
+#### ⚠ HIS ANSWER, 2026-11-15 — the shed stays, and the gables get strange
+
+> *"Octagon roofs does not meet, correct. I like the shed style on the octagon
+> though as an option. I think octagon shed is possible, there's just going to
+> be some very unique gable panels."*
+
+**He is right that it is possible**, and the measurement says what "unique"
+means. On a 16ft octagon with a shed falling south, the roof's height above the
+eave at each wall's two corners is:
+
+| wall | roof above eave | what the row over it is |
+|------|-----------------|-------------------------|
+| N    | 64in -> 64in    | a **rectangle** 64in tall — level top, no slope at all |
+| NE   | 64in -> 45.2in  | a trapezoid, raked **across** the roof's fall |
+| E    | 45.2in -> 18.8in | a trapezoid — **today the app draws this one from 27in down to 0** |
+| SE   | 18.8in -> 0in   | a trapezoid running out to nothing |
+| S    | 0in -> 0in      | nothing, correctly |
+| SW, W, NW | mirrors of SE, E, NE | |
+
+So **seven of the eight walls carry a row**, not two, and **not one of them
+starts at the eave**. That is the whole fault in one line: `computeGableTiledRow`
+hard-anchors both ends at `eaveHeightIn`, which is true for a box and false for
+every octagon wall.
+
+⚠ **The panels themselves are not new geometry.** `buildGablePanelMembers`
+already takes an arbitrary left and right height, equal heights included, so the
+N wall's rectangle and the NE wall's skew trapezoid are both panels it can
+already make. What is missing is **per-wall end heights sampled off the roof
+plane** and **a row on every wall under the roof**, not a new kind of panel.
+The "unique" part he means is real but it is in the CUT, not in the type: a NE
+wall's top edge is a straight line lying in the roof plane while the wall runs
+at 45 degrees to the fall, so its rake is neither the pitch nor level.
+
+#### ⚠ The 32ft Octagon cannot be a shed at any pitch — measured
+
+A shed must carry one run of panels clear across. An 18ft roof panel reaches:
+
+| pitch | ground run reached |
+|-------|--------------------|
+| 2:12  | 17.76 ft |
+| 4:12  | 17.08 ft |
+| 6:12  | 16.10 ft |
+| 8:12  | 14.98 ft |
+
+The **16ft Octagon needs 16.00ft, so its shed works** up to about 6:12 — his
+option is already physically available there, and at the 4:12 default. The
+**32ft Octagon needs 32.00ft, which no pitch reaches**; `decideRoofForm` puts it
+on a peak (16ft a side, comfortably inside) and its own refusal text for the
+impossible case names the reason: *"this roof needs a bearing line between the
+wall and the ridge, which nothing models yet."*
+
+⚠ So "shed on an octagon" is a 16ft-tile answer. The 32ft tile is a peaked
+octagon — **which needs the same per-wall rows**, since a peak over an octagon
+leaves the NE/SE/SW/NW facets just as unroofed. The work below serves both
+forms; only which form each tile gets differs.
