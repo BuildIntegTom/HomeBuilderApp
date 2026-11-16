@@ -54,6 +54,8 @@ describe("⚠ seedGableWindowsForFootprint refuses a gable too short for a windo
       "truss-heel",
       COLUMN_TOTAL_WIDTH_IN,
       minTileRiseForWindowIn,
+      /* The app's own `columnTopDropIn` — 0, the column runs to the peak. */
+      0,
     );
     expect(seeded).toEqual({});
   });
@@ -83,6 +85,7 @@ describe("⚠ seedGableWindowsForFootprint refuses a gable too short for a windo
       "truss-heel",
       COLUMN_TOTAL_WIDTH_IN,
       minTileRiseForWindowIn,
+      0,
       () => 0,
     );
     expect(Object.keys(seeded).sort()).toEqual([...gableWalls].sort());

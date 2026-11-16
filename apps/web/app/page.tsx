@@ -474,6 +474,7 @@ import {
   gableLocalEdgeHeightIn,
   gableLocalTallerHeightIn,
   gableTileRoofTopLiftIn,
+  gableProfilePointsForWall,
   gableWindowCapHeightsIn,
   resolveGableProfilePoints,
   resolveHeelSeat,
@@ -4347,6 +4348,11 @@ export default function LayoutEditor() {
          or the window's head stands through its own roofline — which is what
          seeding onto a 28in tile did on 2026-11-15. */
       standardWindowHeightDefaultIn.value + GABLE_PANEL_MIN_HEIGHT_IN,
+      /* ⚠ The same 0 the real row below is built with — the column panel runs
+         full height to the peak. Omitted, the seeder took
+         `computeGableTiledRow`'s 12in default and judged a ridge-column tile
+         12in shorter than the one the app actually builds. */
+      0,
     );
     /* ⚠ **REPLACES, it does not merge — a stored gable window is stale state
        on a re-derive, exactly like the ridge column override cleared a few
@@ -7607,19 +7613,17 @@ export default function LayoutEditor() {
   /** This wall's roof-profile anchor points, in `computeGableTiledRow`'s own
    * absolute coordinate space. Extracted so the gable row and the run-stop
    * refusal below cannot build them differently. */
-  const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] => {
-    const wallLengthIn = wall.lengthFt * 12;
-    const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
-    return roofProfilePointHeightsFt.map((heightFt, i) => {
-      const defaultXIn = roofProfilePointHeightsFt.length === 1 ? wallLengthIn / 2 : ((i + 1) * wallLengthIn) / 3;
-      const storedXIn = storedPositions[i];
-      return {
-        xIn: storedXIn ?? defaultXIn,
-        heightIn: gableEaveHeightIn + heightFt * 12,
-        isExplicitPosition: storedXIn != null,
-      };
-    });
-  };
+  const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] =>
+    /* ⚠ **Delegated, not inlined** — `seedGableWindowsForFootprint` builds
+       this same row to decide which tile may hold a window, and when the two
+       constructions were separate they disagreed about whether a stored point
+       at x = 0 meant a shed. See `gableProfilePointsForWall`. */
+    gableProfilePointsForWall(
+      wall.lengthFt * 12,
+      roofProfilePointHeightsFt,
+      gableProfilePositionsInByWallId[wall.id] ?? [],
+      gableEaveHeightIn,
+    );
 
   /**
    * Gable windows a candidate stop would CUT THROUGH on this wall.

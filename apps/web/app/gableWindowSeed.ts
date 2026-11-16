@@ -8,6 +8,7 @@ import {
   type RoofBearingAnchorMode,
 } from "@building-integrity/geometry";
 import { wallGeometryFor as wallGeometryForPure } from "@building-integrity/geometry";
+import { gableProfilePointsForWall } from "./gableProfilePoints";
 
 /**
  * ⚠ **ONE GABLE WINDOW PER 12FT OF WALL, SEEDED WITH THE BUILDING.**
@@ -66,6 +67,22 @@ export function seedGableWindowsForFootprint(
    * and `GABLE_PANEL_MIN_HEIGHT_IN`) and geometry owns neither.
    */
   minTileRiseForWindowIn: number,
+  /**
+   * ⚠ **The same `columnTopDropIn` the app's own row is built with**, which
+   * for this app is 0 — the column panel runs full height to the peak (Tommy,
+   * 2026-11-12: *"The housing of the beam goes all the way to the peak and
+   * matches the other panels"*).
+   *
+   * Passed rather than defaulted because `computeGableTiledRow` defaults it to
+   * `GABLE_COLUMN_FLAT_TOP_DROP_IN` (12in), and omitting it here made the
+   * seeder's ridge-column tile **12in shorter** than the one the app builds —
+   * a second, independent way for this row to disagree with the real one. It
+   * is the identical pair of dropped arguments (`wallSlotsIn` and
+   * `columnTopDropIn`) that `computeGableTiledRow`'s own clamped-row recursion
+   * had, and which was fixed there on 2026-11-14 without this copy being
+   * looked at.
+   */
+  columnTopDropIn: number,
   randomFn?: () => number,
 ): Record<string, GableWindowReservation[]> {
   const seeded: Record<string, GableWindowReservation[]> = {};
@@ -100,11 +117,15 @@ export function seedGableWindowsForFootprint(
        but not exactly — `tileAtJoints` merges a tile under its minimum and
        subdivides a bay over the target — and an ordinal past the end is a
        window that silently never appears. */
-    const positionIn = profilePositionsInByWallId[wallId]?.[0] ?? wallLengthIn / 2;
+    /* ⚠ **Through the SHARED construction, never a local one** — see
+       `gableProfilePointsForWall`, which exists because this line used to
+       build its own point and omitted `isExplicitPosition`, so the seeder did
+       not recognise a shed and tiled a row with one extra tile in it. Every
+       `beforeTileCount` it then returned was off by one on every shed. */
     const tiles = computeGableTiledRow(
       wallLengthIn,
       gableEaveHeightIn,
-      [{ xIn: positionIn, heightIn: gableEaveHeightIn + riseFt * 12 }],
+      gableProfilePointsForWall(wallLengthIn, [riseFt], [profilePositionsInByWallId[wallId]?.[0]], gableEaveHeightIn),
       standardWidthIn,
       insetIn,
       true,
@@ -115,12 +136,45 @@ export function seedGableWindowsForFootprint(
       0,
       wallLengthIn,
       spans,
+      columnTopDropIn,
     );
     /* The ordinal space `beforeTileCount` counts in: real tiles only, each
        with its own RISE above the eave — see `seedGableWindows`, which refuses
-       a tile too short to hold a window under its own roofline. */
+       a tile too short to hold a window under its own roofline.
+     *
+     * ⚠ **THE RIDGE COLUMN IS NOT IN THAT SPACE, and leaving it in shifted
+     * every ordinal past it.** `seedGableWindows` says so in its own first
+     * parameter — *"safety gaps and the ridge column excluded"* — and adds
+     * *"the ridge column is excluded by construction, since it is not in the
+     * tile ordinal space at all."* That was an assumption about this caller,
+     * not something the function could enforce, and this caller filtered only
+     * the safety gaps. A column reservation does not displace an ordinal (it
+     * shrinks the two segments meeting at the peak instead, see
+     * `columnReservationWidthIn`), so counting it made this row offer one more
+     * ordinal than the placer has slots for.
+     *
+     * ⚠ **Measured 2026-11-15 on the Cindy's East gable**, an 11-tile row with
+     * its column at index 5. Every ordinal from the column rightward landed
+     * one tile late, and the last one landed nowhere:
+     *
+     * | ordinal | the rise this row judged | the tile the window got |
+     * |---------|--------------------------|-------------------------|
+     * | 0 – 4   | — | the right one |
+     * | 5       | 65.73in (**the column itself**) | x221.8, 65.73in |
+     * | 7       | 51.66in | x305.8, **37.60in** |
+     * | 10      | 5.19in | **none at all — dropped** |
+     *
+     * So ordinal 7 passed the 49.5in height guard on a 51.66in tile and the
+     * window was built on a 37.60in one: **10.4in of window standing through
+     * its own roofline with no panel over it**, which is the same visible
+     * fault as the shed bug above reached by a different route. It bit only
+     * PEAKED roofs, because only a peaked roof reserves a column — between the
+     * two, every gable template was affected.
+     *
+     * ⚠ It could also seed "onto the column" (ordinal 5 above), which is not a
+     * tile a window may occupy at all. Excluding it closes that too. */
     const risesIn = tiles
-      .filter((t) => !t.isSafetyGap)
+      .filter((t) => !t.isSafetyGap && !t.isColumn)
       .map((t) => Math.max(t.leftHeightIn, t.rightHeightIn) - gableEaveHeightIn);
     const windows = seedGableWindows(risesIn, wallLengthIn, standardWidthIn, minTileRiseForWindowIn, randomFn);
     if (windows.length > 0) seeded[wallId] = windows;

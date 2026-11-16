@@ -62,7 +62,51 @@ against the gable's own top. That disagreement is now reported rather than
 picked between.
 
 ⚠ **He said "glitches", plural, and one fix is not a clean bill of health.**
-The gable row is the most-edited geometry in the app (ten separate gable
-entries in the memory index since 2026-10-29). What has NOT been done is a
-systematic sweep of every template and every roof form looking for more. That
-is the next piece of this item, not a closed one.
+That sweep has now been done — `apps/web/app/gableTemplateSweep.test.ts`, which
+walks every Home tile through the real draw pipeline. It found **two more**, and
+one fault it could not fix.
+
+#### The two it fixed, both the same symptom from different directions
+
+Both were in `seedGableWindowsForFootprint`, which tiles the gable row a
+**second** time to decide which tile may hold a window — and in both cases it
+judged a different row than the app builds, so a 48in window ended up on a tile
+too short to carry it.
+
+- **Every SHED** (Tiny House, both Octagons). It built its roof-profile point
+  without `isExplicitPosition`, so a point stored at x = 0 — which is exactly
+  how this app stores a shed — was not recognised as one. Its row grew a
+  spurious 1in tile rising 0 to 64in and every ordinal shifted by one. On the
+  Tiny House, ordinal 2 was judged at 59.14in and built at **42.83in: 5.17in of
+  window standing through its own roofline.** Roughly **one draw in two**.
+- **Every PEAK** (The Tank, The Cindy). It counted the ridge column as an
+  ordinal, which `seedGableWindows` documents as excluded *"by construction"* —
+  an assumption about its caller that the caller broke. On the Cindy every
+  ordinal from the column rightward landed one tile late (judged 51.66in, built
+  **37.60in: 10.4in proud**) and the **last ordinal was dropped entirely**, so a
+  window the seeder promised was never built at all.
+
+⚠ **Neither was reproducible on demand, which is exactly why they read as
+"glitches"**: which ordinal gets a window is random. The test therefore does not
+draw — it forces a window onto every ordinal that could ever hold one.
+
+#### ⚠ The one it did NOT fix: an octagon's roof does not meet its walls
+
+**Reported, not resolved, because it is a building decision and not a code
+question.** `gableEndWallIdsFor` returns the walls facing exactly E/W (or N/S) —
+**two of an octagon's eight**. Of the other six, five have roof above them and
+**no gable row under it**: open wall of up to **64in on the 16ft Octagon and
+128in — 10ft 8in — on the 32ft one.** And the two that do get a row have it
+anchored at the eave at both ends, while the roof over those corners is already
+45in / 90in up the slope, because an octagon's E facet spans only the middle
+third of the building's depth.
+
+The same assumption misfeeds `decideRoofForm`: the app hands it the gable
+WALL's length, which on a box is the across-the-ridge span and on an octagon is
+one facet. At 32ft across it is asked about **13.25ft**, answers **"shed"**, and
+the app builds a shed that would need a **33.7ft roof panel against the 17.1ft
+one reaches at 4:12** — a roof his own rule refuses.
+
+⚠ **Both Octagon tiles are Home tiles**, so this lands squarely on item 1 above.
+It is pinned by the test's last section so it stays visible and cannot change
+unnoticed. **What an octagon's roof should actually do is his call.**

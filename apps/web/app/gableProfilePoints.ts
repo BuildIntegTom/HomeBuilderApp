@@ -1,4 +1,4 @@
-import { GABLE_SHED_SNAP_THRESHOLD_IN, type RoofBearingAnchorMode } from "@building-integrity/geometry";
+import { GABLE_SHED_SNAP_THRESHOLD_IN, type RoofBearingAnchorMode, type RoofProfilePoint } from "@building-integrity/geometry";
 import { roofTopAboveRooflineIn } from "@building-integrity/panel-catalog";
 
 export { GABLE_SHED_SNAP_THRESHOLD_IN };
@@ -9,6 +9,65 @@ export { GABLE_SHED_SNAP_THRESHOLD_IN };
  * flat-top (2-point) profile. */
 function defaultPointXIn(pointIndex: number, pointCount: number, wallWidthIn: number): number {
   return pointCount === 1 ? wallWidthIn / 2 : ((pointIndex + 1) * wallWidthIn) / 3;
+}
+
+/**
+ * ⚠ **THE ONE CONSTRUCTION OF A GABLE WALL'S ROOF-PROFILE POINTS**, shared so
+ * that nothing can tile a different roof than the app draws.
+ *
+ * It existed twice. `page.tsx`'s `gableProfilePointsFor` built the real one;
+ * `seedGableWindowsForFootprint` built its own, and **the two disagreed about
+ * whether the roof was a shed** — the seeder omitted `isExplicitPosition`, so
+ * a point stored at x = 0 (which is exactly how this app stores a shed, see
+ * `applyRoofDefaultsForFootprint`) was not recognised as one. `resolveAnchors`
+ * then kept it as an INTERNAL anchor at x = 0 alongside the left corner
+ * anchor at eave height, and the seeder's row grew a **spurious 1in tile
+ * rising 0 -> 64in** that the app's row does not have.
+ *
+ * ⚠ **The consequence was a real defect, measured 2026-11-15 on the Tiny
+ * House** — the first tile on the Home page. `beforeTileCount` is an ordinal
+ * into the row's real tiles, so one extra tile at the start shifted every
+ * ordinal by one:
+ *
+ * | ordinal | the seeder's row | the app's row |
+ * |---------|------------------|---------------|
+ * | 0       | 64.00in (w 1.0)  | 64.00in       |
+ * | 1       | 64.00in (w 14.5) | 58.83in       |
+ * | 2       | **59.14in**      | **42.83in**   |
+ *
+ * `seedGableWindows` approved ordinal 2 because 59.14in clears the 49.5in a
+ * 48in window plus a panel above it needs. The app then put that window on a
+ * 42.83in tile — **5.17in of window standing through its own roofline, with
+ * no panel over it.** Every gate passed: the seeder's height guard had run
+ * and said yes, about a tile that was not the one used.
+ *
+ * It reached **every shed template** (the Tiny House and both Octagons) and
+ * only a shed, because a peaked roof stores no position and both callers
+ * therefore passed `undefined` and agreed by accident. And it reads as an
+ * intermittent glitch rather than a bug because which ordinal is chosen is
+ * random, so the breach appears on some draws and not others.
+ *
+ * @param storedPositionsIn this wall's stored point positions; a gap means
+ * "auto-centred", which is **not** the same as a stored value that happens to
+ * equal the centre — only a stored one may snap to a shed.
+ */
+export function gableProfilePointsForWall(
+  wallLengthIn: number,
+  roofProfilePointHeightsFt: readonly number[],
+  /* ⚠ `null` as well as a hole: `page.tsx` stores these as
+     `(number | null)[]`, and `!= null` below is what makes the two the same
+     thing — an auto-centred point. */
+  storedPositionsIn: readonly (number | null | undefined)[],
+  gableEaveHeightIn: number,
+): RoofProfilePoint[] {
+  return roofProfilePointHeightsFt.map((heightFt, i) => {
+    const storedXIn = storedPositionsIn[i];
+    return {
+      xIn: storedXIn ?? defaultPointXIn(i, roofProfilePointHeightsFt.length, wallLengthIn),
+      heightIn: gableEaveHeightIn + heightFt * 12,
+      isExplicitPosition: storedXIn != null,
+    };
+  });
 }
 
 export interface ResolvedGableProfilePoints {
