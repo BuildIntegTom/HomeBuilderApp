@@ -19,6 +19,10 @@ function shiftAndPrefix(members: PanelMember[], deltaXIn: number, deltaZIn: numb
       // while the rest of the assembly correctly moved up to the header's
       // real height (Tommy: bracing "spawns awkwardly on the ground").
       trapezoidCornersIn: shiftTrapezoidCorners(m.position.trapezoidCornersIn, deltaXIn, deltaZIn),
+      /* ⚠ An oblique prism's FAR face moves with it. Shifting only the
+         near one leaves half the board behind — see
+         `trapezoidFarCornersIn`. */
+      trapezoidFarCornersIn: shiftTrapezoidCorners(m.position.trapezoidFarCornersIn, deltaXIn, deltaZIn),
     },
   }));
 }

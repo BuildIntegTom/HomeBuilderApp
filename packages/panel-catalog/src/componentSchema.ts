@@ -136,6 +136,45 @@ export interface MemberPosition {
    * which is every trapezoid written before 2026-11-01.
    */
   trapezoidDepthIn?: number;
+  /**
+   * ⚠ **The same four corners at the FAR depth face — an OBLIQUE prism, and
+   * the second half of a COMPOUND ("dual") bevel.**
+   *
+   * > *"can we make the top of Gable and dual beveled So that the roof can
+   * > meet it?"* — Tommy, 2026-11-16
+   *
+   * A plain trapezoid prism is a board raked in the panel's ELEVATION (X-Z)
+   * plane and run STRAIGHT through its depth. That describes a gable top whose
+   * roof plane is level across the wall — true for every wall of a box, false
+   * for most walls of an octagon, where the roof falls THROUGH the wall as
+   * well as along it. Measured on the 16ft Octagon shed at 4:12, four of the
+   * six facets carrying a gable row needed 3.653in of fall across their
+   * 15 1/2in depth and got none, so the roof could not sit on them.
+   *
+   * With this set, `trapezoidCornersIn` is the NEAR depth face
+   * (`yIn - depth/2`) and this is the FAR one (`yIn + depth/2`). Absent, the
+   * two faces are the same and the prism is straight — byte-identical to every
+   * trapezoid written before 2026-11-16.
+   *
+   * ⚠ **It has to be per-corner rather than one shear number, and the shear
+   * was tried first.** A top plate and the top skin have BOTH faces parallel
+   * to the roof plane, so a uniform shear describes them. A STUD does not: its
+   * top follows the plane while its bottom sits level on the bottom plate.
+   * Shearing it uniformly tipped its bottom as well, pushing it through the
+   * bottom skin — caught by the overlap audit on the first octagon facet
+   * built, and invisible in elevation.
+   *
+   * ⚠ **`memberPrism` has to be told.** Its exact-overlap argument rests on "a
+   * convex polygon extruded along one axis"; an oblique prism is still convex
+   * but is no longer that, so `membersOverlap` routes any pair involving one
+   * through an exact 3D test on these same corners instead of the 2D one.
+   *
+   * ⚠ Same perimeter order as `trapezoidCornersIn`, so `BOX_FACES` describes
+   * the topology unchanged. Meaningless without it, and ignored by the plan
+   * and section mechanisms — those run through different axes and would each
+   * need their own.
+   */
+  trapezoidFarCornersIn?: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
   /** An arbitrary n-gon PRISM's plan ring (member-space X-Y, absolute,
    * perimeter order, no repeated first point) — extruded UPWARD from
    * `position.zIn` by `actualDimsIn.thicknessIn`, so `zIn` is the prism's

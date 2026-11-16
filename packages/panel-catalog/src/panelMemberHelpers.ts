@@ -414,8 +414,19 @@ export function memberLocalCornersIn(member: PanelMember): [number, number, numb
        3 1/2in width. */
     const halfThicknessIn = (member.position.trapezoidDepthIn ?? member.actualDimsIn.thicknessIn) / 2;
     const centerDepthIn = member.position.yIn;
-    const near: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn - halfThicknessIn]);
-    const far: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn + halfThicknessIn]);
+    /* ⚠ **A COMPOUND BEVEL gives the two depth faces DIFFERENT corners** —
+       see `trapezoidFarCornersIn`. Absent, both faces read the same quad,
+       which is byte-identical to every trapezoid written before 2026-11-16.
+       The same two quads are read again by `memberPrism`, because the overlap
+       audit builds its own solid, and the two must not be allowed to
+       disagree about the shape of one board. */
+    const farCornersIn = member.position.trapezoidFarCornersIn ?? trapezoidCornersIn;
+    const near: [number, number, number][] = trapezoidCornersIn.map((c) => [
+      c.xIn,
+      c.zIn,
+      centerDepthIn - halfThicknessIn,
+    ]);
+    const far: [number, number, number][] = farCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn + halfThicknessIn]);
     return [...near, ...far];
   }
 

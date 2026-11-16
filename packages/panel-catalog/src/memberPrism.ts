@@ -1,5 +1,5 @@
 import type { PanelMember } from "./componentSchema";
-import { memberBoxSizeIn } from "./panelMemberHelpers";
+import { BOX_FACES, memberBoxSizeIn, memberLocalCornersIn } from "./panelMemberHelpers";
 
 /**
  * ⚠ EVERY MEMBER IN THIS APP IS A PRISM: a convex polygon extruded along one
@@ -40,6 +40,22 @@ export interface Prism {
   hi: number;
 }
 
+/**
+ * ⚠ **Is this member an OBLIQUE prism — one whose two depth faces are
+ * different shapes?** See `trapezoidFarCornersIn`.
+ *
+ * The 2D test below cannot describe one, so a pair involving an oblique member
+ * is routed through `convexSolidsOverlap` instead. Everything else keeps the
+ * exact 2D path it has always taken, unchanged and at the same cost.
+ */
+export function memberIsOblique(member: PanelMember): boolean {
+  const { trapezoidCornersIn, trapezoidFarCornersIn } = member.position;
+  if (!trapezoidCornersIn || !trapezoidFarCornersIn) return false;
+  return trapezoidFarCornersIn.some(
+    (c, i) => Math.abs(c.xIn - trapezoidCornersIn[i]!.xIn) > EPS || Math.abs(c.zIn - trapezoidCornersIn[i]!.zIn) > EPS,
+  );
+}
+
 /** A shared face is contact, not overlap. Tighter than the thinnest real
  * member and looser than float noise. */
 const EPS = 1e-6;
@@ -55,6 +71,9 @@ export function memberPrism(member: PanelMember): Prism {
        doc comment. Reading `thicknessIn` for a standing plate would make the
        overlap audit measure a solid 2in shallower than the one it draws. */
     const halfIn = (member.position.trapezoidDepthIn ?? member.actualDimsIn.thicknessIn) / 2;
+    /* ⚠ **The NEAR depth face only.** On an oblique member the far face is a
+       different quad and this prism is not the whole solid — which is why
+       `membersOverlap` sends such a pair to the 3D test rather than here. */
     return {
       axis: "y",
       polygon: member.position.trapezoidCornersIn.map((c) => ({ u: c.xIn, v: c.zIn })),
@@ -166,6 +185,82 @@ function plainBoxPrismAlongX(member: PanelMember): Prism | null {
 }
 
 /**
+ * ⚠ **EXACT intersection of two convex solids, from their eight corners** —
+ * the separating-axis theorem in 3D.
+ *
+ * Needed because a COMPOUND-BEVEL member is an oblique prism (see
+ * `trapezoidFarCornersIn`), and the 2D argument the rest of this file rests on
+ * — one polygon, one extrusion axis — does not describe one.
+ *
+ * ⚠ **A swept hull was tried first and is not good enough.** Approximating an
+ * oblique prism by the hull of its two end faces widens it in `v` by the whole
+ * cross rise, which on a 16ft Octagon facet closes the 3/4in between the top
+ * skin and the plate beneath it and the 0 between a stud and the plate above
+ * it. Every octagon gable panel would have reported overlaps it does not have,
+ * which is worse than no audit: the Review Log would have been unreadable.
+ *
+ * Axes tested: both solids' face normals, plus the cross products of their
+ * edge directions, which is the full set SAT needs for two convex polytopes.
+ * Degenerate axes (parallel edges) are skipped, as they are in the 2D version.
+ * A shared face is contact rather than overlap, same `EPS` and same meaning.
+ */
+function convexSolidsOverlap(a: [number, number, number][], b: [number, number, number][]): boolean {
+  const edgesOf = (corners: [number, number, number][]) => {
+    const out: [number, number, number][] = [];
+    for (const face of BOX_FACES) {
+      for (let i = 0; i < face.length; i++) {
+        const p = corners[face[i]! - 1]!;
+        const q = corners[face[(i + 1) % face.length]! - 1]!;
+        out.push([q[0] - p[0], q[1] - p[1], q[2] - p[2]]);
+      }
+    }
+    return out;
+  };
+  const normalsOf = (corners: [number, number, number][]) => {
+    const out: [number, number, number][] = [];
+    for (const face of BOX_FACES) {
+      const p = corners[face[0]! - 1]!;
+      const q = corners[face[1]! - 1]!;
+      const r = corners[face[2]! - 1]!;
+      const u: [number, number, number] = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+      const v: [number, number, number] = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
+      out.push([u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]);
+    }
+    return out;
+  };
+
+  const axes: [number, number, number][] = [...normalsOf(a), ...normalsOf(b)];
+  const ea = edgesOf(a);
+  const eb = edgesOf(b);
+  for (const p of ea) {
+    for (const q of eb) {
+      axes.push([p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]]);
+    }
+  }
+
+  for (const axis of axes) {
+    const len = Math.hypot(axis[0], axis[1], axis[2]);
+    if (len < EPS) continue;
+    let aMin = Infinity;
+    let aMax = -Infinity;
+    for (const c of a) {
+      const d = (c[0] * axis[0] + c[1] * axis[1] + c[2] * axis[2]) / len;
+      aMin = Math.min(aMin, d);
+      aMax = Math.max(aMax, d);
+    }
+    let bMin = Infinity;
+    let bMax = -Infinity;
+    for (const c of b) {
+      const d = (c[0] * axis[0] + c[1] * axis[1] + c[2] * axis[2]) / len;
+      bMin = Math.min(bMin, d);
+      bMax = Math.max(bMax, d);
+    }
+    if (aMax <= bMin + EPS || bMax <= aMin + EPS) return false;
+  }
+  return true;
+}
+
+/**
  * Do these two members occupy the same space?
  *
  * ⚠ Two prisms swept along different axes fall back to their bounding boxes,
@@ -173,8 +268,17 @@ function plainBoxPrismAlongX(member: PanelMember): Prism | null {
  * rather than letting a conservative answer pass for an exact one — and a
  * plumb cut against a plain box is re-swept rather than approximated, so it
  * never reaches that fallback.
+ *
+ * ⚠ **A pair involving a COMPOUND-BEVEL member goes through the 3D test**
+ * (`convexSolidsOverlap`), which is exact, and reads the same eight corners
+ * the 3D view and the .obj draw. Everything else keeps the 2D path unchanged,
+ * so no answer this app has ever given moves.
  */
 export function membersOverlap(a: PanelMember, b: PanelMember): { overlaps: boolean; mixedAxes: boolean } {
+  if (memberIsOblique(a) || memberIsOblique(b)) {
+    return { overlaps: convexSolidsOverlap(memberLocalCornersIn(a), memberLocalCornersIn(b)), mixedAxes: false };
+  }
+
   let pa = memberPrism(a);
   let pb = memberPrism(b);
 

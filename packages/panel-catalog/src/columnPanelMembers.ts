@@ -79,6 +79,10 @@ function shiftMembersX(members: PanelMember[], deltaXIn: number): PanelMember[] 
       ...m.position,
       xIn: m.position.xIn + deltaXIn,
       trapezoidCornersIn: shiftTrapezoidCorners(m.position.trapezoidCornersIn, deltaXIn, 0),
+      /* ⚠ An oblique prism's FAR face moves with it. Shifting only the
+         near one leaves half the board behind — see
+         `trapezoidFarCornersIn`. */
+      trapezoidFarCornersIn: shiftTrapezoidCorners(m.position.trapezoidFarCornersIn, deltaXIn, 0),
     },
   }));
 }

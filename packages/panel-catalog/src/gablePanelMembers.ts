@@ -178,7 +178,12 @@ function buildGableCornerStuds(
   depthIn: number,
   leftStudSpanIn: number,
   rightStudSpanIn: number,
-  topUndersideAtXIn: (xIn: number) => number,
+  /** The top skin's underside at a panel x AND a panel depth — see
+   *  `topUndersideAtIn`. A stud reads it at its own depth, which is what
+   *  makes a compound bevel land on the stud instead of over it. */
+  topUndersideAtIn: (xIn: number, yIn: number) => number,
+  /** Rise of the top plane per inch of depth. 0 on a box. */
+  crossSlope: number,
 ): PanelMember[] {
   const cornerXs: [number, number] = [0, widthIn - PLATE_2X4_THICKNESS_IN]; // [left edge, right edge]
   const cornerYs = [0, depthIn - PLATE_2X4_WIDTH_IN];
@@ -198,15 +203,27 @@ function buildGableCornerStuds(
       /* Both top corners, each read off the roofline at its own x — then
          clamped to the bottom plate, because a stud at a triangle's tip can
          have one corner above the bottom skin and the other below it. */
-      const nearTopZIn = Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(nearXIn));
-      const farTopZIn = Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(farXIn));
-      const cornersIn: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
-        { xIn: nearXIn, zIn: SKIN_THICKNESS_IN },
-        { xIn: farXIn, zIn: SKIN_THICKNESS_IN },
-        { xIn: farXIn, zIn: farTopZIn },
-        { xIn: nearXIn, zIn: nearTopZIn },
-      ];
-      const longPointIn = Math.max(nearTopZIn, farTopZIn) - SKIN_THICKNESS_IN;
+      /* ⚠ **A STUD'S TOP FOLLOWS THE PLANE AND ITS BOTTOM DOES NOT**, which
+         is why this reads the two depth faces separately instead of shearing
+         the whole board. A uniform shear tipped the bottom too and pushed the
+         stud through the bottom skin — see `trapezoidFarCornersIn`. */
+      const centreDepthIn = yIn + PLATE_2X4_WIDTH_IN / 2;
+      const faceCornersIn = (atDepthIn: number) => {
+        const nearTopZIn = Math.max(SKIN_THICKNESS_IN, topUndersideAtIn(nearXIn, atDepthIn));
+        const farTopZIn = Math.max(SKIN_THICKNESS_IN, topUndersideAtIn(farXIn, atDepthIn));
+        return [
+          { xIn: nearXIn, zIn: SKIN_THICKNESS_IN },
+          { xIn: farXIn, zIn: SKIN_THICKNESS_IN },
+          { xIn: farXIn, zIn: farTopZIn },
+          { xIn: nearXIn, zIn: nearTopZIn },
+        ] as [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+      };
+      const cornersIn = faceCornersIn(yIn);
+      const farFaceCornersIn = faceCornersIn(yIn + PLATE_2X4_WIDTH_IN);
+      /* The long point over BOTH faces — four top corners on a compound cut,
+         not two. */
+      const longPointIn =
+        Math.max(...cornersIn.map((c) => c.zIn), ...farFaceCornersIn.map((c) => c.zIn)) - SKIN_THICKNESS_IN;
       if (!(longPointIn > 0)) continue;
       members.push({
         memberId: `stud_corner_${idx}`,
@@ -221,17 +238,25 @@ function buildGableCornerStuds(
         orientation: "vertical",
         position: {
           xIn: nearXIn,
-          yIn: yIn + PLATE_2X4_WIDTH_IN / 2,
+          yIn: centreDepthIn,
           zIn: SKIN_THICKNESS_IN,
           rotationDeg: 0,
           trapezoidCornersIn: cornersIn,
           /* A stud stands on its 1 1/2in thickness and runs 3 1/2in through
              the panel — see `trapezoidDepthIn`. */
           trapezoidDepthIn: PLATE_2X4_WIDTH_IN,
+          ...(crossSlope !== 0 && { trapezoidFarCornersIn: farFaceCornersIn }),
         },
         role: "stud",
         qty: 1,
-        notes: `${edgeLabels[side]} edge — bottom is a square cut flush to the bottom plate; top is cut to the roof rake so it lands flush on the underside of the top skin.`,
+        notes:
+          `${edgeLabels[side]} edge — bottom is a square cut flush to the bottom plate; top is cut to the roof rake ` +
+          `so it lands flush on the underside of the top skin.` +
+          (crossSlope === 0
+            ? ""
+            : ` That top is a COMPOUND cut: also bevel it ` +
+              `${((Math.atan(Math.abs(crossSlope)) * 180) / Math.PI).toFixed(2)}deg across the stud's 3 1/2in depth, ` +
+              `${(Math.abs(crossSlope) * PLATE_2X4_WIDTH_IN).toFixed(3)}in of fall from one face to the other.`),
       });
     }
   }
@@ -336,9 +361,47 @@ export function buildGablePanelMembersIfBuildable(
   rightHeightIn: number,
   includeNailer: boolean,
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  topCrossRiseIn = 0,
 ): PanelMember[] | null {
-  if (Math.max(leftHeightIn, rightHeightIn) < GABLE_PANEL_MIN_HEIGHT_IN) return null;
-  return buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer, girtStyle);
+  /* ⚠ The TALLEST CORNER of the top plane, not the taller edge: a compound
+     bevel lifts one depth face above the other, so on an octagon facet the
+     two numbers differ by the full cross rise. */
+  if (gableTallestCornerIn(leftHeightIn, rightHeightIn, topCrossRiseIn) < GABLE_PANEL_MIN_HEIGHT_IN) return null;
+  return buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer, girtStyle, topCrossRiseIn);
+}
+
+/**
+ * The top plane's highest and lowest corner, which is what the fabrication
+ * floor and ceiling have to be judged against once the top is a PLANE rather
+ * than a line.
+ *
+ * `leftHeightIn`/`rightHeightIn` are read at the panel's EXTERIOR face
+ * (member-space y = 0, the reference face everything in this app measures
+ * from), and `topCrossRiseIn` is how much higher the plane stands at the
+ * INTERIOR face. Signed: on a 16ft Octagon shed the NE facet's interior face
+ * is 3.653in LOWER and the SE facet's is 3.653in higher.
+ */
+export function gableTallestCornerIn(leftHeightIn: number, rightHeightIn: number, topCrossRiseIn: number): number {
+  return Math.max(leftHeightIn, rightHeightIn) + Math.max(0, topCrossRiseIn);
+}
+
+export function gableShortestCornerIn(leftHeightIn: number, rightHeightIn: number, topCrossRiseIn: number): number {
+  return Math.min(leftHeightIn, rightHeightIn) + Math.min(0, topCrossRiseIn);
+}
+
+/**
+ * ⚠ **The dip of a gable's top plane, which is the ROOF'S OWN PITCH on every
+ * facet — not the rake you see in elevation.**
+ *
+ * A wall at an angle to the roof's fall splits that fall between its length
+ * and its depth: a 16ft Octagon facet at 4:12 rakes 2.83:12 along the wall
+ * and falls 2.83:12 across its depth, and `hypot` of the two is 4:12 again.
+ * Every thickness-to-vertical conversion in the top assembly has to use THIS
+ * angle; using the rake alone is the same class of error as the 2026-10-31
+ * perpendicular-vs-vertical bug, and on a diagonal facet it is 7x larger.
+ */
+export function gableTopPlaneDipRad(rakeSlope: number, crossSlope: number): number {
+  return Math.atan(Math.hypot(rakeSlope, crossSlope));
 }
 
 export function buildGablePanelMembers(
@@ -351,8 +414,40 @@ export function buildGablePanelMembers(
    * this app built before girts had styles — never to the project default,
    * so an un-taught call site draws a stale panel rather than a wrong one. */
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  /**
+   * ⚠ **THE SECOND BEVEL: how much higher the top plane stands at the
+   * panel's INTERIOR face than at its exterior one.** Signed, inches.
+   *
+   * > *"You're right, it is not flush for the roof at the top, can we make
+   * > the top of Gable and dual beveled So that the roof can meet it?"* —
+   * > Tommy, 2026-11-16
+   *
+   * The panel's top has always been a straight rake between
+   * `leftHeightIn` and `rightHeightIn`, which is the whole top only where
+   * the roof is level across the wall's depth. That is true for every wall
+   * of a box and false for most walls of an octagon: measured on the 16ft
+   * Octagon shed at 4:12, four of the six facets carrying a gable row
+   * needed 3.653in of fall across their 15 1/2in depth and got none, so
+   * the roof could not sit on them.
+   *
+   * Asked how the shop should make the compound top, he chose to **rip the
+   * gable's own top** on a compound setting over adding a tapered bevel
+   * plate above a square-topped panel. So the top skin, both top plates and
+   * every stud under them carry it, and their notes give the second angle
+   * and its fall.
+   *
+   * ⚠ **Defaults to 0, which is byte-identical to every gable this app has
+   * ever built** — and 0 is the right answer for a box, not a stand-in for
+   * an unknown.
+   */
+  topCrossRiseIn = 0,
 ): PanelMember[] {
-  const tallerHeightIn = Math.max(leftHeightIn, rightHeightIn);
+  /* ⚠ The highest and lowest CORNERS of the top plane. With a cross rise the
+     taller EDGE is no longer the panel's tallest point. */
+  const tallerHeightIn = gableTallestCornerIn(leftHeightIn, rightHeightIn, topCrossRiseIn);
+  /** Rise of the top plane per inch of depth. 0 on a box, and every
+   *  `crossSlope !== 0` guard below is what keeps a box byte-identical. */
+  const crossSlope = depthIn > 0 ? topCrossRiseIn / depthIn : 0;
   /**
    * ⚠ **A PANEL WITH NO HEIGHT AT ALL IS NOT A PANEL** — but a panel with
    * ONE edge at nothing is a TRIANGLE, and that is an ordinary gable part.
@@ -375,7 +470,8 @@ export function buildGablePanelMembers(
    */
   if (tallerHeightIn < GABLE_PANEL_MIN_HEIGHT_IN) {
     throw new Error(
-      `Neither edge of this Gable End Panel (${leftHeightIn} and ${rightHeightIn} across ${widthIn}in) reaches the ` +
+      `No corner of this Gable End Panel (${leftHeightIn} and ${rightHeightIn} across ${widthIn}in, cross rise ` +
+        `${topCrossRiseIn}in) reaches the ` +
         `${GABLE_PANEL_MIN_HEIGHT_IN}in it needs for its own two skins, so there is no panel here to build. A sliver ` +
         `this short belongs in the row as a safety-gap filler, not as a fabricated panel.`,
     );
@@ -418,6 +514,21 @@ export function buildGablePanelMembers(
   // face's own extra length beyond a square cut, measured across the
   // board's thickness, is thicknessIn / cos(angle).
   const plumbCutEdgeLengthIn = (thicknessIn: number) => thicknessIn / Math.cos((ripAngleDeg * Math.PI) / 180);
+  /** The rake as a slope, which is what the plane's own dip is built from. */
+  const rakeSlope = widthIn > 0 ? (rightHeightIn - leftHeightIn) / widthIn : 0;
+  /** ⚠ The plane's TRUE dip — the roof's pitch on every facet, not the rake.
+   *  See `gableTopPlaneDipRad`; with no cross rise it IS the rake angle, so a
+   *  box's arithmetic is unchanged to the last bit. */
+  const planeDipRad = gableTopPlaneDipRad(rakeSlope, crossSlope);
+  /** The bevel the shop sets across a board's width, and its fall. */
+  const crossBevelDeg = (Math.atan(Math.abs(crossSlope)) * 180) / Math.PI;
+  const crossBevelNote = (acrossIn: number) =>
+    crossSlope === 0
+      ? ""
+      : ` COMPOUND CUT: bevel the saw ${crossBevelDeg.toFixed(2)}deg across the board as well, ` +
+        `${(Math.abs(crossSlope) * acrossIn).toFixed(3)}in of fall over its ${acrossIn}in — the ` +
+        `${crossSlope > 0 ? "interior" : "exterior"} face is the high one. The missing wedge the jig is cut from is ` +
+        `${acrossIn}in across by ${(Math.abs(crossSlope) * acrossIn).toFixed(3)}in.`;
   /**
    * ⚠ **A PERPENDICULAR THICKNESS IS NOT A VERTICAL ONE**, and the top
    * assembly used to subtract them as if they were.
@@ -434,7 +545,7 @@ export function buildGablePanelMembers(
    * Dividing by cos turns a perpendicular offset into the vertical drop that
    * puts the face where it was asked for.
    */
-  const verticalForPerpendicularIn = (perpendicularIn: number) => perpendicularIn / Math.cos((ripAngleDeg * Math.PI) / 180);
+  const verticalForPerpendicularIn = (perpendicularIn: number) => perpendicularIn / Math.cos(planeDipRad);
 
   /**
    * ⚠ **ONE roofline, read by the skin, the plates and the corner studs
@@ -449,12 +560,19 @@ export function buildGablePanelMembers(
    * `verticalForPerpendicularIn` above, and the gable-roof flush junction
    * that took four passes).
    */
-  const topAtXIn = (xIn: number) => leftHeightIn + ((rightHeightIn - leftHeightIn) * xIn) / widthIn;
+  const topAtIn = (xIn: number, yIn: number) =>
+    leftHeightIn + ((rightHeightIn - leftHeightIn) * xIn) / widthIn + crossSlope * yIn;
+  /** ⚠ The MID-DEPTH reading, for the places where the answer genuinely does
+   *  not depend on depth — the rip callout, and the solves for where the top
+   *  plane runs into the bottom of the panel on a tapering tile. Identical to
+   *  the old single-argument `topAtXIn` whenever there is no cross rise. */
+  const topAtXIn = (xIn: number) => topAtIn(xIn, depthIn / 2);
   const skinVerticalThicknessIn = verticalForPerpendicularIn(SKIN_THICKNESS_IN);
   const plateVerticalThicknessIn = verticalForPerpendicularIn(PLATE_2X4_THICKNESS_IN);
   /** The top skin's underside: what the corner studs reach and what the top
-   * plates hang beneath. */
-  const topUndersideAtXIn = (xIn: number) => topAtXIn(xIn) - skinVerticalThicknessIn;
+   * plates hang beneath — at a given panel x AND depth. */
+  const topUndersideAtIn = (xIn: number, yIn: number) => topAtIn(xIn, yIn) - skinVerticalThicknessIn;
+  const topUndersideAtXIn = (xIn: number) => topUndersideAtIn(xIn, depthIn / 2);
 
   /**
    * A sloped top board with PLUMB (vertical) ends, the shape these members'
@@ -473,14 +591,29 @@ export function buildGablePanelMembers(
     crossWidthIn: number,
     fromXIn: number,
     toXIn: number,
-    topAtFromXIn: number,
+    /** This board's own TOP face, at a panel x and a panel depth. Both faces
+     *  are parallel to the top plane for a plate or a skin, so this is read at
+     *  the two depth extremes and the prism joins them. */
+    topAtIn_: (xIn: number, yIn: number) => number,
     centerDepthIn: number,
     role: PanelMember["role"],
     notes: string,
   ): PanelMember => {
     const verticalThicknessIn = verticalForPerpendicularIn(perpendicularThicknessIn);
-    const topAtToXIn = topAtFromXIn + ((toXIn - fromXIn) * (rightHeightIn - leftHeightIn)) / widthIn;
-    const cornersIn = plumbEndedSlopedBoardCornersIn(fromXIn, topAtFromXIn, toXIn, topAtToXIn, verticalThicknessIn);
+    const nearDepthIn = centerDepthIn - crossWidthIn / 2;
+    const farDepthIn = centerDepthIn + crossWidthIn / 2;
+    const faceCornersIn = (atDepthIn: number) =>
+      plumbEndedSlopedBoardCornersIn(
+        fromXIn,
+        topAtIn_(fromXIn, atDepthIn),
+        toXIn,
+        topAtIn_(toXIn, atDepthIn),
+        verticalThicknessIn,
+      );
+    const cornersIn = faceCornersIn(nearDepthIn);
+    const farFaceCornersIn = faceCornersIn(farDepthIn);
+    const topAtFromXIn = topAtIn_(fromXIn, nearDepthIn);
+    const topAtToXIn = topAtIn_(toXIn, nearDepthIn);
     return {
       memberId,
       material,
@@ -491,8 +624,9 @@ export function buildGablePanelMembers(
         thicknessIn: perpendicularThicknessIn,
         widthIn: crossWidthIn,
         /* The LONG POINT — the rake-length of the board's own top edge,
-           which is what a shop cuts to. */
-        lengthIn: braceLongestEdgeIn(cornersIn),
+           which is what a shop cuts to. Over BOTH depth faces: a compound cut
+           makes one face's edge the longer. */
+        lengthIn: Math.max(braceLongestEdgeIn(cornersIn), braceLongestEdgeIn(farFaceCornersIn)),
       },
       orientation: "diagonal",
       position: {
@@ -505,6 +639,11 @@ export function buildGablePanelMembers(
         /* It stands on its thickness and runs `crossWidthIn` through the
            panel's depth — see `trapezoidDepthIn`. */
         trapezoidDepthIn: crossWidthIn,
+        /* ⚠ The compound bevel: the far depth face is the SAME plane read
+           further through the wall. Both of this board's faces are parallel to
+           it, which is what makes the two quads a translation of each other —
+           a stud's are not. */
+        ...(crossSlope !== 0 && { trapezoidFarCornersIn: farFaceCornersIn }),
       },
       role,
       qty: 1,
@@ -538,8 +677,12 @@ export function buildGablePanelMembers(
      ─────────────────────────────────────────────────────────────────────── */
   const plateFromXIn = PLATE_END_CLEARANCE_IN;
   const plateToXIn = widthIn - PLATE_END_CLEARANCE_IN;
-  /** The underside of a sloped top plate hanging beneath the top skin. */
-  const plateUndersideAtXIn = (xIn: number) => topUndersideAtXIn(xIn) - plateVerticalThicknessIn;
+  /** The underside of a sloped top plate hanging beneath the top skin, at a
+   *  given panel x and depth. */
+  const plateUndersideAtIn = (xIn: number, yIn: number) => topUndersideAtIn(xIn, yIn) - plateVerticalThicknessIn;
+  /** The same at MID-DEPTH — used only where the answer does not depend on
+   *  depth (the plate-crossing solve on a tapering tile). */
+  const plateUndersideAtXIn = (xIn: number) => plateUndersideAtIn(xIn, depthIn / 2);
   /** The top face of the flat bottom plate, which is what it has to clear. */
   const bottomPlateTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const lowIsLeft = leftHeightIn <= rightHeightIn;
@@ -606,14 +749,24 @@ export function buildGablePanelMembers(
   const mergedPlate = (memberId: string, nearDepthIn: number): PanelMember => {
     const x0 = Math.min(wedgeThinXIn, crossXIn);
     const x1 = Math.max(wedgeThinXIn, crossXIn);
-    const cornersIn: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
-      { xIn: x0, zIn: Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(x0)) },
-      { xIn: x1, zIn: Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(x1)) },
-      { xIn: x1, zIn: SKIN_THICKNESS_IN },
-      { xIn: x0, zIn: SKIN_THICKNESS_IN },
-    ];
-    const thinIn = Math.max(0, topUndersideAtXIn(lowIsLeft ? x0 : x1) - SKIN_THICKNESS_IN);
-    const thickIn = Math.max(0, topUndersideAtXIn(lowIsLeft ? x1 : x0) - SKIN_THICKNESS_IN);
+    /* At this wedge's OWN mid-depth — the two wythes' wedges are different
+       boards at different depths, so on a bevelled top they are different
+       tapers too. */
+    const centreDepthIn = nearDepthIn + PLATE_2X4_WIDTH_IN / 2;
+    const undersideIn = (xIn: number) => topUndersideAtIn(xIn, centreDepthIn);
+    /* ⚠ Like a stud, the wedge's BOTTOM lies flat on the bottom skin while its
+       top follows the plane, so the two depth faces are read separately. */
+    const faceCornersIn = (atDepthIn: number) =>
+      [
+        { xIn: x0, zIn: Math.max(SKIN_THICKNESS_IN, topUndersideAtIn(x0, atDepthIn)) },
+        { xIn: x1, zIn: Math.max(SKIN_THICKNESS_IN, topUndersideAtIn(x1, atDepthIn)) },
+        { xIn: x1, zIn: SKIN_THICKNESS_IN },
+        { xIn: x0, zIn: SKIN_THICKNESS_IN },
+      ] as [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+    const cornersIn = faceCornersIn(nearDepthIn);
+    const farFaceCornersIn = faceCornersIn(nearDepthIn + PLATE_2X4_WIDTH_IN);
+    const thinIn = Math.max(0, undersideIn(lowIsLeft ? x0 : x1) - SKIN_THICKNESS_IN);
+    const thickIn = Math.max(0, undersideIn(lowIsLeft ? x1 : x0) - SKIN_THICKNESS_IN);
     return {
       memberId,
       material: "dimensional_lumber",
@@ -624,12 +777,13 @@ export function buildGablePanelMembers(
       orientation: "diagonal",
       position: {
         xIn: (x0 + x1) / 2,
-        yIn: nearDepthIn + PLATE_2X4_WIDTH_IN / 2,
-        zIn: (SKIN_THICKNESS_IN + Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn((x0 + x1) / 2))) / 2,
+        yIn: centreDepthIn,
+        zIn: (SKIN_THICKNESS_IN + Math.max(SKIN_THICKNESS_IN, undersideIn((x0 + x1) / 2))) / 2,
         rotationDeg: 0,
         tiltDeg: 0,
         trapezoidCornersIn: cornersIn,
         trapezoidDepthIn: PLATE_2X4_WIDTH_IN,
+        ...(crossSlope !== 0 && { trapezoidFarCornersIn: farFaceCornersIn }),
       },
       role: "plate",
       qty: 1,
@@ -637,7 +791,8 @@ export function buildGablePanelMembers(
         `${memberId.endsWith("_ext") ? "exterior" : "interior"}-wythe edge — ONE BOARD where the top and bottom plates ` +
         `would otherwise cross. Rip a 2x4 to a taper: ${thickIn.toFixed(2)}in thick at the inboard end, ` +
         `${thinIn.toFixed(2)}in at the low end, ${(x1 - x0).toFixed(2)}in long. It lies flat on the bottom skin and ` +
-        `follows the top skin's underside. Tommy, 2026-11-14: "Let two plates become one board."`,
+        `follows the top skin's underside. Tommy, 2026-11-14: "Let two plates become one board."` +
+        crossBevelNote(PLATE_2X4_WIDTH_IN),
     };
   };
 
@@ -672,26 +827,38 @@ export function buildGablePanelMembers(
     for (const [spanIndex, [fromXIn, toXIn]] of centreNailerStudSpansIn(widthIn).entries()) {
       /* The LOWER of the stud's own two x edges, so it never pokes up through
          the sloped plate on its high side. */
-      const ceilingZIn = Math.min(plateUndersideAtXIn(fromXIn), plateUndersideAtXIn(toXIn));
-      const lengthIn = ceilingZIn - bottomPlateTopZIn;
-      /* No room at all: this x is inside the taper, where the two plates have
-         already become one board. Nothing to stand. */
-      if (!(lengthIn > 0)) continue;
-      /* Raked to the plate above, like the corner studs beside it — a square
-         top would leave a wedge up to 3 1/2in x the pitch open under the
-         plate it is meant to carry. Corner order matches
-         `buildGableCornerStuds`: 0 and 1 the level bottom, 2 and 3 the rake. */
-      const cornersIn: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
-        { xIn: fromXIn, zIn: bottomPlateTopZIn },
-        { xIn: toXIn, zIn: bottomPlateTopZIn },
-        { xIn: toXIn, zIn: plateUndersideAtXIn(toXIn) },
-        { xIn: fromXIn, zIn: plateUndersideAtXIn(fromXIn) },
-      ];
-      const longPointIn = Math.max(plateUndersideAtXIn(fromXIn), plateUndersideAtXIn(toXIn)) - bottomPlateTopZIn;
+      /* ⚠ PER FACE, because the plate above tilts through the depth too: the
+         exterior and interior centre studs of one span are different lengths
+         on a bevelled top. Reading one and building both is exactly the
+         mistake that made the first compound-bevel test fixture overlap. */
       for (const [face, centreYIn] of [
         ["exterior", PLATE_2X4_THICKNESS_IN / 2],
         ["interior", depthIn - PLATE_2X4_THICKNESS_IN / 2],
       ] as [string, number][]) {
+        const ceilingAtIn = (xIn: number) => plateUndersideAtIn(xIn, centreYIn);
+        const ceilingZIn = Math.min(ceilingAtIn(fromXIn), ceilingAtIn(toXIn));
+        const lengthIn = ceilingZIn - bottomPlateTopZIn;
+        /* No room at all: this x is inside the taper, where the two plates
+           have already become one board. Nothing to stand. */
+        if (!(lengthIn > 0)) continue;
+        /* Raked to the plate above, like the corner studs beside it — a square
+           top would leave a wedge up to 3 1/2in x the pitch open under the
+           plate it is meant to carry. Corner order matches
+           `buildGableCornerStuds`: 0 and 1 the level bottom, 2 and 3 the
+           rake. */
+        /* Laid flat, so it runs 1 1/2in through the depth; its top follows
+           the plate above and its bottom stays on the bottom plate. */
+        const faceCornersIn = (atDepthIn: number) =>
+          [
+            { xIn: fromXIn, zIn: bottomPlateTopZIn },
+            { xIn: toXIn, zIn: bottomPlateTopZIn },
+            { xIn: toXIn, zIn: plateUndersideAtIn(toXIn, atDepthIn) },
+            { xIn: fromXIn, zIn: plateUndersideAtIn(fromXIn, atDepthIn) },
+          ] as [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+        const cornersIn = faceCornersIn(centreYIn - PLATE_2X4_THICKNESS_IN / 2);
+        const farFaceCornersIn = faceCornersIn(centreYIn + PLATE_2X4_THICKNESS_IN / 2);
+        const longPointIn =
+          Math.max(...cornersIn.map((c) => c.zIn), ...farFaceCornersIn.map((c) => c.zIn)) - bottomPlateTopZIn;
         out.push({
           memberId: `stud_centre_${spanIndex + 1}_${face}`,
           material: "dimensional_lumber",
@@ -710,13 +877,15 @@ export function buildGablePanelMembers(
             /* Laid FLAT (B30): 3 1/2in along the wall, 1 1/2in into the panel,
                which is what gives a seam above it a 3 1/2in face to bear on. */
             trapezoidDepthIn: PLATE_2X4_THICKNESS_IN,
+            ...(crossSlope !== 0 && { trapezoidFarCornersIn: farFaceCornersIn }),
           },
           role: "stud",
           qty: 1,
           notes:
             spanIndex === 0 && face === "exterior"
               ? `centre nailer — same ${MAX_STUD_SPACING_IN}in rule and same x as the wall panel below, so the studs stack. ` +
-                `Long point ${longPointIn.toFixed(2)}in, top cut to the roof rake so it lands flush under the top plate.`
+                `Long point ${longPointIn.toFixed(2)}in, top cut to the roof rake so it lands flush under the top plate.` +
+                crossBevelNote(PLATE_2X4_THICKNESS_IN)
               : undefined,
         });
       }
@@ -779,7 +948,7 @@ export function buildGablePanelMembers(
         ] as PanelMember[])
       : []),
     ...(hasMergedPlate ? [mergedPlate("merged_plate_ext", 0), mergedPlate("merged_plate_int", depthIn - PLATE_2X4_WIDTH_IN)] : []),
-    ...buildGableCornerStuds(widthIn, depthIn, leftStudSpanIn, rightStudSpanIn, topUndersideAtXIn),
+    ...buildGableCornerStuds(widthIn, depthIn, leftStudSpanIn, rightStudSpanIn, topUndersideAtIn, crossSlope),
     ...gableCentreStuds(),
     ...(hasPlatePair
       ? [
@@ -792,10 +961,11 @@ export function buildGablePanelMembers(
       PLATE_2X4_WIDTH_IN,
       platedFromXIn,
       platedToXIn,
-      topUndersideAtXIn(platedFromXIn),
+      topUndersideAtIn,
       PLATE_2X4_WIDTH_IN / 2,
       "plate",
-      `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${platedRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
+      `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${platedRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.` +
+        crossBevelNote(PLATE_2X4_WIDTH_IN),
     ),
     slopedTopBoard(
       "top_plate_2x4_int",
@@ -806,10 +976,11 @@ export function buildGablePanelMembers(
       PLATE_2X4_WIDTH_IN,
       platedFromXIn,
       platedToXIn,
-      topUndersideAtXIn(platedFromXIn),
+      topUndersideAtIn,
       depthIn - PLATE_2X4_WIDTH_IN / 2,
       "plate",
-      `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${platedRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
+      `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${platedRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.` +
+        crossBevelNote(PLATE_2X4_WIDTH_IN),
     ),
         ]
       : []),
@@ -827,7 +998,10 @@ export function buildGablePanelMembers(
          rather than a centreline. That is what makes a gable's top plate
          finish flush with the roof above it, which is what he asked for and
          what the centreline reading kept missing by hundredths. */
-      leftHeightIn,
+      /* ⚠ The PLANE, not a single height. The skin's top face IS the panel's
+         stated top surface, and on a bevelled facet that surface is read at
+         both depth faces rather than once at the middle. */
+      topAtIn,
       depthIn / 2,
       "skin",
       /* ⚠ **THE SHEET MAY BE CUT SQUARE, and the note says what that costs.**
@@ -844,7 +1018,8 @@ export function buildGablePanelMembers(
          standing proud. So this is carried as a shop allowance on the cut
          list rather than as a different shape, and it is one of the readings
          in the Review Log. */
-      `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are drawn plumb-cut (vertical), flush to each corner stud's face — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge. CUTTING THEM SQUARE (perpendicular to the sheet) is accepted: the top plate below then finishes about ${(SKIN_THICKNESS_IN * Math.sin((ripAngleDeg * Math.PI) / 180)).toFixed(3)}in proud of the plywood, which is expected and needs no shim.`,
+      `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are drawn plumb-cut (vertical), flush to each corner stud's face — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge. CUTTING THEM SQUARE (perpendicular to the sheet) is accepted: the top plate below then finishes about ${(SKIN_THICKNESS_IN * Math.sin((ripAngleDeg * Math.PI) / 180)).toFixed(3)}in proud of the plywood, which is expected and needs no shim.` +
+        crossBevelNote(depthIn),
     ),
     /* ⚠ Girts are spaced across the SHORTER edge's clear span, so a panel
        tapering to nothing has none: they would otherwise stack on the bottom
@@ -859,8 +1034,11 @@ export function buildGablePanelMembers(
          right-low tile was pinned nowhere — it is swept in both directions
          now. */
       const lowEndPlateXIn = leftHeightIn <= rightHeightIn ? PLATE_END_CLEARANCE_IN : widthIn - PLATE_END_CLEARANCE_IN;
+      /* ⚠ At the depth face where the plane is LOWER, so a girt clears the
+         plate on both wythes rather than on the average of them. */
+      const lowFaceYIn = crossSlope >= 0 ? 0 : depthIn;
       const plan = gableGirtPlan(shorterStudSpanIn, {
-        maxRowTopZIn: topUndersideAtXIn(lowEndPlateXIn) - plateVerticalThicknessIn,
+        maxRowTopZIn: plateUndersideAtIn(lowEndPlateXIn, lowFaceYIn),
         rowTopAboveCentreIn: girtRowTopAboveCentreIn(girtStyle),
       });
       return buildGirtRows(plan.rowCount, widthIn, depthIn, shorterStudSpanIn, plan.centerZsIn ?? undefined, girtStyle);
@@ -896,8 +1074,12 @@ export function buildGablePanelSchema(
    * this app built before girts had styles — never to the project default,
    * so an un-taught call site draws a stale panel rather than a wrong one. */
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  /** See `buildGablePanelMembers`. 0 is a box, and is the default. */
+  topCrossRiseIn = 0,
 ): PanelComponentSchema {
   const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, leftHeightIn, rightHeightIn);
+  const crossSlope = depthIn > 0 ? topCrossRiseIn / depthIn : 0;
+  const crossBevelDeg = (Math.atan(Math.abs(crossSlope)) * 180) / Math.PI;
   return {
     schemaVersion: "0.1",
     componentType: "panel",
@@ -905,8 +1087,23 @@ export function buildGablePanelSchema(
     displayName: "Gable End Panel",
     status: "draft",
     derivedFrom: "standard_panel",
-    overallDimensions: { heightIn: Math.max(leftHeightIn, rightHeightIn), widthIn, depthIn },
-    members: buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer, girtStyle),
+    /* ⚠ The TALLEST CORNER of the top plane. With a compound bevel the taller
+       EDGE is not the panel's tallest point — one depth face stands the whole
+       cross rise above the other. */
+    overallDimensions: {
+      heightIn: gableTallestCornerIn(leftHeightIn, rightHeightIn, topCrossRiseIn),
+      widthIn,
+      depthIn,
+    },
+    members: buildGablePanelMembers(
+      widthIn,
+      depthIn,
+      leftHeightIn,
+      rightHeightIn,
+      includeNailer,
+      girtStyle,
+      topCrossRiseIn,
+    ),
     fasteners: [],
     notes: [
       {
@@ -921,6 +1118,23 @@ export function buildGablePanelSchema(
         text: `Top skin rip: ${Math.abs(ripAngleDeg).toFixed(2)}deg, ${ripLengthIn.toFixed(2)}in long. Left/right edge heights are ` +
           "supplied manually — no roof/ridge system exists yet to derive them automatically.",
       },
+      ...(crossSlope === 0
+        ? []
+        : [
+            {
+              type: "warning" as const,
+              /* ⚠ Named rather than implied, because a compound bevel is
+                 invisible in elevation: the drawing of this panel looks
+                 exactly like the square-topped one. */
+              text:
+                `COMPOUND (dual) bevel top: the panel is raked ${Math.abs(ripAngleDeg).toFixed(2)}deg along its width ` +
+                `AND bevelled ${crossBevelDeg.toFixed(2)}deg across its ${depthIn}in depth, ` +
+                `${Math.abs(topCrossRiseIn).toFixed(3)}in of fall with the ` +
+                `${topCrossRiseIn > 0 ? "interior" : "exterior"} face high. This is what lets a roof plane that falls ` +
+                "THROUGH the wall — any wall at an angle to the roof's fall, which is most walls of an octagon — sit " +
+                "flush on it. It does not show in the elevation view.",
+            },
+          ]),
     ],
     disclaimer: "Reference only — not engineered, not for construction.",
   };
