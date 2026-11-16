@@ -3,16 +3,22 @@ import {
   computeGableTiledRow,
   footprintLoops,
   gableEndWallIdsFor,
+  isMiteredShape,
   retile,
   ringRoofGableBlockReason,
+  roofHeightFtAt,
+  roofSpanFt,
   seedGableWindows,
   simpleRoofPlanes,
+  shedTallWallId,
   wallCompassDirection,
   wallGeometryFor,
+  wallRoofTopsFor,
   type Footprint,
   type GableWallJointSpan,
   type GableWindowReservation,
   type PanelSlot,
+  type WallRoofTop,
 } from "@building-integrity/geometry";
 import {
   buildGablePanelMembers,
@@ -26,6 +32,7 @@ import {
 import { STARTER_TEMPLATES, footprintForPlan, type StarterPlan } from "./starterTemplates";
 import { seedGableWindowsForFootprint } from "./gableWindowSeed";
 import { placeColumnUnderPeak } from "./gableColumnPlacement";
+import { crossTiltWallIdsFor } from "./crossTiltTakeoff";
 import {
   capGableTileHeights,
   computeRiseFtForPitch,
@@ -118,6 +125,9 @@ interface DrawnTemplate {
   slots: Record<string, PanelSlot[]>;
   leastAccessible: string;
   primary: Set<string>;
+  /** ⚠ Null on a rectangle. On a mitered shape, each wall's roofline taken
+   *  from the roof above its own two corners — see `gableProfilePointsFor`. */
+  roofTops: Map<string, WallRoofTop> | null;
 }
 
 /**
@@ -139,14 +149,10 @@ function drawTemplate(plan: StarterPlan): DrawnTemplate | null {
   const gableWallIds = ringRoofGableBlockReason(fp) === null ? gableEndWallIdsFor(fp) : [];
   if (gableWallIds.length === 0) return null;
 
-  /* ⚠ `acrossFt` is the GABLE WALL's own length, which is what the app uses.
-     On a box that is the across-the-ridge span; on an octagon it is one facet.
-     That difference is a real finding, pinned at the bottom of this file rather
-     than quietly corrected here. */
-  const gableWall = fp.walls.find((w) => gableWallIds.includes(w.id))!;
-  const a = fp.corners.find((c) => c.id === gableWall.startCorner)!.point;
-  const b = fp.corners.find((c) => c.id === gableWall.endCorner)!.point;
-  const wallWidthIn = Math.hypot(b.x - a.x, b.y - a.y) * 12;
+  /* ⚠ **The building's span across the ridge**, which is what the app now
+     reads. It used to measure the gable WALL, equal on a box and one eighth
+     facet on an octagon — see the octagon section at the bottom. */
+  const wallWidthIn = roofSpanFt(fp) * 12;
   const form = decideRoofForm({ buildingWidthIn: wallWidthIn, pitchIn12: PITCH_IN12 }).kind === "shed" ? "shed" : "peaked";
 
   const seat = resolveHeelSeat(wallWidthIn, STANDARD_WIDTH_IN, HEEL_IN, form === "shed" ? 1 : 2, ANCHOR, INSET_IN);
@@ -177,6 +183,20 @@ function drawTemplate(plan: StarterPlan): DrawnTemplate | null {
           }),
         );
 
+  /* ⚠ **On a mitered shape every wall under the roof carries a row**, minus
+     the shed's tall wall which the cross-tilt row closes. page.tsx does the
+     same, right after the form and rise are known. */
+  const roof = simpleRoofPlanes(fp, { form, pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT });
+  const mitered = isMiteredShape(fp) && roof.refusal === null;
+  const roofTops = mitered ? new Map(wallRoofTopsFor(fp, roof, WALL_HEIGHT_FT).map((t) => [t.wallId, t])) : null;
+  const rowWallIds = (() => {
+    if (!roofTops) return gableWallIds;
+    const tallWallId = form === "shed" ? shedTallWallId(fp, { form: "shed", pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT }) : null;
+    return [...roofTops.values()]
+      .filter((t) => t.tallerAboveEaveIn > GABLE_PANEL_MIN_HEIGHT_IN && t.wallId !== tallWallId)
+      .map((t) => t.wallId);
+  })();
+
   let slots = retile(fp, leastAccessible, primary, STANDARD_WIDTH_IN, CORNER_WIDTH_IN, thicknessIn, { windowWidthsIn: seedWindowWidthsIn.value }, {}, true);
   if (form === "peaked") {
     for (const wallId of gableWallIds) {
@@ -202,7 +222,7 @@ function drawTemplate(plan: StarterPlan): DrawnTemplate | null {
       if (placed) slots = { ...slots, [wallId]: placed };
     }
   }
-  return { fp, thicknessIn, gableWallIds, form, riseFt, positionsInByWallId, slots, leastAccessible, primary };
+  return { fp, thicknessIn, gableWallIds: rowWallIds, form, riseFt, positionsInByWallId, slots, leastAccessible, primary, roofTops };
 }
 
 /** `gableWallJointSpansFor` — cumulative from the wall's own RUN START. */
@@ -221,6 +241,19 @@ function jointSpansFor(d: DrawnTemplate, wallId: string): GableWallJointSpan[] {
   });
 }
 
+/** `gableProfilePointsFor` — a mitered wall takes its roofline from the roof
+ *  above its own two corners, plus the ridge where one crosses it. */
+function pointsFor(d: DrawnTemplate, wallId: string) {
+  const lengthIn = d.fp.walls.find((w) => w.id === wallId)!.lengthFt * 12;
+  const top = d.roofTops?.get(wallId);
+  if (!top) return gableProfilePointsForWall(lengthIn, [d.riseFt], d.positionsInByWallId[wallId] ?? [], EAVE_IN);
+  return [
+    { xIn: 0, heightIn: EAVE_IN + top.startAboveEaveIn, isExplicitPosition: true },
+    ...(top.ridgeCrossing ? [{ xIn: top.ridgeCrossing.atIn, heightIn: EAVE_IN + top.ridgeCrossing.aboveEaveIn }] : []),
+    { xIn: lengthIn, heightIn: EAVE_IN + top.endAboveEaveIn, isExplicitPosition: true },
+  ];
+}
+
 /** `gableTilesByWallId`'s own `computeGableTiledRow` call, argument for argument. */
 function rowFor(d: DrawnTemplate, wallId: string, windows: GableWindowReservation[]) {
   const wall = d.fp.walls.find((w) => w.id === wallId)!;
@@ -228,7 +261,7 @@ function rowFor(d: DrawnTemplate, wallId: string, windows: GableWindowReservatio
   return computeGableTiledRow(
     lengthIn,
     EAVE_IN,
-    gableProfilePointsForWall(lengthIn, [d.riseFt], d.positionsInByWallId[wallId] ?? [], EAVE_IN),
+    pointsFor(d, wallId),
     STANDARD_WIDTH_IN,
     INSET_IN,
     true,
@@ -261,6 +294,8 @@ function seedFor(d: DrawnTemplate, wallId: string, minRiseIn: number, die: () =>
     d.form === "peaked" ? COLUMN_TOTAL_WIDTH_IN : undefined,
     minRiseIn,
     COLUMN_TOP_DROP_IN,
+    /* ⚠ The mitered rooflines, so the seeder judges the row `rowFor` builds. */
+    Object.fromEntries([...(d.roofTops?.keys() ?? [])].map((id) => [id, pointsFor(d, id)])),
     die,
   );
 }
@@ -315,7 +350,22 @@ describe("⚠ every starter template's gable row is a sound row", () => {
           }
           cursor = t.xStartIn + t.widthIn;
         }
-        expect(cursor, `${where}: the row ends at ${cursor}in, not the wall's ${lengthIn}in`).toBeCloseTo(lengthIn, 6);
+        /* ⚠ **The row spans the WHOLE wall, corner to corner** — full-height
+           gables take no truss-plate inset, so this is the floor plan's own
+           width and NOT the wall's slot run, which is shorter wherever a
+           neighbour owns the corners (161in under a 192in gable wall on the
+           Tiny House).
+
+           ⚠ To within an EIGHTH, because an octagon's four diagonal facets are
+           not a whole number of eighths long — the 16ft tile's are 79.5495in —
+           and this app tiles in eighths. The wall below rounds them exactly
+           the same way (79.5495 -> 79.5000, 159.0990 -> 159.1250), so the two
+           layers agree with each other; what they cannot do is agree with a
+           number that is not on the grid. */
+        expect(
+          Math.abs(cursor - lengthIn),
+          `${where}: the row spans ${cursor}in of a ${lengthIn}in wall, past the eighth-inch grid`,
+        ).toBeLessThanOrEqual(0.125 + 1e-9);
       }
     });
 
@@ -510,96 +560,142 @@ describe("⚠ the sweep really swept", () => {
      a `risesIn` filter that removes everything — would turn this whole file
      green while testing nothing at all. */
   it("checked real ordinals on the deep gables and real refusals on the shallow ones", () => {
-    /* ⚠ **Measured 2026-11-15, not estimated: 10 and 6.** The 10 are the
-       Tiny House's two shed walls (1 placeable ordinal each) and the Cindy's
-       two peaked walls (4 each). The 6 are The Tank's pair and both Octagons'
-       — gables too shallow for a 48in window anywhere, which is an answer and
-       not a gap.
+    /* ⚠ **Measured 2026-11-15, not estimated: 17 and 2.**
+       It was 10 and 6 when this file was written, and the octagon fix is what
+       moved it — both Octagons used to refuse every window because their rows
+       were derived from one 6ft 7in facet and rose 27in. Now that each wall
+       takes its roofline from the roof above its own two corners, their gables
+       are real and can hold windows, so four refusals became placements. The
+       two refusals left are The Tank's pair, whose gable genuinely rises only
+       48in, which is less than a 48in window plus a panel above it.
 
-       A floor rather than an equality so that adding a template cannot fail
-       it; but a DROP below these means fewer places a window may legally go
-       than when this was written, which is worth someone looking at. */
-    expect(checked, `only ${checked} ordinals were checked across every template`).toBeGreaterThanOrEqual(10);
-    expect(refusals, `only ${refusals} gable walls refused a window`).toBeGreaterThanOrEqual(6);
+       Floors rather than equalities so that adding a template cannot fail it;
+       but a DROP below these means fewer places a window may legally go than
+       when this was last measured, which is worth someone looking at. */
+    expect(checked, `only ${checked} ordinals were checked across every template`).toBeGreaterThanOrEqual(17);
+    expect(refusals, `only ${refusals} gable walls refused a window`).toBeGreaterThanOrEqual(2);
   });
 });
 
-describe("⚠ KNOWN AND REPORTED: an octagon's roof does not meet its walls", () => {
+describe("⚠ an octagon's roof meets its walls", () => {
   /**
-   * ⚠ **NOT A PASSING BILL OF HEALTH — this section pins a fault that is still
-   * OPEN**, so that it is visible and cannot change unnoticed. Found by this
-   * sweep on 2026-11-15 and reported to Tommy rather than fixed, because what
-   * an octagon's roof should DO is his decision and not a code question.
+   * > *"Octagon roofs does not meet, correct. I like the shed style on the
+   * > octagon though as an option. I think octagon shed is possible, there's
+   * > just going to be some very unique gable panels."* — Tommy, 2026-11-15
    *
-   * `gableEndWallIdsFor` returns the walls whose compass direction is exactly
-   * E/W (or N/S) — **two of an octagon's eight**. Five of the remaining six
-   * have roof above them and no gable row under it (the sixth is the one down
-   * at the eave, which needs none). And the two that do get a row have
-   * the row anchored at the EAVE at both ends, while the roof over those
-   * corners is already well up the slope, because an octagon's E facet spans
-   * only the middle third of the building's depth.
+   * This section used to be headed **KNOWN AND REPORTED** and pinned the fault
+   * rather than its absence. What it pins now is the acceptance bar for his
+   * answer: **every row on an octagon ends exactly where the roof above its
+   * own two corners ends**, and the walls that get no row are only the ones
+   * that genuinely need none.
    *
-   * It is also why `decideRoofForm` is asked the wrong number: the app feeds it
-   * the gable WALL's length, which on a box is the across-the-ridge span and on
-   * an octagon is one facet. At 32ft across it is asked about 13.25ft, answers
-   * "shed", and the app builds a shed that would need a 33.7ft roof panel
-   * against the 17.1ft one reaches at 4:12.
-   *
-   * ⚠ Both octagon tiles are Home tiles, and *"make all the pre-designs
-   * presentable"* is his January scope — see
-   * `docs/queue-january-hardening-scope.md`.
+   * ⚠ The "unique gable panels" he expected are real, and this is what makes
+   * them unique: a NE facet's top edge is a straight line lying in the roof
+   * plane while the wall runs 45 degrees to the fall, so its rake is neither
+   * the pitch nor level, and both of its ends are up in the air. No new panel
+   * TYPE was needed for any of it — `buildGablePanelMembers` already takes an
+   * arbitrary left and right height, equal heights included.
    */
   for (const acrossFt of [16, 32]) {
-    it(`the ${acrossFt}ft octagon: 5 of its 8 walls carry roof and no gable row`, () => {
-      const { footprint: fp } = footprintForPlan({ shape: "octagon", widthFt: acrossFt, depthFt: acrossFt });
-      const gableWallIds = new Set(gableEndWallIdsFor(fp));
-      expect(gableWallIds.size).toBe(2);
+    it(`the ${acrossFt}ft octagon: every row meets the roof at both ends and in the middle`, () => {
+      const drawn = drawTemplate({ shape: "octagon", widthFt: acrossFt, depthFt: acrossFt })!;
+      expect(drawn).toBeTruthy();
+      const roof = simpleRoofPlanes(drawn.fp, {
+        form: drawn.form,
+        pitchIn12: PITCH_IN12,
+        eaveHeightFt: WALL_HEIGHT_FT,
+      });
+      const tops = new Map(wallRoofTopsFor(drawn.fp, roof, WALL_HEIGHT_FT).map((t) => [t.wallId, t]));
 
-      const plane = simpleRoofPlanes(fp, { form: "shed", pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT }).planes[0]!;
-      const yLow = plane.lowStart.y;
-      const yHigh = plane.highStart.y;
-      const roofAboveEaveIn = (y: number) =>
-        (plane.lowHeightFt + ((y - yLow) / (yHigh - yLow)) * (plane.highHeightFt - plane.lowHeightFt) - WALL_HEIGHT_FT) * 12;
+      /* Six walls carry a row on both tiles: the two E/W facets and the four
+         diagonals. The other two are the shed's tall wall (closed by the
+         cross-tilt row) and the wall down at the eave — or, on the peak, the
+         two eave walls. */
+      expect(drawn.gableWallIds).toHaveLength(6);
 
-      let unroofedWalls = 0;
-      let worstOpenIn = 0;
-      for (const w of fp.walls) {
-        const a = fp.corners.find((c) => c.id === w.startCorner)!.point;
-        const b = fp.corners.find((c) => c.id === w.endCorner)!.point;
-        const highestIn = Math.max(roofAboveEaveIn(a.y), roofAboveEaveIn(b.y));
-        if (gableWallIds.has(w.id) || highestIn <= 1e-6) continue;
-        unroofedWalls++;
-        worstOpenIn = Math.max(worstOpenIn, highestIn);
-      }
-      /* ⚠ **FIVE, not six, and the difference is worth stating.** The S wall
-         sits right at the eave where the shed runs out, so it legitimately
-         needs nothing above it. The five that do are N, NE, SE, SW and NW. */
-      expect(unroofedWalls).toBe(5);
-      /* The full rise of the shed across the building: 64in of open wall on
-         the 16ft octagon, 128in on the 32ft one. */
-      expect(worstOpenIn).toBeCloseTo(acrossFt * PITCH_IN12, 6);
+      for (const wallId of drawn.gableWallIds) {
+        const wall = drawn.fp.walls.find((w) => w.id === wallId)!;
+        const lengthIn = wall.lengthFt * 12;
+        const top = tops.get(wallId)!;
+        const tiles = rowFor(drawn, wallId, []);
+        const where = `${acrossFt}ft octagon, wall ${wallId} (${wallCompassDirection(wall, drawn.fp)})`;
 
-      /* And the two gable walls' own ends: the roof is already up the slope
-         there, while the row starts at the eave. */
-      for (const id of gableWallIds) {
-        const w = fp.walls.find((x) => x.id === id)!;
-        const a = fp.corners.find((c) => c.id === w.startCorner)!.point;
-        const b = fp.corners.find((c) => c.id === w.endCorner)!.point;
-        const lowerEndIn = Math.min(roofAboveEaveIn(a.y), roofAboveEaveIn(b.y));
+        /* ⚠ The row's two outer edges against the roof at the same corners.
+           Before this, the E facet's row ran 27in down to 0 while the roof
+           over it went 45 1/4in down to 18 3/4in — meeting at neither end. */
+        expect(tiles[0]!.leftHeightIn - EAVE_IN, `${where}: the row's start does not meet the roof`).toBeCloseTo(
+          top.startAboveEaveIn,
+          1,
+        );
         expect(
-          lowerEndIn,
-          `the ${acrossFt}ft octagon's ${id}: the roof is ${lowerEndIn.toFixed(1)}in up at its low corner, where the gable row starts at 0`,
-        ).toBeGreaterThan(1);
+          tiles[tiles.length - 1]!.rightHeightIn - EAVE_IN,
+          `${where}: the row's end does not meet the roof`,
+        ).toBeCloseTo(top.endAboveEaveIn, 1);
+
+        /* ⚠ **And in the MIDDLE, which is the assertion with teeth on a peak.**
+           Meeting at both ends is not enough for a wall the ridge crosses: the
+           32ft Octagon's E facet has both corners 37 1/2in up and its ridge
+           64in up, so a row built from the corners alone met both ends and ran
+           26 1/2in flat across the top. */
+        const a = drawn.fp.corners.find((c) => c.id === wall.startCorner)!.point;
+        const b = drawn.fp.corners.find((c) => c.id === wall.endCorner)!.point;
+        const roofMidIn = (roofHeightFtAt({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, roof)! - WALL_HEIGHT_FT) * 12;
+        const midTile = tiles.find((t) => t.xStartIn <= lengthIn / 2 && t.xStartIn + t.widthIn >= lengthIn / 2)!;
+        /* ⚠ **A tile carrying the ridge answers with its APEX, not with its
+           edges.** The ridge column is a flat-topped tile with the peak
+           recorded in `apexXIn`/`apexHeightIn` — on the 32ft Octagon's E facet
+           its top is flat at 59 3/4in with the ridge 4 1/4in above it, which
+           is the same shape a rectangle's column has (see the Gable Peak
+           Panel). Lerping its edges reads 4 1/4in low and says "sag" about a
+           row that is correct. */
+        const rowMidIn =
+          midTile.apexHeightIn !== undefined
+            ? midTile.apexHeightIn - EAVE_IN
+            : midTile.leftHeightIn +
+              ((lengthIn / 2 - midTile.xStartIn) / midTile.widthIn) * (midTile.rightHeightIn - midTile.leftHeightIn) -
+              EAVE_IN;
+        expect(rowMidIn, `${where}: the row sags or stands proud of the roof at mid-span`).toBeCloseTo(roofMidIn, 1);
       }
     });
   }
 
-  it("⚠ the 32ft octagon's roof form is decided from one facet, not from its span", () => {
-    const { footprint: fp } = footprintForPlan({ shape: "octagon", widthFt: 32, depthFt: 32 });
-    const facetFt = fp.walls.find((w) => wallCompassDirection(w, fp) === "E")!.lengthFt;
-    expect(facetFt).toBeCloseTo(13.25, 2);
-    /* What the app asks it, and what it would answer about the building. */
-    expect(decideRoofForm({ buildingWidthIn: facetFt * 12, pitchIn12: PITCH_IN12 }).kind).toBe("shed");
-    expect(decideRoofForm({ buildingWidthIn: 32 * 12, pitchIn12: PITCH_IN12 }).kind).toBe("peaked");
+  it("⚠ the shed's tall wall gets NO gable row, because the cross-tilt row already closes it", () => {
+    /* Giving it one would build the same wall twice. This is the correction to
+       the sweep's first reading, which counted it among the open walls. */
+    const drawn = drawTemplate({ shape: "octagon", widthFt: 16, depthFt: 16 })!;
+    expect(drawn.form).toBe("shed");
+    const tallId = shedTallWallId(drawn.fp, { form: "shed", pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT })!;
+    expect(wallCompassDirection(drawn.fp.walls.find((w) => w.id === tallId)!, drawn.fp)).toBe("N");
+    expect(drawn.gableWallIds).not.toContain(tallId);
+    expect(crossTiltWallIdsFor(drawn.fp, "shed", PITCH_IN12, WALL_HEIGHT_FT).has(tallId)).toBe(true);
+  });
+
+  it("⚠ the 32ft octagon is PEAKED now, and for the right reason", () => {
+    /* It used to be a shed, because `decideRoofForm` was handed one 13.25ft
+       facet instead of the 32ft span — a roof needing a 33.7ft panel against
+       the 17.1ft one reaches at 4:12. His shed option lives on the 16ft tile,
+       where the span really is inside one panel's reach. */
+    const big = drawTemplate({ shape: "octagon", widthFt: 32, depthFt: 32 })!;
+    const small = drawTemplate({ shape: "octagon", widthFt: 16, depthFt: 16 })!;
+    expect(roofSpanFt(big.fp)).toBeCloseTo(32, 6);
+    expect(roofSpanFt(small.fp)).toBeCloseTo(16, 6);
+    expect(big.form).toBe("peaked");
+    expect(small.form).toBe("shed");
+  });
+
+  it("a rectangle is untouched by all of it", () => {
+    /* The safety property: these templates must draw exactly as before. */
+    for (const plan of [
+      { shape: "rectangle" as const, widthFt: 24, depthFt: 16 },
+      { shape: "rectangle" as const, widthFt: 48, depthFt: 24 },
+    ]) {
+      const drawn = drawTemplate(plan)!;
+      expect(drawn.gableWallIds).toHaveLength(2);
+      expect(drawn.gableWallIds.sort()).toEqual(gableEndWallIdsFor(drawn.fp).sort());
+      const roof = simpleRoofPlanes(drawn.fp, { form: drawn.form, pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT });
+      /* No wall of a rectangle is described by corner heights alone when it is
+         peaked, which is exactly why rectangles keep the stored-rise path. */
+      expect(wallRoofTopsFor(drawn.fp, roof, WALL_HEIGHT_FT).length).toBe(4);
+    }
   });
 });

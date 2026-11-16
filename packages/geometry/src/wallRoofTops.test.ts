@@ -65,26 +65,59 @@ describe("⚠ a rectangle's answers are exactly what the app already draws", () 
   it("a 48 x 24 peak: both gable walls rise to the ridge and both eave walls are flat", () => {
     const fp = buildRectangleFootprint(48, 24);
     const tops = topsByDirection(fp, peaked);
-    /* ⚠ **EVERY CORNER OF A PEAKED RECTANGLE IS AT THE EAVE — all four walls
-       answer 0, and that is the honest answer, not a bug.** A peaked gable
-       wall crosses the RIDGE, so its high point is in the MIDDLE of the wall
-       and no corner height can describe it: half of 24ft at 4:12 is 48in of
-       rise that these two numbers cannot see.
-
-       **This is the limitation of describing a wall by its corners**, and it
-       is why this stride closes the octagon SHED and not the octagon peak. A
-       row over a ridge-crossing wall needs an interior point as well, which
-       is what `computeGableTiledRow`'s existing `points` already are — so the
-       shape of the answer is known; it is simply not built here. */
+    /* ⚠ **EVERY CORNER OF A PEAKED RECTANGLE IS AT THE EAVE** — all four
+       walls read 0 at both ends, and that is correct. A peaked gable wall
+       crosses the RIDGE, so its high point is in the MIDDLE of the wall and
+       no CORNER height can describe it. */
     expect(tops.E!.startIn).toBeCloseTo(0, 2);
     expect(tops.E!.endIn).toBeCloseTo(0, 2);
-    expect(tops.E!.tallerIn).toBeCloseTo(0, 2);
-    expect(tops.W!.tallerIn).toBeCloseTo(0, 2);
     expect(tops.N!.tallerIn).toBeCloseTo(0, 2);
     expect(tops.S!.tallerIn).toBeCloseTo(0, 2);
-    /* ...and the ridge really is up there, 48in above the eave at mid-depth,
-       which is what a corner-only reading misses. */
-    expect(roofHeightFtAt({ x: 24, y: 12 }, simpleRoofPlanes(fp, peaked))).toBeCloseTo(EAVE_FT + 4, 6);
+    /* ⚠ ...which is exactly why `ridgeCrossing` exists. Half of 24ft at 4:12
+       is 48in, in the middle of the gable wall — the rise The Tank is given.
+       Reported here, so a row over such a wall can carry an interior point and
+       does not come out flat across its top. */
+    const roof = simpleRoofPlanes(fp, peaked);
+    const crossings = wallRoofTopsFor(fp, roof, EAVE_FT).filter((t) => t.ridgeCrossing !== null);
+    expect(crossings).toHaveLength(2);
+    for (const c of crossings) {
+      const wall = fp.walls.find((w) => w.id === c.wallId)!;
+      expect(["E", "W"]).toContain(wallCompassDirection(wall, fp));
+      expect(c.ridgeCrossing!.aboveEaveIn).toBeCloseTo(48, 2);
+      /* Dead centre of a 24ft wall. */
+      expect(c.ridgeCrossing!.atIn).toBeCloseTo(144, 2);
+      /* And `tallerAboveEaveIn` counts it, since it is the tallest thing on
+         the wall — what has to be filled for the wall to be closed. */
+      expect(c.tallerAboveEaveIn).toBeCloseTo(48, 2);
+    }
+    /* The two EAVE walls run alongside the ridge and are never crossed by it. */
+    expect(wallRoofTopsFor(fp, roof, EAVE_FT).filter((t) => t.ridgeCrossing === null)).toHaveLength(2);
+    expect(roofHeightFtAt({ x: 24, y: 12 }, roof)).toBeCloseTo(EAVE_FT + 4, 6);
+  });
+});
+
+describe("⚠ a shed has no ridge to cross", () => {
+  it("nothing on a rectangle, nothing on an octagon", () => {
+    for (const fp of [buildRectangleFootprint(24, 16), buildOctagonFootprint(16, 16)]) {
+      const roof = simpleRoofPlanes(fp, shed);
+      expect(wallRoofTopsFor(fp, roof, EAVE_FT).every((t) => t.ridgeCrossing === null)).toBe(true);
+    }
+  });
+
+  it("⚠ a PEAKED octagon's two E/W facets are crossed, and its diagonals are not", () => {
+    /* The 32ft Octagon tile. Its E facet's corners are both 37.5in up while
+       the ridge above its midpoint is 64in — a 26.5in flat top without this. */
+    const fp = buildOctagonFootprint(32, 32);
+    const roof = simpleRoofPlanes(fp, peaked);
+    const tops = wallRoofTopsFor(fp, roof, EAVE_FT);
+    const crossed = tops.filter((t) => t.ridgeCrossing !== null);
+    expect(crossed.map((t) => wallCompassDirection(fp.walls.find((w) => w.id === t.wallId)!, fp)).sort()).toEqual(["E", "W"]);
+    for (const c of crossed) {
+      expect(c.startAboveEaveIn).toBeCloseTo(37.5, 1);
+      expect(c.endAboveEaveIn).toBeCloseTo(37.5, 1);
+      expect(c.ridgeCrossing!.aboveEaveIn).toBeCloseTo(64, 1);
+      expect(c.tallerAboveEaveIn).toBeCloseTo(64, 1);
+    }
   });
 });
 

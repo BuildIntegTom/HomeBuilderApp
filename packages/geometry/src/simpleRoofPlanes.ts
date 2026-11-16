@@ -114,6 +114,29 @@ export function roofRidgeAxis(footprint: Footprint): "x" | "y" {
  * "which walls are the gable ends" would eventually disagree, and the symptom
  * would be a roof whose planes do not sit on its gables.
  */
+/**
+ * ⚠ **THE SPAN A ROOF HAS TO CROSS — the building's own dimension across the
+ * ridge, which is NOT the same as a gable wall's length.**
+ *
+ * They are equal on a box, which is why two call sites measured a gable
+ * wall instead and nobody noticed. On an octagon a gable "wall" is one
+ * eighth facet: the 32ft Octagon's E facet is 13.25ft, so `decideRoofForm`
+ * was asked about 13.25ft, answered **shed**, and the app built a roof that
+ * would need a 33.7ft panel against the 17.1ft one reaches at 4:12. Asked
+ * about the real 32ft it answers **peaked**, 16ft a side, comfortably inside.
+ *
+ * It is also the run a rise is computed over, so the same mistake made the
+ * 16ft Octagon's gable row rise 2.25ft under a roof that rises 5.33ft.
+ *
+ * `simpleRoofPlanes` takes its own `runFt` from here, so the planes and
+ * anything deciding a form from the span cannot disagree about how wide the
+ * building is.
+ */
+export function roofSpanFt(footprint: Footprint): number {
+  const { minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
+  return roofRidgeAxis(footprint) === "x" ? maxY - minY : maxX - minX;
+}
+
 export function gableEndWallIdsFor(footprint: Footprint): string[] {
   const alongRidge = roofRidgeAxis(footprint) === "x" ? ["E", "W"] : ["N", "S"];
   return footprint.walls
@@ -135,7 +158,9 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
   }
 
   const ridgeAxis = roofRidgeAxis(footprint);
-  const runFt = (ridgeAxis === "x" ? depthFt : widthFt) / (options.form === "peaked" ? 2 : 1);
+  /* ⚠ Through `roofSpanFt`, so the planes and every caller that decides a
+     form or a rise from the span read one number. */
+  const runFt = roofSpanFt(footprint) / (options.form === "peaked" ? 2 : 1);
   const riseFt = (runFt * options.pitchIn12) / 12;
   const slopeFt = Math.hypot(runFt, riseFt);
 
@@ -385,6 +410,18 @@ export interface WallRoofTop {
   /** The taller of the two — what has to be filled for this wall to be
    *  closed. 0 means the wall is already at the roof and needs nothing. */
   tallerAboveEaveIn: number;
+  /**
+   * ⚠ **Where the RIDGE crosses this wall, when it does** — inches from the
+   * wall's own start corner, with the height there.
+   *
+   * Two corner heights cannot describe a wall the ridge runs over: its high
+   * point is in the MIDDLE. On a peaked octagon the E facet's corners are
+   * both 37 1/2in up while the ridge above its midpoint is 64in, so a row
+   * built from the corners alone came out **26 1/2in flat** across the top.
+   *
+   * `null` on a shed, and on any wall a peak's ridge does not reach.
+   */
+  ridgeCrossing: { atIn: number; aboveEaveIn: number } | null;
 }
 
 /**
@@ -406,6 +443,16 @@ export interface WallRoofTop {
  */
 export function wallRoofTopsFor(footprint: Footprint, roof: SimpleRoofResult, eaveHeightFt: number): WallRoofTop[] {
   const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
+  /* The ridge, read off the planes' shared high edge rather than recomputed
+     from the bounding box — same reason `roofHeightFtAt` samples the planes. */
+  const ridge =
+    roof.form === "peaked" && roof.planes.length > 1
+      ? {
+          /* Its position on the fall axis, and its height. */
+          at: roof.ridgeAxis === "x" ? roof.planes[0]!.highStart.y : roof.planes[0]!.highStart.x,
+          heightFt: Math.max(...roof.planes.map((pl) => pl.highHeightFt)),
+        }
+      : null;
   const tops: WallRoofTop[] = [];
   for (const wall of footprint.walls) {
     const a = byId.get(wall.startCorner);
@@ -418,11 +465,31 @@ export function wallRoofTopsFor(footprint: Footprint, roof: SimpleRoofResult, ea
        floating-point slop at a low corner must not read as one. */
     const startAboveEaveIn = Math.max(0, (startFt - eaveHeightFt) * 12);
     const endAboveEaveIn = Math.max(0, (endFt - eaveHeightFt) * 12);
+    /* ⚠ Strictly BETWEEN the corners: a ridge landing exactly on a corner is
+       already described by that corner's own height, and adding a point on top
+       of an end anchor is what `resolveAnchors` has to clamp away. */
+    let ridgeCrossing: WallRoofTop["ridgeCrossing"] = null;
+    if (ridge) {
+      const along = (p: Point) => (roof.ridgeAxis === "x" ? p.y : p.x);
+      const fromA = along(a);
+      const toB = along(b);
+      const span = toB - fromA;
+      if (Math.abs(span) > 1e-9) {
+        const t = (ridge.at - fromA) / span;
+        if (t > 1e-6 && t < 1 - 1e-6) {
+          ridgeCrossing = {
+            atIn: t * Math.hypot(b.x - a.x, b.y - a.y) * 12,
+            aboveEaveIn: Math.max(0, (ridge.heightFt - eaveHeightFt) * 12),
+          };
+        }
+      }
+    }
     tops.push({
       wallId: wall.id,
       startAboveEaveIn,
       endAboveEaveIn,
-      tallerAboveEaveIn: Math.max(startAboveEaveIn, endAboveEaveIn),
+      tallerAboveEaveIn: Math.max(startAboveEaveIn, endAboveEaveIn, ridgeCrossing?.aboveEaveIn ?? 0),
+      ridgeCrossing,
     });
   }
   return tops;

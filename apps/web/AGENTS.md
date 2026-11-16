@@ -155,6 +155,41 @@
   shifted line numbers** — an edit earlier in the file moves every number below
   it, and this file is 17,000 lines long.
 
+- **2026-11-15, the octagon's roof meeting its walls, +2.**
+  `preserve-manual-memoization` 74 -> 76. Every other rule byte-identical, no
+  correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1, `no-unused-vars` 35).
+
+  Both are the one new `gableWallRoofTops` memo — the `useMemo` itself and its
+  dep array `[footprint, roofProfilePointHeightsFt, gableStructuralPanelWallIds,
+  gableEaveHeightIn]`. Nothing else in the change moved a single flag, which is
+  worth knowing given how much of it there was: a new geometry module, a
+  widened gable-wall set, a new seeder parameter and three rewritten call
+  sites all cost **zero**. The budget is spent by memos, not by code.
+
+  ⚠ **And not by every memo.** A SECOND memo added in the same change —
+  `trueGableEndWallIds`, over `[footprint, gableEndWallIds]` — measured
+  **76 again, free**. Both of its deps are plain `useState` values, where
+  `gableWallRoofTops` depends on `gableStructuralPanelWallIds` and
+  `roofProfilePointHeightsFt`. That is the rule from the ridge-beam note
+  holding a third time: **the cost is one per ALREADY-FLAGGED value a dep
+  array touches, and nothing for the memo itself** — so a memo over raw state
+  is free no matter how much work it does.
+
+  ⚠ **AND THE ATTRIBUTION METHOD ABOVE HAS A TRAP THAT CAUGHT ME.** "Diff the
+  flagged SOURCE LINE TEXT" is right, but the OLD run's line numbers have to be
+  resolved against the OLD FILE, which by then is no longer on disk. Resolving
+  them against the edited file reported **60-odd phantom new entries** and
+  buried the two real ones. Get the old text out of git first:
+
+  ```
+  git show <commit>:apps/web/app/page.tsx > old.tsx
+  ```
+
+  then read each old message's line from `old.tsx` and each new one from the
+  working file. Done that way the delta here came out as exactly two lines,
+  both in the new memo, and no noise at all.
+
   ⚠ **How to bisect this rule cheaply, which was the real find.** The
   whole-app run takes ~10 minutes, but linting **`app/page.tsx` alone**
   finishes in about a minute and reproduces this rule's count exactly

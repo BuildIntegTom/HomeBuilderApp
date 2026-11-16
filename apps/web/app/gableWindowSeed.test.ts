@@ -56,6 +56,8 @@ describe("⚠ seedGableWindowsForFootprint refuses a gable too short for a windo
       minTileRiseForWindowIn,
       /* The app's own `columnTopDropIn` — 0, the column runs to the peak. */
       0,
+      /* A rectangle, so no wall needs a roofline of its own. */
+      {},
     );
     expect(seeded).toEqual({});
   });
@@ -86,6 +88,7 @@ describe("⚠ seedGableWindowsForFootprint refuses a gable too short for a windo
       COLUMN_TOTAL_WIDTH_IN,
       minTileRiseForWindowIn,
       0,
+      {},
       () => 0,
     );
     expect(Object.keys(seeded).sort()).toEqual([...gableWalls].sort());

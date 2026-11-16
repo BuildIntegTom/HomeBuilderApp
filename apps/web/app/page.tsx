@@ -10,6 +10,9 @@ import {
   allWallPanelJoints,
   isCourtyardFootprint,
   ringRoofGableBlockReason,
+  roofSpanFt,
+  shedTallWallId,
+  wallRoofTopsFor,
   removeCourtyards,
   insertCornerAtWallOffset,
   isSplitRefusal,
@@ -1657,6 +1660,31 @@ export default function LayoutEditor() {
   // elevationViewWallId is which wall's elevation view is currently open
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
+  /**
+   * ⚠ **THE TRUE GABLE PAIR — the two walls the RIDGE runs between**, which
+   * since 2026-11-15 is no longer the same thing as "the walls carrying a
+   * gable row".
+   *
+   * On a mitered shape every wall under the roof carries a row (an octagon's
+   * six, see `applyRoofDefaultsForFootprint`), but only the two facing east
+   * and west are the ends of the ridge. Four things mean the PAIR and would
+   * silently take the wrong wall, or give up, from a set of six:
+   *
+   * - the Peak-along-wall dimension handle, which read `[...set][0]` and on
+   *   an octagon got a NE facet — a diagonal with no peak on it at all;
+   * - the ridge beam and the plan view's ridge line, both of which bail on
+   *   `size !== 2` and so quietly vanished on a peaked octagon;
+   * - the gable-end toggle's "only 2 are allowed" message, which was then
+   *   telling the truth about a count nobody had chosen.
+   *
+   * Derived rather than stored, so a project saved before this still answers
+   * correctly: `gableEndWallIdsFor` is pure, and intersecting it with the live
+   * set keeps a wall the user has turned off out of the pair.
+   */
+  const trueGableEndWallIds = useMemo(
+    () => (footprint ? new Set(gableEndWallIdsFor(footprint).filter((id) => gableEndWallIds.has(id))) : new Set<string>()),
+    [footprint, gableEndWallIds],
+  );
   /* ⚠ Walls whose top panels tilt FRONT TO BACK, to receive a shed roof
      flush — a shed's tall side.
      > *"Shed roof on small building should spawn with inclined Gable end
@@ -1805,11 +1833,11 @@ export default function LayoutEditor() {
       const ringReason = ringRoofGableBlockReason(footprint);
       if (ringReason) return ringReason;
     }
-    if (gableEndWallIds.size >= 2) {
+    if (trueGableEndWallIds.size >= 2) {
       return "Only 2 Gable End walls are allowed — the roof-catcher beam spans between exactly 2. Turn one off first.";
     }
-    if (gableEndWallIds.size === 1 && footprint) {
-      const otherWallId = [...gableEndWallIds][0]!;
+    if (trueGableEndWallIds.size === 1 && footprint) {
+      const otherWallId = [...trueGableEndWallIds][0]!;
       const otherWall = footprint.walls.find((w) => w.id === otherWallId);
       const thisWall = footprint.walls.find((w) => w.id === wallId);
       if (otherWall && thisWall && !areWallsOppositePair(thisWall, otherWall, footprint)) {
@@ -2362,8 +2390,8 @@ export default function LayoutEditor() {
         // and parallel to each other and move together") — reflected
         // since the opposite wall runs the opposite direction along its
         // own (same) length. Only when linked and both gable ends exist.
-        if (gableMirrorLinked && wall && gableEndWallIds.size === 2 && gableEndWallIds.has(wallId)) {
-          const otherWallId = [...gableEndWallIds].find((id) => id !== wallId);
+        if (gableMirrorLinked && wall && trueGableEndWallIds.size === 2 && trueGableEndWallIds.has(wallId)) {
+          const otherWallId = [...trueGableEndWallIds].find((id) => id !== wallId);
           if (otherWallId) {
             const wallLengthIn = wall.lengthFt * 12;
             const mirroredPositionIn = newPositionIn === null ? null : wallLengthIn - newPositionIn;
@@ -2396,7 +2424,7 @@ export default function LayoutEditor() {
         }
       }
     },
-    [footprint, gableProfilePositionsInByWallId, handleChangeRoofProfilePointHeightFt, gableMirrorLinked, gableEndWallIds],
+    [footprint, gableProfilePositionsInByWallId, handleChangeRoofProfilePointHeightFt, gableMirrorLinked, trueGableEndWallIds],
   );
   // Elevation sidebar's Shed/Centered Peak pitch dropdowns (Tommy: pick a
   // standard pitch instead of typing a raw rise) — both snap the point's
@@ -4220,18 +4248,27 @@ export default function LayoutEditor() {
     slotsByWallId: Record<string, PanelSlot[]>,
   ): Record<string, PanelSlot[]> => {
     const autoGableWallIds = roofEnabled && ringRoofGableBlockReason(fp) === null ? gableEndWallIdsFor(fp) : [];
-    setGableEndWallIds(new Set(autoGableWallIds));
 
     const gableWall = fp.walls.find((w) => autoGableWallIds.includes(w.id));
     if (!gableWall) {
+      setGableEndWallIds(new Set());
       setGableStructuralPanelWallIds(new Set());
       setGableProfilePositionsInByWallId({});
       return slotsByWallId;
     }
 
-    const a = fp.corners.find((c) => c.id === gableWall.startCorner)!.point;
-    const b = fp.corners.find((c) => c.id === gableWall.endCorner)!.point;
-    const acrossFt = Math.hypot(b.x - a.x, b.y - a.y);
+    /* ⚠ **THE BUILDING'S SPAN ACROSS THE RIDGE, not the gable wall's own
+       length** — they are the same number on a box, which is why this measured
+       the wall for a year without anyone noticing. On an octagon a gable wall
+       is one eighth FACET: the 32ft tile's is 13.25ft, so `decideRoofForm` was
+       asked about 13.25ft, answered "shed", and the app built a roof needing a
+       33.7ft panel against the 17.1ft one reaches at 4:12. Asked about the real
+       32ft it answers "peaked" — 16ft a side, comfortably inside.
+
+       The same number is the RUN a rise is computed over, so the 16ft
+       Octagon's row rose 2.25ft under a roof rising 5.33ft. One wrong
+       measurement, both faults. */
+    const acrossFt = roofSpanFt(fp);
     /* `decideRoofForm` is his rule exactly: a shed runs one set of panels
        clear across, a peak halves that, and 18ft of panel at 4:12 reaches
        about 17.1ft of ground. */
@@ -4258,6 +4295,58 @@ export default function LayoutEditor() {
     const riseFt = computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn);
     setRoofProfilePointHeightsFt([riseFt]);
 
+    /* ⚠ **ON A MITERED SHAPE, EVERY WALL UNDER THE ROOF CARRIES A ROW — not
+       just the two facing east and west.**
+
+       > *"I like the shed style on the octagon though as an option. I think
+       > octagon shed is possible, there's just going to be some very unique
+       > gable panels."* — Tommy, 2026-11-15
+
+       `gableEndWallIdsFor` returns the walls whose compass direction is
+       exactly E/W (or N/S), which on a rectangle is the two walls under the
+       slope and on an octagon is two facets out of eight. The other six have
+       roof above them: measured on the 16ft tile, the four DIAGONAL facets
+       stood open by up to 64in, and on the 32ft tile by 128in.
+
+       ⚠ **The shed's tall wall is deliberately excluded** — the cross-tilt row
+       already closes it (`crossTiltWallIdsFor` -> `shedTallWallId`, five real
+       panels on the octagon's N wall), and giving it a gable row as well would
+       build the same wall twice.
+
+       ⚠ A wall already AT the roof gets nothing: a row of zero height is not
+       an empty row, it is a row of sub-panel slivers that the tiler then has
+       to demote one at a time. */
+    /** ⚠ Filled on a mitered shape, so the seeder below and the real row read
+     *  the same roofline. See `seedGableWindowsForFootprint`'s own parameter. */
+    const miteredProfilePointsByWallId: Record<string, RoofProfilePoint[]> = {};
+    const miteredGableWallIds = isMiteredShape(fp)
+      ? (() => {
+          const roof = simpleRoofPlanes(fp, {
+            form: form.kind === "shed" ? "shed" : "peaked",
+            pitchIn12: DEFAULT_ROOF_PITCH_IN12,
+            eaveHeightFt: wallHeightFt,
+          });
+          if (roof.refusal !== null) return autoGableWallIds;
+          const tallWallId = form.kind === "shed" ? shedTallWallId(fp, { form: "shed", pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt }) : null;
+          const kept = wallRoofTopsFor(fp, roof, wallHeightFt).filter(
+            (top) => top.tallerAboveEaveIn > GABLE_PANEL_MIN_HEIGHT_IN && top.wallId !== tallWallId,
+          );
+          for (const top of kept) {
+            const wall = fp.walls.find((w) => w.id === top.wallId);
+            if (!wall) continue;
+            miteredProfilePointsByWallId[top.wallId] = [
+              { xIn: 0, heightIn: gableEaveHeightIn + top.startAboveEaveIn, isExplicitPosition: true },
+              ...(top.ridgeCrossing
+                ? [{ xIn: top.ridgeCrossing.atIn, heightIn: gableEaveHeightIn + top.ridgeCrossing.aboveEaveIn }]
+                : []),
+              { xIn: wall.lengthFt * 12, heightIn: gableEaveHeightIn + top.endAboveEaveIn, isExplicitPosition: true },
+            ];
+          }
+          return kept.map((top) => top.wallId);
+        })()
+      : autoGableWallIds;
+    setGableEndWallIds(new Set(miteredGableWallIds));
+
     /* ⚠ **A SHED'S TWO GABLE WALLS NEED THE POINT AT OPPOSITE ENDS OF
        THEMSELVES**, because a profile point's x is measured from each wall's
        OWN start corner and the two are wound in opposite directions round the
@@ -4277,6 +4366,10 @@ export default function LayoutEditor() {
     const profilePositionsInByWallId: Record<string, number[]> =
       form.kind === "shed" && shedPlane
         ? Object.fromEntries(
+            /* ⚠ The TRUE gable ends only. A mitered shape's other walls take
+               their roofline from their own corner heights instead (see
+               `gableProfilePointsFor`), so a stored shed position would mean
+               nothing on them. */
             autoGableWallIds.map((id) => {
               const wall = fp.walls.find((w) => w.id === id);
               const start = wall && cornerPointOf(wall.startCorner);
@@ -4300,6 +4393,9 @@ export default function LayoutEditor() {
        nobody knows to find. */
     let nextSlots = slotsByWallId;
     if (isPeaked) {
+      /* ⚠ **The ridge column goes only on a wall the RIDGE actually crosses**,
+         which is the true gable pair. A mitered shape's diagonal facets sit
+         under one plane or the other and have no peak to stand under. */
       for (const wallId of autoGableWallIds) {
         const wall = fp.walls.find((w) => w.id === wallId);
         const geometry = wallGeometryForPure(fp, wallId, new Set(fp.corners.map((c) => c.id)), fp.corners[0]!.id, thicknessIn, {});
@@ -4332,7 +4428,7 @@ export default function LayoutEditor() {
        nothing here reads that state back. */
     const seededGableWindows = seedGableWindowsForFootprint(
       fp,
-      autoGableWallIds,
+      miteredGableWallIds,
       nextSlots,
       {},
       thicknessIn,
@@ -4353,6 +4449,7 @@ export default function LayoutEditor() {
          `computeGableTiledRow`'s 12in default and judged a ridge-column tile
          12in shorter than the one the app actually builds. */
       0,
+      miteredProfilePointsByWallId,
     );
     /* ⚠ **REPLACES, it does not merge — a stored gable window is stale state
        on a re-derive, exactly like the ridge column override cleared a few
@@ -7551,9 +7648,11 @@ export default function LayoutEditor() {
             roofEnabled && gableEndWallIds.size > 0 && roofProfilePointHeightsFt.length === 1
               ? (roofProfilePointHeightsFt[0] ?? 0)
               : null,
-          gableWallId: [...gableEndWallIds][0] ?? null,
+          /* ⚠ The PAIR, not the row-carrying set: on an octagon the first of
+             six is a diagonal facet with no peak along it. */
+          gableWallId: [...trueGableEndWallIds][0] ?? null,
           peakPositionFt: (() => {
-            const wallId = [...gableEndWallIds][0];
+            const wallId = [...trueGableEndWallIds][0];
             if (!wallId) return null;
             const stored = gableProfilePositionsInByWallId[wallId]?.[0];
             return stored === null || stored === undefined ? null : stored / 12;
@@ -7613,17 +7712,82 @@ export default function LayoutEditor() {
   /** This wall's roof-profile anchor points, in `computeGableTiledRow`'s own
    * absolute coordinate space. Extracted so the gable row and the run-stop
    * refusal below cannot build them differently. */
-  const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] =>
+  /**
+   * ⚠ **THE ROOF'S HEIGHT AT EVERY WALL'S TWO CORNERS, on a mitered shape.**
+   *
+   * Null on a rectangle, whose gable walls genuinely do run corner to corner
+   * under the slope with both ends at the eave — the assumption
+   * `computeGableTiledRow` is built on, and the one that is true there.
+   *
+   * ⚠ **Built from the LIVE rise, not from the default pitch.** The planes are
+   * re-derived at whatever pitch the stored rise implies over this building's
+   * own span, so dragging the Ridge rise handle moves these rows with the roof
+   * instead of leaving them at the pitch the building was drawn with.
+   */
+  const gableWallRoofTops = useMemo(() => {
+    if (!footprint || !isMiteredShape(footprint)) return null;
+    const spanFt = roofSpanFt(footprint);
+    const isPeak = roofProfilePointHeightsFt.length === 1 && gableStructuralPanelWallIds.size > 0;
+    const runFt = isPeak ? spanFt / 2 : spanFt;
+    const riseFt = roofProfilePointHeightsFt[0] ?? 0;
+    if (!(runFt > 0) || !(riseFt > 0)) return null;
+    const eaveHeightFt = gableEaveHeightIn / 12;
+    const roof = simpleRoofPlanes(footprint, {
+      form: isPeak ? "peaked" : "shed",
+      pitchIn12: (riseFt / runFt) * 12,
+      eaveHeightFt,
+    });
+    if (roof.refusal !== null) return null;
+    return new Map(wallRoofTopsFor(footprint, roof, eaveHeightFt).map((top) => [top.wallId, top]));
+  }, [footprint, roofProfilePointHeightsFt, gableStructuralPanelWallIds, gableEaveHeightIn]);
+
+  const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] => {
+    const wallLengthIn = wall.lengthFt * 12;
+    /* ⚠ **A MITERED WALL TAKES ITS ROOFLINE FROM ITS OWN TWO CORNERS**, and
+       that is the whole octagon fix.
+
+       Every other wall in this app gets a roofline from a global RISE plus a
+       position along the wall, which assumes both ends sit at the eave. An
+       octagon's E facet spans only the middle third of the building's depth,
+       so the roof over its corners is 45 1/4in and 18 3/4in up a 16ft shed and
+       neither end is at the eave. Fed the global rise it drew a triangle from
+       27in down to nothing — right slope, wrong height — and after the span
+       was corrected it drew one rising 64in over a facet the roof only falls
+       26 1/2in across, which is wronger still.
+
+       ⚠ **No new mechanism is needed to say this.** Two explicitly-positioned
+       points, one at each end, are exactly what `resolveAnchors` already
+       consumes to make a SHED: the first claims the left anchor, the second
+       the right, and the roofline runs straight between them. A shed is just
+       the case where one of the two heights is zero. */
+    const top = gableWallRoofTops?.get(wall.id);
+    if (top) {
+      return [
+        { xIn: 0, heightIn: gableEaveHeightIn + top.startAboveEaveIn, isExplicitPosition: true },
+        /* ⚠ **And the RIDGE, when it crosses this wall** — in x order, because
+           `resolveAnchors` claims the left anchor from the first point it sees
+           near an end and the right from the next. A peaked octagon's E facet
+           has both corners 37 1/2in up and the ridge 64in above its middle;
+           without this the row came out flat across the top, 26 1/2in short.
+           Not explicitly positioned: it is a genuine interior shoulder, and
+           marking it explicit would let it snap to an end and become a shed. */
+        ...(top.ridgeCrossing
+          ? [{ xIn: top.ridgeCrossing.atIn, heightIn: gableEaveHeightIn + top.ridgeCrossing.aboveEaveIn }]
+          : []),
+        { xIn: wallLengthIn, heightIn: gableEaveHeightIn + top.endAboveEaveIn, isExplicitPosition: true },
+      ];
+    }
     /* ⚠ **Delegated, not inlined** — `seedGableWindowsForFootprint` builds
        this same row to decide which tile may hold a window, and when the two
        constructions were separate they disagreed about whether a stored point
        at x = 0 meant a shed. See `gableProfilePointsForWall`. */
-    gableProfilePointsForWall(
-      wall.lengthFt * 12,
+    return gableProfilePointsForWall(
+      wallLengthIn,
       roofProfilePointHeightsFt,
       gableProfilePositionsInByWallId[wall.id] ?? [],
       gableEaveHeightIn,
     );
+  };
 
   /**
    * Gable windows a candidate stop would CUT THROUGH on this wall.
@@ -7923,8 +8087,10 @@ export default function LayoutEditor() {
   // treat each wall's own roofline symmetrically, so either wall would
   // resolve to the same span/pitch.
   const roofTrussLayoutContext = useMemo(() => {
-    if (!footprint || roofProfileType !== "peaked" || gableEndWallIds.size !== 2) return null;
-    const gableWallIdsArr = [...gableEndWallIds];
+    /* ⚠ The PAIR — a peaked octagon carries six gable rows and still has
+       exactly one ridge, between its east and west facets. */
+    if (!footprint || roofProfileType !== "peaked" || trueGableEndWallIds.size !== 2) return null;
+    const gableWallIdsArr = [...trueGableEndWallIds];
     const primaryGableWallId = gableWallIdsArr[0]!;
     const primaryGableWall = footprint.walls.find((w) => w.id === primaryGableWallId);
     const tiles = gableTilesByWallId[primaryGableWallId];
@@ -7972,7 +8138,7 @@ export default function LayoutEditor() {
     if (!ridge || ridge.runIn <= 0) return null;
 
     return { spanIn: wallWidthIn, runIn: ridge.runIn, pitchIn12, asymmetricNote };
-  }, [footprint, roofProfileType, gableEndWallIds, gableTilesByWallId, roofProfilePointHeightsFt, gableProfilePositionsInByWallId, gableEaveHeightIn]);
+  }, [footprint, roofProfileType, trueGableEndWallIds, gableTilesByWallId, roofProfilePointHeightsFt, gableProfilePositionsInByWallId, gableEaveHeightIn]);
 
   /* The ridge beam's run and its columns, for the plan view. Derived here
      rather than in the canvas so the 2D and 3D cannot disagree about where
@@ -15373,7 +15539,8 @@ export default function LayoutEditor() {
 
             {roofProfileType === "peaked" &&
               (() => {
-                const gableWallIds = [...gableEndWallIds];
+                /* ⚠ The PAIR, for the same reason the ridge beam takes it. */
+                const gableWallIds = [...trueGableEndWallIds];
                 const peakPositionInByWallId: Record<string, number> = {};
                 for (const [wallId, positions] of Object.entries(gableProfilePositionsInByWallId)) {
                   const posIn = positions[0];

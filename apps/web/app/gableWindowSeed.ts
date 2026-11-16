@@ -6,6 +6,7 @@ import {
   type GableWindowReservation,
   type PanelSlot,
   type RoofBearingAnchorMode,
+  type RoofProfilePoint,
 } from "@building-integrity/geometry";
 import { wallGeometryFor as wallGeometryForPure } from "@building-integrity/geometry";
 import { gableProfilePointsForWall } from "./gableProfilePoints";
@@ -83,6 +84,22 @@ export function seedGableWindowsForFootprint(
    * looked at.
    */
   columnTopDropIn: number,
+  /**
+   * ⚠ **A wall whose roofline cannot be described by a rise and a position.**
+   *
+   * On a mitered shape every wall takes its roofline from the roof above its
+   * own two corners (see `gableProfilePointsFor`), which no combination of
+   * `riseFt` and `profilePositionsInByWallId` can express — an octagon's NE
+   * facet runs from 64in down to 45 1/4in and touches the eave nowhere.
+   *
+   * ⚠ **Passed in rather than rebuilt, for the reason this whole module
+   * exists**: when this row and the app's row are constructed separately they
+   * drift, and the drift shows up as a window on a tile too short to hold it.
+   * Measured again the moment octagon walls got real rooflines — the seeder
+   * judged a 32ft Octagon's NE tile and the app built the window on a
+   * **15.85in** one.
+   */
+  profilePointsByWallId: Record<string, RoofProfilePoint[]>,
   randomFn?: () => number,
 ): Record<string, GableWindowReservation[]> {
   const seeded: Record<string, GableWindowReservation[]> = {};
@@ -125,7 +142,8 @@ export function seedGableWindowsForFootprint(
     const tiles = computeGableTiledRow(
       wallLengthIn,
       gableEaveHeightIn,
-      gableProfilePointsForWall(wallLengthIn, [riseFt], [profilePositionsInByWallId[wallId]?.[0]], gableEaveHeightIn),
+      profilePointsByWallId[wallId] ??
+        gableProfilePointsForWall(wallLengthIn, [riseFt], [profilePositionsInByWallId[wallId]?.[0]], gableEaveHeightIn),
       standardWidthIn,
       insetIn,
       true,

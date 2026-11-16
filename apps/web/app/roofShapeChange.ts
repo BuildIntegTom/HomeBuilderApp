@@ -1,5 +1,5 @@
 import { decideRoofForm } from "@building-integrity/panel-catalog";
-import { gableEndWallIdsFor, ringRoofGableBlockReason, type Footprint } from "@building-integrity/geometry";
+import { gableEndWallIdsFor, ringRoofGableBlockReason, roofSpanFt, type Footprint } from "@building-integrity/geometry";
 
 /**
  * ⚠ **WHAT A SHAPE CHANGE DOES TO THE ROOF — the decision, on its own, so it
@@ -46,15 +46,20 @@ import { gableEndWallIdsFor, ringRoofGableBlockReason, type Footprint } from "@b
  * become a fifth.
  */
 
-/** The span a roof has to cross: the length of a gable end wall. */
+/**
+ * The span a roof has to cross.
+ *
+ * ⚠ **It used to be "the length of a gable end wall", and that is only the
+ * same number on a box.** On an octagon a gable wall is one eighth facet —
+ * 13.25ft on the 32ft tile against a 32ft building — so this reported a span
+ * less than half the real one, and the verdict below decided whether a roof
+ * had to be re-derived from it. `roofSpanFt` is the building's own dimension
+ * across the ridge, which is what `simpleRoofPlanes` already builds its
+ * planes over. Unchanged on every rectangle.
+ */
 export function gableSpanFt(footprint: Footprint, roofEnabled: boolean): number {
-  const ids = gableEndWallIdsFor2(footprint, roofEnabled);
-  const wall = footprint.walls.find((w) => ids.includes(w.id));
-  if (!wall) return 0;
-  const a = footprint.corners.find((c) => c.id === wall.startCorner)?.point;
-  const b = footprint.corners.find((c) => c.id === wall.endCorner)?.point;
-  if (!a || !b) return 0;
-  return Math.hypot(b.x - a.x, b.y - a.y);
+  if (gableEndWallIdsFor2(footprint, roofEnabled).length === 0) return 0;
+  return roofSpanFt(footprint);
 }
 
 function gableEndWallIdsFor2(footprint: Footprint, roofEnabled: boolean): string[] {

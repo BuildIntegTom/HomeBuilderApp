@@ -166,3 +166,38 @@ wall and the ridge, which nothing models yet."*
 octagon — **which needs the same per-wall rows**, since a peak over an octagon
 leaves the NE/SE/SW/NW facets just as unroofed. The work below serves both
 forms; only which form each tile gets differs.
+
+#### ✅ BUILT 2026-11-15 — both octagons' roofs now meet their walls
+
+Measured: **every row on both tiles meets the roof at both ends and at
+mid-span, to 0.00in.** Three things did it, and the third is the one that
+matters:
+
+1. **`roofSpanFt`** — the building's dimension across the ridge. Two call
+   sites measured a gable WALL instead, equal on a box and one facet on an
+   octagon. Fixing it makes the 32ft tile peaked (by his own panel-reach rule)
+   and the 16ft tile's rise 5.33ft instead of 2.25ft.
+2. **Every wall under the roof carries a row** on a mitered shape, not just
+   the two facing E/W — six on an octagon. ⚠ The shed's **tall wall is
+   excluded**: the cross-tilt row already closes it, so a gable row there would
+   build the same wall twice.
+3. **`wallRoofTopsFor` / `roofHeightFtAt`** — each wall's roofline taken from
+   the roof above **its own two corners**, plus the ridge where one crosses it.
+   This is the assumption that was only ever true for a box.
+
+⚠ **No new panel TYPE was needed**, which is the happy part of his "very unique
+gable panels": `buildGablePanelMembers` already takes an arbitrary left and
+right height, equal heights included. What is unique is the CUT — a NE facet's
+top edge lies in the roof plane while the wall runs 45 degrees to the fall, so
+its rake is neither the pitch nor level and both ends are up in the air.
+
+⚠ **It also exposed a distinction worth keeping**: "walls carrying a gable row"
+and "the two walls the RIDGE runs between" had been the same set, and four
+things meant the second — the peak dimension handle (which picked a diagonal
+facet), the ridge beam and the plan's ridge line (both of which bail on
+`size !== 2` and so vanished on a peaked octagon), and the "only 2 are allowed"
+toggle message. `trueGableEndWallIds` is now the pair.
+
+⚠ **Still open, and NOT caused by this** (verified against the diff): the Width
+and Depth dimension handles on an octagon read one **facet** (6'-7½" on the
+16ft tile) rather than the building's 16ft. `dimensionHandles` was not touched.
