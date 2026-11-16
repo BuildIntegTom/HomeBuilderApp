@@ -1898,6 +1898,27 @@ export function buildGirtRows(
    * drawn rather than one nobody chose — see that constant's own note.
    */
   style: GirtStyle = LEGACY_GIRT_STYLE,
+  /**
+   * ⚠ **The x window this row is framed INSIDE, when it is not the whole
+   * panel** — `[spanFromXIn, spanToXIn]`, defaulting to the whole width,
+   * which is byte-identical to every girt row this app has ever built.
+   *
+   * It exists for the MITRED END of a panel at an octagon corner. Tommy's
+   * 2026-11-16 decision is that *sheets and plates follow the 22½° and the
+   * sticks stay square and slide inboard until they clear*. A girt bar runs
+   * the FULL depth of the wall, so the only x at which it clears a mitre is
+   * the one its deepest face allows — 6.420in in, on a 15½ in wall.
+   *
+   * ⚠ **Given that window, every one of this row's own offsets then falls
+   * out unchanged.** The bar still stands `PLATE_2X4_THICKNESS_IN` inside the
+   * window, which at a mitred end puts it exactly against the inner face of
+   * the end post that slid in by the same amount — the same relationship it
+   * has at a square end, not a second rule. That is why the row takes a
+   * WINDOW rather than a shift: a shift would push its far bar out through the
+   * panel's other end, which on an octagon facet is square.
+   */
+  spanFromXIn = 0,
+  spanToXIn = widthIn,
 ): PanelMember[] {
   if (style === "ring") {
     const rows = centerZsIn ?? girtRowCentreZsIn(rowCount, studSpanIn);
@@ -1905,14 +1926,16 @@ export function buildGirtRows(
        standing in one. Cutting them is a separate pass over the finished
        panel — see `cutRingGirtsAroundVerticals`, and the note on
        `buildRingGirtRow` for why it cannot be done here. */
-    return rows.flatMap((centerZIn, i) => buildRingGirtRow(i + 1, rows.length, centerZIn, widthIn, depthIn));
+    return rows.flatMap((centerZIn, i) =>
+      buildRingGirtRow(i + 1, rows.length, centerZIn, widthIn, depthIn, spanFromXIn, spanToXIn),
+    );
   }
   const members: PanelMember[] = [];
-  const leftStudInnerFaceXIn = PLATE_2X4_THICKNESS_IN;
-  const rightStudInnerFaceXIn = widthIn - PLATE_2X4_THICKNESS_IN;
+  const leftStudInnerFaceXIn = spanFromXIn + PLATE_2X4_THICKNESS_IN;
+  const rightStudInnerFaceXIn = spanToXIn - PLATE_2X4_THICKNESS_IN;
   const barLeftXIn = leftStudInnerFaceXIn;
   const barRightXIn = rightStudInnerFaceXIn - PLATE_2X4_WIDTH_IN;
-  const studFaceSpanIn = widthIn - 2 * PLATE_2X4_THICKNESS_IN;
+  const studFaceSpanIn = spanToXIn - spanFromXIn - 2 * PLATE_2X4_THICKNESS_IN;
   /* ⚠ The web is RIPPED to the clear space between the studs it runs past.
      The BOM calls it 8 3/4in, but a 15.5in panel leaves only 8 1/2in between
      the studs' inner faces, so the nominal web measurably stood 1/8in into
@@ -2281,11 +2304,17 @@ export function buildRingGirtRow(
   centerZIn: number,
   widthIn: number,
   depthIn: number,
+  /** The x window the ring is framed inside — see `buildGirtRows`. A ring is
+   *  a RECTANGLE, so one window is the only thing it can take: it cannot give
+   *  its exterior rail a different x from its interior one the way two
+   *  separate wythe posts can. */
+  spanFromXIn = 0,
+  spanToXIn = widthIn,
 ): PanelMember[] {
   const members: PanelMember[] = [];
   const zIn = centerZIn - PLATE_2X4_WIDTH_IN / 2;
-  const innerLeftXIn = PLATE_2X4_THICKNESS_IN;
-  const innerRightXIn = widthIn - PLATE_2X4_THICKNESS_IN;
+  const innerLeftXIn = spanFromXIn + PLATE_2X4_THICKNESS_IN;
+  const innerRightXIn = spanToXIn - PLATE_2X4_THICKNESS_IN;
   const railLengthIn = innerRightXIn - innerLeftXIn;
   const shortLengthIn = depthIn - 2 * PLATE_2X4_THICKNESS_IN;
   if (railLengthIn <= 0 || shortLengthIn <= 0) return members;

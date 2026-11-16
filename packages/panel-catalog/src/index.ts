@@ -3,6 +3,7 @@ export * from "./data";
 export * from "./foundationDetails";
 export * from "./componentSchema";
 export * from "./panelMemberHelpers";
+export * from "./panelPlanMitre";
 export * from "./standardPanelMembers";
 export * from "./floorRoofPanelMembers";
 export * from "./floorRoofPanelRun";

@@ -1,6 +1,12 @@
 import type { MemberRole, PanelMember } from "./componentSchema";
 import { computeBraceEndCutAngleDeg, describeBraceEndCuts, type BraceEndCut } from "./panelMemberHelpers";
-import { compoundBevelNote, cutNoteForEnds, formatShopDegrees, formatShopInches } from "./shopCutNotes";
+import {
+  compoundBevelNote,
+  cutNoteForEnds,
+  formatShopDegrees,
+  formatShopInches,
+  planMitreNote,
+} from "./shopCutNotes";
 
 export interface PanelCutListRow {
   letter: string;
@@ -116,6 +122,12 @@ function cutKey(member: PanelMember): string {
      same trap the Shop Fabrication group key carries the cross rise for. */
   const bevel = compoundBevelFor(member);
   if (bevel) parts.push(bevel.bevelDeg.toFixed(2), bevel.highFace, bevel.alongIn.toFixed(3));
+  /* ⚠ A PLAN MITRE IS INVISIBLE IN A MEMBER'S ELEVATION, so without this a
+     mitred plate and a square-cut one of the same stock and the same length
+     merge into one lettered row and half of them get cut square. The same
+     trap the bevel above carries, on a third axis. */
+  const mitre = planMitreFor(member);
+  if (mitre) parts.push(mitre.angleDeg.toFixed(2), mitre.longFace, mitre.alongIn.toFixed(3));
   return parts.join("|");
 }
 
@@ -251,6 +263,55 @@ function compoundBevelFor(member: PanelMember): { bevelDeg: number; acrossIn: nu
   };
 }
 
+/**
+ * ⚠ **THE PLAN MITRE — read off the x difference between a member's two depth
+ * faces, the same way `compoundBevelFor` reads the z difference.**
+ *
+ * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+ * > Tommy, 2026-11-16
+ *
+ * A board cut flat on an angle ends at a different x on each of its two depth
+ * faces. Nothing else in this app moves a member's corners along x between its
+ * faces, which is what makes the reading unambiguous — and a board with BOTH a
+ * plan mitre and a compound bevel reports both, because the two differences lie
+ * on different axes and neither hides the other.
+ */
+function planMitreFor(
+  member: PanelMember,
+): { angleDeg: number; acrossIn: number; alongIn: number; longFace: string } | null {
+  const near = member.position.trapezoidCornersIn;
+  const far = member.position.trapezoidFarCornersIn;
+  if (!near || !far) return null;
+  let maxIn = 0;
+  let signed = 0;
+  for (let i = 0; i < near.length; i++) {
+    const d = far[i]!.xIn - near[i]!.xIn;
+    if (Math.abs(d) > Math.abs(maxIn)) {
+      maxIn = Math.abs(d);
+      signed = d;
+    }
+  }
+  /* ⚠ **Below a thirty-second of an inch this is not a cut, and saying it is
+     puts noise on the sheet.** Found on the 16ft Octagon: a tapering tile's
+     bottom skin starts at the x where the top skin meets it, and on one tile
+     that x landed 0.02in inside the mitre line — so the sheet read *"swing
+     the saw ~0.1° ... ~0in of pull-back"*. The GEOMETRY still carries the
+     0.02in, because the member really is clipped; it is the instruction that
+     is suppressed. 1/32in is the smallest thing a shop marks. */
+  if (maxIn < 1 / 32) return null;
+  const acrossIn = member.position.trapezoidDepthIn ?? member.actualDimsIn.thicknessIn;
+  if (!(acrossIn > 0)) return null;
+  return {
+    angleDeg: (Math.atan(maxIn / acrossIn) * 180) / Math.PI,
+    acrossIn,
+    alongIn: maxIn,
+    /* Member-space y runs from the exterior face inward, so the FAR face is
+       the interior one: a far face that moved in +x leaves the near
+       (exterior) face as the long one, which is a convex building corner. */
+    longFace: signed > 0 ? "exterior" : "interior",
+  };
+}
+
 function angleLabelFor(cuts: readonly BraceEndCut[]): string {
   if (cuts.length === 0) return "Square";
   const angles = [...new Set(cuts.map((c) => formatShopDegrees(c.angleDeg)))];
@@ -304,9 +365,11 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
       angleLabel: (() => {
         const base = angleLabelFor(endCutsFor(first));
         const bevel = compoundBevelFor(first);
-        /* The bevel belongs in the ANGLE column too, not only in the prose:
-           this column is what a shop scans down when setting up. */
-        return bevel ? `${base} + ${formatShopDegrees(bevel.bevelDeg)} bevel` : base;
+        const mitre = planMitreFor(first);
+        /* The bevel and the plan mitre belong in the ANGLE column too, not only
+           in the prose: this column is what a shop scans down when setting up. */
+        const withBevel = bevel ? `${base} + ${formatShopDegrees(bevel.bevelDeg)} bevel` : base;
+        return mitre ? `${withBevel} + ${formatShopDegrees(mitre.angleDeg)} plan mitre` : withBevel;
       })(),
       // ⚠ Blank, not a sentence, for a square crosscut — see `cutNote`.
       cutNote: (() => {
@@ -318,12 +381,16 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
               // `missingTriangleFor`, which was built off the modelled face first
               // and found it disagreeing by up to 1/32in on a real brace.
               cutNoteForEnds(endCutsFor(first), first.actualDimsIn.widthIn);
-        if (!bevel) return ends;
-        const note = compoundBevelNote(bevel.bevelDeg, bevel.acrossIn, bevel.alongIn, bevel.highFace);
-        /* ⚠ A board can be bevelled and square-ended at once — a top plate
-           whose rake happens to be zero, which is the N facet of an octagon
-           shed. The bevel note must still reach the sheet. */
-        return ends === "" ? note : `${ends} ${note}`;
+        const mitre = planMitreFor(first);
+        /* ⚠ A board can be bevelled, mitred in plan AND square-ended all at
+           once — a top plate whose rake happens to be zero on a diagonal
+           octagon facet is exactly that. Every note that applies must reach
+           the sheet, so they are collected rather than chosen between. */
+        const extra = [
+          bevel ? compoundBevelNote(bevel.bevelDeg, bevel.acrossIn, bevel.alongIn, bevel.highFace) : "",
+          mitre ? planMitreNote(mitre.angleDeg, mitre.acrossIn, mitre.alongIn, mitre.longFace) : "",
+        ].filter((note) => note !== "");
+        return [ends, ...extra].filter((note) => note !== "").join(" ");
       })(),
       qty: groupMembers.length,
       dimensions: dimensionsFor(first),

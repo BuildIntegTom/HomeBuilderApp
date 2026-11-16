@@ -23,6 +23,16 @@ import {
   centreNailerStudSpansIn,
   MAX_STUD_SPACING_IN,
 } from "./panelMemberHelpers";
+import {
+  NO_PANEL_PLAN_MITRE,
+  type PanelPlanMitre,
+  type PlanMitreRefusal,
+  gableGirtRowFitsMitredSpan,
+  hasPanelPlanMitre,
+  mitrePanelMembersInPlan,
+  panelPlanMitreClearXRangeIn,
+  panelPlanMitreFits,
+} from "./panelPlanMitre";
 
 /**
  * ⚠ **How many girts a gable panel gets, and where — measured off its
@@ -201,14 +211,53 @@ function buildGableCornerStuds(
   topUndersideAtIn: (xIn: number, yIn: number) => number,
   /** Rise of the top plane per inch of depth. 0 on a box. */
   crossSlope: number,
+  /**
+   * ⚠ **The panel's mitred plan ends — why an end post MOVES rather than
+   * being cut.**
+   *
+   * > *"Sheets and plates follow it; the sticks stay square and slide inboard
+   * > until they clear."* — Tommy, 2026-11-16, asked how a 22½° octagon
+   * > corner is framed.
+   *
+   * Measured before that question was put to him: an end post stands at
+   * x 0 to 1½ in through 3½ in of depth, and cutting it to a 22½° mitre
+   * leaves **0.051in of it at its deep face**. That is not a part. So it
+   * slides, square, by whatever its OWN wythe needs — 1.449in for the
+   * exterior one and 6.420in for the interior one on a 15½ in wall, which is
+   * why the two wythes' end posts stop lining up with each other. That is
+   * what a mitre means.
+   *
+   * ⚠ **It has to happen HERE and not in the general plan-mitre pass**: a
+   * gable post's top is cut to the roof plane at its own x, so moving it
+   * without re-reading the plane would leave the top at the height it had
+   * further along the rake — 0.34in out on a 16ft Octagon facet, and
+   * invisible in elevation.
+   */
+  planMitreIn: PanelPlanMitre,
 ): PanelMember[] {
-  const cornerXs: [number, number] = [0, widthIn - PLATE_2X4_THICKNESS_IN]; // [left edge, right edge]
   const cornerYs = [0, depthIn - PLATE_2X4_WIDTH_IN];
   const heights = [leftStudSpanIn, rightStudSpanIn];
   const edgeLabels = ["left", "right"];
   const members: PanelMember[] = [];
   let idx = 0;
   for (const yIn of cornerYs) {
+    /* This wythe's own clear window: the tighter of its two depth faces,
+       because a post 3 1/2in deep is clear of the cut only once its deeper
+       face is. */
+    const clearIn = panelPlanMitreClearXRangeIn(
+      planMitreIn,
+      widthIn,
+      depthIn,
+      yIn,
+      yIn + PLATE_2X4_WIDTH_IN,
+    );
+    const cornerXs: [number, number] = [
+      Math.min(Math.max(0, clearIn.startIn), widthIn - PLATE_2X4_THICKNESS_IN),
+      Math.max(
+        Math.min(widthIn - PLATE_2X4_THICKNESS_IN, clearIn.endIn - PLATE_2X4_THICKNESS_IN),
+        0,
+      ),
+    ];
     for (let side = 0; side < 2; side++) {
       idx++;
       /* ⚠ No stud where the panel has no height for one. The ids stay with
@@ -287,6 +336,10 @@ function buildGableCornerStuds(
         notes:
           `${edgeLabels[side]} edge — bottom is a square cut flush to the bottom plate; top is cut to the roof rake ` +
           `so it lands flush on the underside of the top skin.` +
+          (Math.abs(nearXIn - (side === 0 ? 0 : widthIn - PLATE_2X4_THICKNESS_IN)) > 1e-9
+            ? ` This post is SQUARE-CUT and stands ${nearXIn.toFixed(3)}in in from the panel's ` +
+              `${side === 0 ? "left" : "right"} end, clear of that end's mitre — the sheets and plates take the angle.`
+            : "") +
           (crossSlope === 0
             ? ""
             : ` That top is a COMPOUND cut: also bevel it ` +
@@ -397,6 +450,8 @@ export function buildGablePanelMembersIfBuildable(
   includeNailer: boolean,
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
   topCrossRiseIn = 0,
+  /** See `buildGablePanelMembers`' own parameter. Forwarded, not re-derived. */
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
 ): PanelMember[] | null {
   /* ⚠ The TALLEST CORNER of the top plane, not the taller edge: a compound
      bevel lifts one depth face above the other, so on an octagon facet the
@@ -414,6 +469,7 @@ export function buildGablePanelMembersIfBuildable(
     includeNailer,
     girtStyle,
     topCrossRiseIn,
+    planMitreIn,
   );
 }
 
@@ -538,7 +594,77 @@ export function buildGablePanelMembers(
    * an unknown.
    */
   topCrossRiseIn = 0,
+  /**
+   * ⚠ **THE PLAN MITRE: this panel's ends cut on an angle in PLAN, so two
+   * walls meeting at an octagon corner stop sharing wood.**
+   *
+   * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+   * > Tommy, 2026-11-16
+   *
+   * Measured on the 16ft Octagon before any of it was built: every corner
+   * rakes **22.50deg**, the short face pulls back **6.4203in** on a 15 1/2in
+   * wall, and until it does the two facets' rows **share 99.51 in^2 of plan
+   * area at each of the eight corners** — exactly the two mitre triangles
+   * nobody was cutting.
+   *
+   * See `PanelPlanMitre` for which pieces follow the angle (sheets and
+   * plates) and which slide in square (every stick), and for the measurement
+   * that ruled out cutting the posts.
+   *
+   * ⚠ **Defaults to nothing cut back, which is byte-identical to every
+   * panel this app has ever built** — and that is the right answer for a box,
+   * not a stand-in for an unknown.
+   */
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
 ): PanelMember[] {
+  return buildGablePanelMembersReportingMitre(
+    widthIn,
+    depthIn,
+    leftHeightIn,
+    rightHeightIn,
+    includeNailer,
+    girtStyle,
+    topCrossRiseIn,
+    planMitreIn,
+  ).members;
+}
+
+/**
+ * ⚠ **The same panel, plus anything the plan mitre could not be applied to.**
+ *
+ * `buildGablePanelMembers` drops those members — a piece the cut leaves
+ * nothing of is not a piece — and a dropped member is the failure mode that
+ * hides, because the panel still draws and still prices. The whole-tile
+ * `panelPlanMitreFits` guard is what a human reads; this is what the test
+ * sweep reads, so "nothing slips past that guard" is pinned rather than
+ * asserted.
+ */
+export function buildGablePanelMembersReportingMitre(
+  widthIn: number,
+  depthIn: number,
+  leftHeightIn: number,
+  rightHeightIn: number,
+  includeNailer: boolean,
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  topCrossRiseIn = 0,
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
+): { members: PanelMember[]; refusals: PlanMitreRefusal[] } {
+  /**
+   * ⚠ **A panel too short to be mitred is built SQUARE, and says so.**
+   *
+   * Once both end posts have slid in there has to be somewhere for them to
+   * stand; below `MIN_MITRED_INTERIOR_LENGTH_IN` there is not. The same shape
+   * of decision as `gableTopDivesIntoBottom` above — refuse the feature,
+   * build the panel this app already built, and report it where a human will
+   * meet it rather than drawing a part nobody can make.
+   *
+   * ⚠ **A refused tile leaves its corner's overlap in place.** The Review
+   * Log entry has to say that, because a tile quietly built square beside
+   * mitred neighbours reads as correct.
+   */
+  const planMitre = panelPlanMitreFits(planMitreIn, widthIn, depthIn)
+    ? planMitreIn
+    : NO_PANEL_PLAN_MITRE;
   /* ⚠ The highest and lowest CORNERS of the top plane. With a cross rise the
      taller EDGE is no longer the panel's tallest point. */
   const tallerHeightIn = gableTallestCornerIn(
@@ -824,8 +950,52 @@ export function buildGablePanelMembers(
      bottom skin's top face there is no board at all, only the two skins —
      forcing one in there is what drew a negative-thickness member.
      ─────────────────────────────────────────────────────────────────────── */
-  const plateFromXIn = PLATE_END_CLEARANCE_IN;
-  const plateToXIn = widthIn - PLATE_END_CLEARANCE_IN;
+  /**
+   * ⚠ **A PLATE RUN ENDS AT ITS OWN WYTHE'S END POST, and on a mitred panel
+   * the two wythes' posts are no longer at the same x.**
+   *
+   * This was the constant `PLATE_END_CLEARANCE_IN` at each end, which is the
+   * same 1 1/2in as a post's thickness — the clearance WAS the post. Saying
+   * so out loud is what lets a mitre move it: the post slides inboard by
+   * whatever its own wythe needs (1.449in for the exterior one, 6.420in for
+   * the interior one on a 15 1/2in wall) and its plates follow it.
+   *
+   * ⚠ **And this is the one place his 2026-11-16 answer had to be read
+   * against the panel as it is actually built.** He said *sheets and plates
+   * follow the 22½°*; measured, a plate CANNOT. These plates are edge rails
+   * running BETWEEN the posts in the same height band, not sole plates under
+   * them — so a plate run out to the mitre face occupies exactly the wood its
+   * own end post stands in, which the overlap audit reports and the picture
+   * hides. The two full-depth plywood SHEETS are the only pieces that reach
+   * the mitre face, and they are the ones that take the angle.
+   *
+   * With no mitre this returns `1.5` and `widthIn - 1.5` exactly, which is
+   * byte-identical to the constants it replaced.
+   */
+  const plateRunAtDepth = (centreDepthIn: number) => {
+    const clearIn = panelPlanMitreClearXRangeIn(
+      planMitre,
+      widthIn,
+      depthIn,
+      centreDepthIn - PLATE_2X4_WIDTH_IN / 2,
+      centreDepthIn + PLATE_2X4_WIDTH_IN / 2,
+    );
+    const leftPostXIn = Math.min(
+      Math.max(0, clearIn.startIn),
+      widthIn - PLATE_2X4_THICKNESS_IN,
+    );
+    const rightPostXIn = Math.max(
+      Math.min(widthIn - PLATE_2X4_THICKNESS_IN, clearIn.endIn - PLATE_2X4_THICKNESS_IN),
+      0,
+    );
+    return {
+      fromXIn: leftPostXIn + PLATE_END_CLEARANCE_IN,
+      toXIn: rightPostXIn,
+    };
+  };
+  /** The two wythes' plate runs, which differ only on a mitred panel. */
+  const extPlateRunIn = plateRunAtDepth(PLATE_2X4_WIDTH_IN / 2);
+  const intPlateRunIn = plateRunAtDepth(depthIn - PLATE_2X4_WIDTH_IN / 2);
   /** The underside of a sloped top plate hanging beneath the top skin, at a
    *  given panel x and depth. */
   const plateUndersideAtIn = (xIn: number, yIn: number) =>
@@ -837,8 +1007,16 @@ export function buildGablePanelMembers(
   /** The top face of the flat bottom plate, which is what it has to clear. */
   const bottomPlateTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const lowIsLeft = leftHeightIn <= rightHeightIn;
-  const lowPlateXIn = lowIsLeft ? plateFromXIn : plateToXIn;
-  const highPlateXIn = lowIsLeft ? plateToXIn : plateFromXIn;
+  /** The LOW and HIGH ends of one wythe's plate run. Per wythe, because a
+   *  mitre moves one wythe's ends and not the other's. */
+  const lowPlateXAtDepth = (centreDepthIn: number) => {
+    const run = plateRunAtDepth(centreDepthIn);
+    return lowIsLeft ? run.fromXIn : run.toXIn;
+  };
+  const highPlateXAtDepth = (centreDepthIn: number) => {
+    const run = plateRunAtDepth(centreDepthIn);
+    return lowIsLeft ? run.toXIn : run.fromXIn;
+  };
   /**
    * ⚠ **WHERE THE TWO PLATES CROSS, AT ONE DEPTH — and it is a different x
    * for each wythe once the top is dual bevelled.**
@@ -853,6 +1031,8 @@ export function buildGablePanelMembers(
    * the bevel. The two wythes get their own answer instead.
    */
   const plateCrossAtDepth = (atDepthIn: number) => {
+    const lowPlateXIn = lowPlateXAtDepth(atDepthIn);
+    const highPlateXIn = highPlateXAtDepth(atDepthIn);
     const undersideAtLowIn = plateUndersideAtIn(lowPlateXIn, atDepthIn);
     const undersideAtHighIn = plateUndersideAtIn(highPlateXIn, atDepthIn);
     const crosses = undersideAtLowIn < bottomPlateTopZIn;
@@ -915,6 +1095,8 @@ export function buildGablePanelMembers(
    */
   const wytheMergeAtDepth = (atDepthIn: number) => {
     const cross = plateCrossAtDepth(atDepthIn);
+    const run = plateRunAtDepth(atDepthIn);
+    const lowPlateXIn = lowPlateXAtDepth(atDepthIn);
     /** The wedge's thin end: where the top skin's underside meets the bottom
      *  skin's top face. Clamped into the plate run at both ends. */
     const thinXIn = (() => {
@@ -925,8 +1107,8 @@ export function buildGablePanelMembers(
         ? Math.max(lowPlateXIn, Math.min(cross.xIn, xIn))
         : Math.min(lowPlateXIn, Math.max(cross.xIn, xIn));
     })();
-    const fromXIn = lowIsLeft ? cross.xIn : plateFromXIn;
-    const toXIn = lowIsLeft ? plateToXIn : cross.xIn;
+    const fromXIn = lowIsLeft ? cross.xIn : run.fromXIn;
+    const toXIn = lowIsLeft ? run.toXIn : cross.xIn;
     const lengthIn = toXIn - fromXIn;
     return {
       crossXIn: cross.xIn,
@@ -953,6 +1135,18 @@ export function buildGablePanelMembers(
   const platedFromXIn = Math.min(extWythe.fromXIn, intWythe.fromXIn);
   const platedToXIn = Math.max(extWythe.toXIn, intWythe.toXIn);
   const platedLengthIn = platedToXIn - platedFromXIn;
+  /** ⚠ ...and then each one is clamped back to its OWN wythe's post faces.
+   *  The "wider of the two" above is about the plate MERGE, which can shorten
+   *  one wythe's pair; a mitre moves one wythe's ENDS, and the wider run
+   *  would reach past the post that wythe's plate has to butt against.
+   *  Identical to the unclamped span whenever there is no mitre. */
+  const bottomPlateRunIn = (run: { fromXIn: number; toXIn: number }) => {
+    const fromXIn = Math.max(platedFromXIn, run.fromXIn);
+    const toXIn = Math.min(platedToXIn, run.toXIn);
+    return { fromXIn, lengthIn: Math.max(0, toXIn - fromXIn) };
+  };
+  const extBottomPlateIn = bottomPlateRunIn(extPlateRunIn);
+  const intBottomPlateIn = bottomPlateRunIn(intPlateRunIn);
   const hasPlatePair = extWythe.hasPair || intWythe.hasPair;
   /** The tapered board the pair becomes: flat on the bottom skin, following
    *  the top skin's underside above it. */
@@ -1187,11 +1381,11 @@ export function buildGablePanelMembers(
             actualDimsIn: {
               thicknessIn: PLATE_2X4_THICKNESS_IN,
               widthIn: PLATE_2X4_WIDTH_IN,
-              lengthIn: platedLengthIn,
+              lengthIn: extBottomPlateIn.lengthIn,
             },
             orientation: "flat",
             position: {
-              xIn: platedFromXIn,
+              xIn: extBottomPlateIn.fromXIn,
               yIn: 0,
               zIn: SKIN_THICKNESS_IN,
               rotationDeg: 0,
@@ -1209,11 +1403,11 @@ export function buildGablePanelMembers(
             actualDimsIn: {
               thicknessIn: PLATE_2X4_THICKNESS_IN,
               widthIn: PLATE_2X4_WIDTH_IN,
-              lengthIn: platedLengthIn,
+              lengthIn: intBottomPlateIn.lengthIn,
             },
             orientation: "flat",
             position: {
-              xIn: platedFromXIn,
+              xIn: intBottomPlateIn.fromXIn,
               yIn: depthIn - PLATE_2X4_WIDTH_IN,
               zIn: SKIN_THICKNESS_IN,
               rotationDeg: 0,
@@ -1235,6 +1429,7 @@ export function buildGablePanelMembers(
       rightStudSpanIn,
       topUndersideAtIn,
       crossSlope,
+      planMitre,
     ),
     ...gableCentreStuds(),
     ...(extWythe.hasPair
@@ -1324,17 +1519,51 @@ export function buildGablePanelMembers(
          only ever built a left-low gable, so the mirror-image overlap on a
          right-low tile was pinned nowhere — it is swept in both directions
          now. */
-      const lowEndPlateXIn =
-        leftHeightIn <= rightHeightIn
-          ? PLATE_END_CLEARANCE_IN
-          : widthIn - PLATE_END_CLEARANCE_IN;
       /* ⚠ At the depth face where the plane is LOWER, so a girt clears the
          plate on both wythes rather than on the average of them. */
       const lowFaceYIn = crossSlope >= 0 ? 0 : depthIn;
+      /* Read at that same face, so a mitred wythe's own moved plate end is
+         what the row is measured against. */
+      const lowEndPlateXIn = lowPlateXAtDepth(lowFaceYIn);
       const plan = gableGirtPlan(shorterStudSpanIn, {
         maxRowTopZIn: plateUndersideAtIn(lowEndPlateXIn, lowFaceYIn),
         rowTopAboveCentreIn: girtRowTopAboveCentreIn(girtStyle),
       });
+      /* ⚠ A girt bar and a ring rail run the FULL depth of the wall, so the
+         only x at which they clear a mitre is the one the deepest face allows
+         — and handed that window, every offset inside the row lands exactly
+         where it does at a square end, with the bar against the slid post's
+         inner face. See `buildGirtRows`' own `spanFromXIn`. */
+      const girtSpanIn = panelPlanMitreClearXRangeIn(planMitre, widthIn, depthIn, 0, depthIn);
+      /**
+       * ⚠ **A MITRED TILE TOO NARROW FOR A ROW GETS NO ROW — and that is a
+       * decision about girts, not about the mitre.**
+       *
+       * Moving a full-depth bar inboard by the whole 6.420in pull-back lands
+       * it on the panel's own centre nailer on a narrow tile, and the nailer
+       * cannot move: a centre vertical stacks on the wall stud below it.
+       * Measured on the 16ft Octagon, whose gable row tiles to **19 7/8in**
+       * panels: the bar wants x 7.920 to 11.420 and the nailer stands at
+       * 8.188 to 11.688.
+       *
+       * Refusing the MITRE for that would have made his whole ask inert on
+       * the building he asked about. Refusing the ROW costs almost nothing:
+       * what a girt braces is the clear span between the posts, and a mitred
+       * 19 7/8in tile's interior span is **10.5in** — well inside the 36in
+       * his own rule names (`GABLE_GIRT_MAX_UNBRACED_SPAN_IN`). It is the
+       * same answer `gableGirtPlan` already gives a short tile.
+       *
+       * ⚠ With no mitre this is never false, which is what keeps every
+       * existing panel byte-identical.
+       */
+      const verticalSpansIn: [number, number][] = (() => {
+        const centres = centreNailerStudSpansIn(widthIn);
+        if (centres.length > 0) return centres;
+        return includeNailer
+          ? [[widthIn / 2 - PLATE_2X4_WIDTH_IN / 2, widthIn / 2 + PLATE_2X4_WIDTH_IN / 2]]
+          : [];
+      })();
+      if (!gableGirtRowFitsMitredSpan(widthIn, girtSpanIn.startIn, girtSpanIn.endIn, verticalSpansIn)) return [];
       return buildGirtRows(
         plan.rowCount,
         widthIn,
@@ -1342,6 +1571,8 @@ export function buildGablePanelMembers(
         shorterStudSpanIn,
         plan.centerZsIn ?? undefined,
         girtStyle,
+        girtSpanIn.startIn,
+        girtSpanIn.endIn,
       );
     })(),
   ];
@@ -1356,7 +1587,69 @@ export function buildGablePanelMembers(
   }
   /* See `buildStandardPanelMembers` — a ring's rails are cut around the
      panel's verticals once the panel is whole. */
-  return cutRingGirtsAroundVerticals(members, depthIn);
+  const whole = cutRingGirtsAroundVerticals(members, depthIn);
+  /* ⚠ **The plan mitre is the LAST pass, over the finished panel.** Ring
+     rails have to be cut around the verticals before anything is cut back to
+     the mitre, or the cut pass measures rails that the mitre is about to
+     shorten. Every piece this leaves alone is returned by identity, which is
+     what keeps a box building byte-identical.
+     ⚠ Per-member refusals are dropped rather than reported from here: the
+     whole-tile `panelPlanMitreFits` guard above is what a human reads, and
+     that nothing slips past it is pinned by a width/height sweep in
+     `gablePlanMitre.test.ts`, which reads the report this returns. */
+  return mitrePanelMembersInPlan(whole, widthIn, depthIn, planMitre);
+}
+
+/**
+ * ⚠ **Does the plan mitre cost this tile its girt row?**
+ *
+ * A girt bar runs the full depth of the wall, so a mitre moves it inboard by
+ * the whole interior pull-back — 6.420in on a 15 1/2in wall — and on a narrow
+ * tile that lands it on the panel's own centre nailer, which cannot move. The
+ * row is then not built (see `gableGirtRowFitsMitredSpan`), which is the same
+ * answer `gableGirtPlan` already gives a short tile and costs little: what a
+ * girt braces is the clear span between the posts, and a mitred 19 7/8in
+ * tile's is 10 1/2in against the 36in his own rule names.
+ *
+ * ⚠ It still has to be SAID, because a part quietly built with fewer pieces
+ * than its neighbours reads as correct. This answers the Review Log's
+ * question, and it answers it by building the two panels and comparing rather
+ * than by restating the girt rules a second time — two rules that can drift
+ * apart are worse than two builds. Only ever called for tiles that really
+ * carry a mitre, which on the 16ft Octagon is 12 of 24.
+ */
+export function gableMitreDropsGirtRow(
+  widthIn: number,
+  depthIn: number,
+  leftHeightIn: number,
+  rightHeightIn: number,
+  includeNailer: boolean,
+  girtStyle: GirtStyle,
+  planMitreIn: PanelPlanMitre,
+): boolean {
+  if (!hasPanelPlanMitre(planMitreIn)) return false;
+  const girtCount = (members: PanelMember[]) =>
+    members.filter((m) => m.role === "girt" || m.role === "girt_web").length;
+  const square = buildGablePanelMembersIfBuildable(
+    widthIn,
+    depthIn,
+    leftHeightIn,
+    rightHeightIn,
+    includeNailer,
+    girtStyle,
+  );
+  if (!square || girtCount(square) === 0) return false;
+  const mitred = buildGablePanelMembersIfBuildable(
+    widthIn,
+    depthIn,
+    leftHeightIn,
+    rightHeightIn,
+    includeNailer,
+    girtStyle,
+    0,
+    planMitreIn,
+  );
+  return mitred !== null && girtCount(mitred) === 0;
 }
 
 /**

@@ -238,6 +238,37 @@ export function compoundBevelNote(bevelDeg: number, acrossIn: number, alongIn: n
 }
 
 /**
+ * ⚠ **MITRED IN PLAN — the saw swung flat, at an octagon corner.**
+ *
+ * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+ * > Tommy, 2026-11-16
+ *
+ * A third kind of angle, and it reads nothing like the other two. The end
+ * cuts in this file are in the board's own ELEVATION (it is raked along its
+ * length); `compoundBevelNote` tips the blade across the board's width. This
+ * one swings the saw's table: the end face is square to the board's faces and
+ * raked in PLAN, so two walls meeting at an octagon corner close on the
+ * corner's bisector instead of crossing into each other's wood.
+ *
+ * ⚠ It is said here because the geometry the cut list reads — one elevation
+ * quad — cannot show it. A plate mitred 22½° in plan has the same elevation
+ * as a square-cut one, so without this the sheet describes a square crosscut
+ * and the part comes back the wrong shape with nothing on the page wrong.
+ *
+ * `longFace` names the face the long point is on — exterior at a building's
+ * convex corner, interior at the inside of a notch — because a board cut the
+ * wrong way round is still exactly the right length.
+ */
+export function planMitreNote(angleDeg: number, acrossIn: number, alongIn: number, longFace: string): string {
+  return (
+    `MITRED IN PLAN — swing the saw ${formatShopDegrees(angleDeg)} and cut this end flat through the board's ` +
+    `${formatShopInches(acrossIn)} depth, ${formatShopInches(alongIn)} of pull-back, long point on the ` +
+    `${longFace} face. The end face stays square to the board's own two faces; it is the saw's table that turns, ` +
+    "not the blade."
+  );
+}
+
+/**
  * The whole cut note for a member with angled ends.
  *
  * Two ends with the same cut are said once — a shop reading "22½° off square"
