@@ -4,10 +4,12 @@ import {
   buildGablePanelSchema,
   gableShortestCornerIn,
   gableTallestCornerIn,
+  gableTopDivesIntoBottom,
   gableTopPlaneDipRad,
 } from "./gablePanelMembers";
 import { memberLocalCornersIn, PLATE_2X4_WIDTH_IN, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 import { memberIsOblique, overlappingMemberPairs } from "./memberPrism";
+import { computePanelCutList } from "./panelCutList";
 import type { PanelMember } from "./componentSchema";
 
 /**
@@ -25,8 +27,14 @@ import type { PanelMember } from "./componentSchema";
 
 const DEPTH = 15.5;
 const WIDTH = 48;
-/** A NE facet tile: 2.828:12 of rake, interior face 3.653in LOW. */
-const NE = { leftIn: 64, rightIn: 64 - (WIDTH * 2.8284) / 12, crossIn: -3.6527 };
+/** A 16ft Octagon diagonal facet, derived rather than typed: the roof's 4:12
+ *  fall splits evenly between the wall's length and its depth, so the rake is
+ *  4 x cos(45deg) = 2.8284:12 and the cross rise is 15.5 x 4/12 x cos(45deg)
+ *  = 3.6534in. Typing them rounded made two assertions 7 thousandths out. */
+const DIAGONAL_RAKE_IN12 = 4 * Math.SQRT1_2;
+const DIAGONAL_CROSS_IN = DEPTH * (4 / 12) * Math.SQRT1_2;
+/** A NE facet tile: the interior face is the LOW one. */
+const NE = { leftIn: 64, rightIn: 64 - (WIDTH * DIAGONAL_RAKE_IN12) / 12, crossIn: -DIAGONAL_CROSS_IN };
 /** An E facet tile: the full pitch along the wall, nothing across it. */
 const EAST = { leftIn: 64, rightIn: 64 - (WIDTH * 4) / 12, crossIn: 0 };
 
@@ -151,7 +159,7 @@ describe("⚠ a NE facet tile — the compound top", () => {
     /* Their centres are 12in apart through the depth, so one roof plane
        leaves them 12 x 0.2357 apart in height — which is the whole reason
        each has to read the plane at its OWN depth. */
-    expect(dropIn).toBeCloseTo(2.8279, 3);
+    expect(dropIn).toBeCloseTo(2.8284, 3);
   });
 
   it("⚠ every member that touches the top plane is OBLIQUE, and the rest are not", () => {
@@ -220,6 +228,35 @@ describe("⚠ a NE facet tile — the compound top", () => {
     expect(note).toMatch(/missing wedge the jig is cut from is 15\.5in across by 3\.65\d?in/);
   });
 
+  it("⚠ the CUT LIST carries the second angle, which is what makes the part buildable", () => {
+    /* Without this the sheet showed the mitre alone and a generic "CHECK: the
+       modelled face is off this stock width" — measured on the 16ft Octagon,
+       21 more parts carrying that CHECK and none of them naming the angle a
+       shop would have to set the blade to. */
+    const rows = computePanelCutList(members);
+    const bevelled = rows.filter((r) => r.cutNote.includes("COMPOUND CUT"));
+    expect(bevelled.length).toBeGreaterThan(0);
+    for (const row of bevelled) {
+      expect(row.angleLabel).toContain("bevel");
+      expect(row.cutNote).toContain("exterior face high");
+      expect(row.cutNote).toMatch(/tilt the blade ~?13\.3°/);
+      expect(row.cutNote).toMatch(/build its jig block to those two legs as well/);
+    }
+    /* ⚠ And a square-cut board is NOT given one. The bottom plate of this very
+       panel lies flat and is cut square across its width. */
+    const flat = rows.filter((r) => r.members.every((m) => m.memberId.startsWith("bottom_")));
+    expect(flat.length).toBeGreaterThan(0);
+    for (const row of flat) expect(row.cutNote).not.toContain("COMPOUND CUT");
+  });
+
+  it("⚠ a bevelled board and a square one of the same stock never share a row", () => {
+    const rows = computePanelCutList(members);
+    for (const row of rows) {
+      const bevelled = row.members.filter((m) => m.position.trapezoidFarCornersIn !== undefined).length;
+      expect(bevelled === 0 || bevelled === row.members.length, row.partLabel).toBe(true);
+    }
+  });
+
   it("the schema's own warning names the dual bevel, since elevation cannot show it", () => {
     const schema = buildGablePanelSchema(WIDTH, DEPTH, NE.leftIn, NE.rightIn, false, undefined, NE.crossIn);
     const text = schema.notes.map((n) => n.text).join(" ");
@@ -230,7 +267,15 @@ describe("⚠ a NE facet tile — the compound top", () => {
 });
 
 describe("⚠ an SE facet bevels the other way", () => {
-  const members = buildGablePanelMembers(WIDTH, DEPTH, 18.75, 18.75 - (WIDTH * 2.8284) / 12, false, undefined, 3.6527);
+  const members = buildGablePanelMembers(
+    WIDTH,
+    DEPTH,
+    18.75,
+    18.75 - (WIDTH * DIAGONAL_RAKE_IN12) / 12,
+    false,
+    undefined,
+    DIAGONAL_CROSS_IN,
+  );
 
   it("the interior face is the HIGH one and the note says so", () => {
     const skin = members.find((m) => m.memberId === "top_plate_skin")!;
@@ -247,6 +292,68 @@ describe("⚠ an SE facet bevels the other way", () => {
 
   it("no members overlap on this one either", () => {
     expect(overlappingMemberPairs(members)).toEqual([]);
+  });
+});
+
+describe("⚠ a tile that runs out refuses the bevel rather than drawing one", () => {
+  /* Where a tile tapers toward nothing its top and bottom plates already merge
+     into one board along the WIDTH. Tilt the top through the DEPTH as well and
+     the same collision arrives at one depth face and not the other, so the
+     part would be a wedge tapered two ways — which nobody has specified.
+
+     ⚠ Measured before the guard: four gable tiles on the 16ft Octagon turned
+     up in the Review Log as "two members in the same volume — not buildable as
+     drawn", on a building that had none before the bevel. */
+  const RUN_OUT: [number, number, number][] = [
+    [48, 15, 0],
+    [48, 0, 15],
+    [48, 6, 0],
+    [15.5, 3.625, 0],
+    [15.5, 0, 3.625],
+  ];
+
+  it("⚠ and no tile, bevelled or not, has two members in the same volume", () => {
+    for (const [w, l, r] of [...RUN_OUT, [28.125, 18.75, 12] as [number, number, number]]) {
+      for (const crossIn of [0, DIAGONAL_CROSS_IN, -DIAGONAL_CROSS_IN]) {
+        const members = buildGablePanelMembers(w, DEPTH, l, r, false, undefined, crossIn);
+        expect(overlappingMemberPairs(members), `${w}in ${l}->${r} cross ${crossIn}`).toEqual([]);
+      }
+    }
+  });
+
+  it("⚠ a run-out tile is byte-identical to the panel built before the bevel", () => {
+    for (const [w, l, r] of RUN_OUT) {
+      expect(gableTopDivesIntoBottom(w, DEPTH, l, r, DIAGONAL_CROSS_IN), `${w}in ${l}->${r}`).toBe(true);
+      expect(buildGablePanelMembers(w, DEPTH, l, r, false, undefined, DIAGONAL_CROSS_IN)).toEqual(
+        buildGablePanelMembers(w, DEPTH, l, r, false),
+      );
+    }
+  });
+
+  it("⚠ so the REASON cannot live on the part — it is the Review Log's job", () => {
+    /* Two homes were tried and both were invisible: the schema (no consumer in
+       the app) and the top skin's note (the cut list builds its own note from
+       geometry and never reads `member.notes`). `gableTopDivesIntoBottom` is
+       exported so page.tsx can ask the same question the builder asked, and
+       say the answer where a human meets it. */
+    const rows = computePanelCutList(buildGablePanelMembers(48, DEPTH, 15, 0, false, undefined, DIAGONAL_CROSS_IN));
+    expect(rows.some((r) => r.cutNote.includes("COMPOUND CUT"))).toBe(false);
+    expect(gableTopDivesIntoBottom(48, DEPTH, 15, 0, DIAGONAL_CROSS_IN)).toBe(true);
+  });
+
+  it("a tile well clear of the merge band keeps its bevel", () => {
+    expect(gableTopDivesIntoBottom(28.125, DEPTH, 64, 57.4, DIAGONAL_CROSS_IN)).toBe(false);
+    const members = buildGablePanelMembers(28.125, DEPTH, 64, 57.4, false, undefined, DIAGONAL_CROSS_IN);
+    expect(members.some((m) => m.position.trapezoidFarCornersIn !== undefined)).toBe(true);
+  });
+
+  it("⚠ the predicate takes a cross RISE, like the builder — not a slope", () => {
+    /* The two disagreed for an hour and the failing test looked like a
+       geometry fault rather than a unit one. */
+    expect(gableTopDivesIntoBottom(48, DEPTH, 64, 48, DIAGONAL_CROSS_IN)).toBe(false);
+    expect(gableTopDivesIntoBottom(48, DEPTH, 64, 48, DIAGONAL_CROSS_IN * DEPTH)).toBe(false);
+    /* A rise big enough to swallow the panel does dive. */
+    expect(gableTopDivesIntoBottom(48, DEPTH, 64, 48, -120)).toBe(true);
   });
 });
 

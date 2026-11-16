@@ -207,6 +207,37 @@ export function describeEndCutForShop(cut: BraceEndCut, stockWidthIn: number): s
 }
 
 /**
+ * ⚠ **THE SECOND ANGLE on a COMPOUND cut — the saw's TILT, not its mitre.**
+ *
+ * > *"can we make the top of Gable and dual beveled So that the roof can meet
+ * > it?"* — Tommy, 2026-11-16
+ *
+ * Every other note in this file describes a cut in ONE plane: the board is
+ * raked and the saw is square to its face. A gable top on an octagon facet is
+ * not — the roof falls through the wall as well as along it, so the same cut
+ * also tips the blade across the board's width.
+ *
+ * ⚠ **Without this the sheet is unbuildable and does not say so.** The cut
+ * list reads a member's end cuts off its elevation geometry, where a compound
+ * bevel is invisible; what reached the shop was the mitre alone, plus the
+ * generic "CHECK: the modelled face is off this stock width" that fires when
+ * the modelled face stops being parallel-sided. Measured on the 16ft Octagon:
+ * 21 more parts carrying that CHECK and not one of them naming the angle a
+ * shop would have to set.
+ *
+ * The missing wedge is given the same way every other jig in this file is —
+ * the triangle the cut REMOVES, because the jig block is its negative.
+ */
+export function compoundBevelNote(bevelDeg: number, acrossIn: number, alongIn: number, highFace: string): string {
+  return (
+    `COMPOUND CUT — also tilt the blade ${formatShopDegrees(bevelDeg)} across the board's ` +
+    `${formatShopInches(acrossIn)} width, ${formatShopInches(alongIn)} of fall, ${highFace} face high. ` +
+    `The wedge this one removes is ${formatShopInches(acrossIn)} x ${formatShopInches(alongIn)}; ` +
+    "build its jig block to those two legs as well."
+  );
+}
+
+/**
  * The whole cut note for a member with angled ends.
  *
  * Two ends with the same cut are said once — a shop reading "22½° off square"

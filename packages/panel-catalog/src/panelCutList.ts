@@ -1,6 +1,6 @@
 import type { MemberRole, PanelMember } from "./componentSchema";
 import { computeBraceEndCutAngleDeg, describeBraceEndCuts, type BraceEndCut } from "./panelMemberHelpers";
-import { cutNoteForEnds, formatShopDegrees, formatShopInches } from "./shopCutNotes";
+import { compoundBevelNote, cutNoteForEnds, formatShopDegrees, formatShopInches } from "./shopCutNotes";
 
 export interface PanelCutListRow {
   letter: string;
@@ -109,6 +109,13 @@ function cutKey(member: PanelMember): string {
   if (member.orientation === "diagonal" && member.position.tiltDeg !== undefined) {
     parts.push(Math.round(computeBraceEndCutAngleDeg(member.position.tiltDeg) / 0.1).toFixed(1));
   }
+  /* ⚠ **AND THE COMPOUND BEVEL.** A bevelled board and a square-cut one of the
+     same stock and the same length are different parts, and a gable panel has
+     both: its bottom plate is square across and its top plate is tilted. Merged
+     into one lettered row, half of them would be cut from the wrong note — the
+     same trap the Shop Fabrication group key carries the cross rise for. */
+  const bevel = compoundBevelFor(member);
+  if (bevel) parts.push(bevel.bevelDeg.toFixed(2), bevel.highFace, bevel.alongIn.toFixed(3));
   return parts.join("|");
 }
 
@@ -207,6 +214,43 @@ function endCutsFor(member: PanelMember): BraceEndCut[] {
     .sort((a, b) => order[a.kind] - order[b.kind]);
 }
 
+/**
+ * ⚠ **A member's COMPOUND bevel, measured off its own two depth faces** — see
+ * `trapezoidFarCornersIn`. Null when the board is cut square across its width,
+ * which is every member of every box building.
+ *
+ * The angle is the same for every bevelled member of one panel (they share one
+ * roof plane); what differs is how far each one's own width carries it, which
+ * is the leg the shop's jig block is built to.
+ */
+function compoundBevelFor(member: PanelMember): { bevelDeg: number; acrossIn: number; alongIn: number; highFace: string } | null {
+  const near = member.position.trapezoidCornersIn;
+  const far = member.position.trapezoidFarCornersIn;
+  if (!near || !far) return null;
+  /* The biggest movement between the two faces. A plate shifts all four
+     corners; a stud only its top pair, because its bottom sits level. */
+  let maxIn = 0;
+  let signed = 0;
+  for (let i = 0; i < near.length; i++) {
+    const d = far[i]!.zIn - near[i]!.zIn;
+    if (Math.abs(d) > Math.abs(maxIn)) {
+      maxIn = Math.abs(d);
+      signed = d;
+    }
+  }
+  if (maxIn < 1e-9) return null;
+  const acrossIn = member.position.trapezoidDepthIn ?? member.actualDimsIn.thicknessIn;
+  if (!(acrossIn > 0)) return null;
+  return {
+    bevelDeg: (Math.atan(maxIn / acrossIn) * 180) / Math.PI,
+    acrossIn,
+    alongIn: maxIn,
+    /* Member-space y runs from the exterior face inward, so the FAR face is
+       the interior one. */
+    highFace: signed > 0 ? "interior" : "exterior",
+  };
+}
+
 function angleLabelFor(cuts: readonly BraceEndCut[]): string {
   if (cuts.length === 0) return "Square";
   const angles = [...new Set(cuts.map((c) => formatShopDegrees(c.angleDeg)))];
@@ -257,15 +301,30 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
       partLabel: partLabelFor(first),
       materialLabel: materialLabelFor(first),
       lengthLabel: lengthLabelFor(first),
-      angleLabel: angleLabelFor(endCutsFor(first)),
+      angleLabel: (() => {
+        const base = angleLabelFor(endCutsFor(first));
+        const bevel = compoundBevelFor(first);
+        /* The bevel belongs in the ANGLE column too, not only in the prose:
+           this column is what a shop scans down when setting up. */
+        return bevel ? `${base} + ${formatShopDegrees(bevel.bevelDeg)} bevel` : base;
+      })(),
       // ⚠ Blank, not a sentence, for a square crosscut — see `cutNote`.
-      cutNote:
-        endCutsFor(first).length === 0
-          ? ""
-          : // The STOCK width, because the jig block is cut from stock — see
-            // `missingTriangleFor`, which was built off the modelled face first
-            // and found it disagreeing by up to 1/32in on a real brace.
-            cutNoteForEnds(endCutsFor(first), first.actualDimsIn.widthIn),
+      cutNote: (() => {
+        const bevel = compoundBevelFor(first);
+        const ends =
+          endCutsFor(first).length === 0
+            ? ""
+            : // The STOCK width, because the jig block is cut from stock — see
+              // `missingTriangleFor`, which was built off the modelled face first
+              // and found it disagreeing by up to 1/32in on a real brace.
+              cutNoteForEnds(endCutsFor(first), first.actualDimsIn.widthIn);
+        if (!bevel) return ends;
+        const note = compoundBevelNote(bevel.bevelDeg, bevel.acrossIn, bevel.alongIn, bevel.highFace);
+        /* ⚠ A board can be bevelled and square-ended at once — a top plate
+           whose rake happens to be zero, which is the N facet of an octagon
+           shed. The bevel note must still reach the sheet. */
+        return ends === "" ? note : `${ends} ${note}`;
+      })(),
       qty: groupMembers.length,
       dimensions: dimensionsFor(first),
       members: groupMembers,

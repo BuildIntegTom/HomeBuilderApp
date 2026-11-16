@@ -13,6 +13,7 @@ import {
   roofSpanFt,
   shedTallWallId,
   wallRoofTopsFor,
+  wallRoofCrossRiseIn,
   removeCourtyards,
   insertCornerAtWallOffset,
   isSplitRefusal,
@@ -223,6 +224,7 @@ import {
   buildCornerPanelMembers,
   buildDoorHeaderMembers,
   buildGablePanelMembersIfBuildable,
+  gableTopDivesIntoBottom,
   buildJackStudMembers,
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
@@ -446,6 +448,11 @@ type PanelMemberSource = Pick<
      call sites already hand over the instance. */
   | "gablePeakApexOffsetXIn"
   | "gablePeakApexHeightIn"
+  /* Which wall this panel is on — the one thing a gable's SECOND bevel
+     depends on, because the roof falls across each facet by a different
+     amount and in a different direction. Arrives here for free: all four
+     call sites already hand over the instance. */
+  | "wallId"
 >;
 import { shearMembersFor } from "./shearMembers";
 import {
@@ -624,6 +631,10 @@ const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false 
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
 const StandardPanel3DView = dynamic(() => import("./StandardPanel3DView"), { ssr: false });
 const TruckLoad3DView = dynamic(() => import("./TruckLoad3DView"), { ssr: false });
+
+/** Stable empty default for the gable cross-rise record, so a building with no
+ *  mitred walls hands its consumers the same object every render. */
+const EMPTY_CROSS_RISE_BY_WALL_ID: Record<string, number> = {};
 
 const BEARING_ELIGIBLE_TYPES = new Set(["standard", "corner", "safety-oct-corner", "braced", "column"]);
 // Every real wall panel type, straw-filled or not (Safety/Gap included —
@@ -7762,22 +7773,71 @@ export default function LayoutEditor() {
    * own span, so dragging the Ridge rise handle moves these rows with the roof
    * instead of leaving them at the pitch the building was drawn with.
    */
-  const gableWallRoofTops = useMemo(() => {
-    if (!footprint || !isMiteredShape(footprint)) return null;
+  const gableRoofTops = useMemo(() => {
+    const none = { tops: null, crossRiseInByWallId: EMPTY_CROSS_RISE_BY_WALL_ID };
+    if (!footprint || !isMiteredShape(footprint)) return none;
     const spanFt = roofSpanFt(footprint);
     const isPeak = roofProfilePointHeightsFt.length === 1 && gableStructuralPanelWallIds.size > 0;
     const runFt = isPeak ? spanFt / 2 : spanFt;
     const riseFt = roofProfilePointHeightsFt[0] ?? 0;
-    if (!(runFt > 0) || !(riseFt > 0)) return null;
+    if (!(runFt > 0) || !(riseFt > 0)) return none;
     const eaveHeightFt = gableEaveHeightIn / 12;
     const roof = simpleRoofPlanes(footprint, {
       form: isPeak ? "peaked" : "shed",
       pitchIn12: (riseFt / runFt) * 12,
       eaveHeightFt,
     });
-    if (roof.refusal !== null) return null;
-    return new Map(wallRoofTopsFor(footprint, roof, eaveHeightFt).map((top) => [top.wallId, top]));
-  }, [footprint, roofProfilePointHeightsFt, gableStructuralPanelWallIds, gableEaveHeightIn]);
+    if (roof.refusal !== null) return none;
+    /* ⚠ **AND HOW FAR THE ROOF FALLS ACROSS EACH WALL'S DEPTH** — the second
+       bevel. Read from the same planes as the corner heights above, so the two
+       halves of one gable's top cannot come from different roofs.
+
+       > *"You're right, it is not flush for the roof at the top, can we make
+       > the top of Gable and dual beveled So that the roof can meet it?"* —
+       > Tommy, 2026-11-16
+
+       ⚠ A wall the RIDGE runs between the faces of gets ZERO and is flagged:
+       its top is a shallow hip rather than a bevel, and `wallRoofCrossRiseIn`
+       reports that rather than handing back a number that would bridge the
+       ridge. No shape the draw tools can make reaches it (the narrowest
+       building is 8ft and the ridge is 4ft from either wall), so this is a
+       guard, not a case — and it is NOT in the Review Log yet. */
+    const crossRiseInByWallId: Record<string, number> = {};
+    const tops = new Map(
+      wallRoofTopsFor(footprint, roof, eaveHeightFt).map((top) => {
+        const wall = footprint.walls.find((w) => w.id === top.wallId);
+        const cross = wall ? wallRoofCrossRiseIn(footprint, wall, roof, thicknessIn) : null;
+        const planar = cross?.planar ?? true;
+        /* The two corners agree exactly on a plane; averaging them says so
+           without having to pick one. */
+        const crossRiseIn = cross && planar ? (cross.startIn + cross.endIn) / 2 : 0;
+        if (crossRiseIn !== 0) crossRiseInByWallId[top.wallId] = crossRiseIn;
+        return [top.wallId, { ...top, crossRiseIn, crossRiseRefused: cross !== null && !planar }] as const;
+      }),
+    );
+    return { tops, crossRiseInByWallId };
+  }, [footprint, roofProfilePointHeightsFt, gableStructuralPanelWallIds, gableEaveHeightIn, thicknessIn]);
+
+  /**
+   * ⚠ **The second bevel per wall, or 0 — a RECORD off the memo above, not a
+   * function and not a memo of its own.**
+   *
+   * Zero on every box building and on the two octagon facets that run straight
+   * down the roof's fall, which is why `buildGablePanelMembers` treats 0 as
+   * "the panel this app has always built" rather than as a missing value. It
+   * is a property of the WALL, not of the tile: every tile on one facet shares
+   * one roof plane, so it is looked up by wall id at each consumer rather than
+   * threaded onto every `PanelInstance`.
+   *
+   * ⚠ **Neither a helper function nor a second `useMemo`, and both were
+   * tried.** A plain `(wallId) => ...` in the component body is a new value
+   * every render, so every memo calling it grew a missing-dependency finding,
+   * and `exhaustive-deps` may never rise here. Its own `useMemo` fixed that
+   * and cost a `preserve-manual-memoization` instead, which is rationed. Built
+   * inside the memo that already derives it, it costs neither.
+   */
+  const gableWallRoofTops = gableRoofTops.tops;
+  const gableCrossRiseInByWallId = gableRoofTops.crossRiseInByWallId;
 
   const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] => {
     const wallLengthIn = wall.lengthFt * 12;
@@ -8937,6 +8997,7 @@ export default function LayoutEditor() {
                                 gableLocalEdgeHeightIn(inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
                                 includeNailer,
                                 girtStyle,
+                                gableCrossRiseInByWallId[inst.wallId] ?? 0,
                               )
                           : null;
       if (instMembers) {
@@ -9540,7 +9601,19 @@ export default function LayoutEditor() {
                 : /* A cap too short to be a panel is no panel, not a throw
                      inside a memo — the legitimate case of a window whose head
                      reaches its own roofline. */
-                  (buildGablePanelMembersIfBuildable(widthIn, thicknessIn, gableLeftLocalIn, gableRightLocalIn, includeNailer, girtStyle) ?? [])
+                  (buildGablePanelMembersIfBuildable(
+                      widthIn,
+                      thicknessIn,
+                      gableLeftLocalIn,
+                      gableRightLocalIn,
+                      includeNailer,
+                      girtStyle,
+                      /* ⚠ The second bevel, off the instance's own wall — so this
+                         shop sheet describes the same part the 3D view draws.
+                         0 for a box and for the two octagon facets that run
+                         straight down the roof's fall. */
+                      gableCrossRiseInByWallId[source?.wallId ?? ""] ?? 0,
+                    ) ?? [])
               : panelTypeId === "header"
                 ? sourceSlotType === "door"
                   ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
@@ -10256,6 +10329,15 @@ export default function LayoutEditor() {
           String(!!inst.isSafetyGap),
           (inst.gableVerticalGapIn?.leftIn ?? 0).toFixed(3),
           (inst.gableVerticalGapIn?.rightIn ?? 0).toFixed(3),
+          /* ⚠ **AND THE SECOND BEVEL.** Two tiles of the same width and the
+             same two edge heights on facets whose roof falls the OTHER way
+             across the wall are mirror-image parts, not copies — on a 16ft
+             Octagon the NE and SE facets are exactly that pair, +-3.653in.
+             Without this they share one Shop Fabrication page, which draws
+             and cut-lists the first instance in the group, and half of them
+             are fabricated with the bevel reversed. The same trap the deck
+             mitre's own group key hit on 2026-11-16. */
+          (gableCrossRiseInByWallId[inst.wallId] ?? 0).toFixed(3),
         );
       }
       return parts.join("|");
@@ -12251,6 +12333,61 @@ export default function LayoutEditor() {
    * underneath would be invisible. Nothing is filtered out — they are counted
    * and named as what they are.
    */
+  /**
+   * ⚠ **Gable tiles that could not take the dual bevel, and why.**
+   *
+   * > *"can we make the top of Gable and dual beveled So that the roof can
+   * > meet it?"* — Tommy, 2026-11-16
+   *
+   * Most tiles can. A tile that tapers toward the eave cannot: its own top and
+   * bottom plates already merge into one board along the panel's WIDTH
+   * (*"Let two plates become one board."*), and tilting the top through the
+   * DEPTH as well would need a wedge tapered in two directions at once — a
+   * part nobody has specified. `buildGablePanelMembers` refuses it and builds
+   * the tile exactly as it did before 2026-11-16.
+   *
+   * ⚠ **This entry exists because the refusal has nowhere else to be said.**
+   * It was written on the panel schema first (which the app never reads) and
+   * on the top skin's own note second (which the cut list never reads — it
+   * builds its note from the geometry). A refused tile is byte-identical to an
+   * unbevelled one, in wood and in words, so the only honest place for the
+   * reason is here. A tile quietly built flat where its neighbours are
+   * bevelled is exactly the kind of thing that reads as correct.
+   */
+  const gableBevelRefusedReviewEntries = useMemo(() => {
+    const refused = allInstances.filter((inst) => {
+      if (inst.panelType !== "gable" || inst.isSafetyGap) return false;
+      const crossRiseIn = gableCrossRiseInByWallId[inst.wallId] ?? 0;
+      if (crossRiseIn === 0) return false;
+      return gableTopDivesIntoBottom(
+        inst.widthIn,
+        thicknessIn,
+        gableLocalEdgeHeightIn(inst.leftEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
+        gableLocalEdgeHeightIn(inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
+        crossRiseIn,
+      );
+    });
+    if (refused.length === 0) return [];
+    /* Bounded on purpose, the same way the overlap entry's list is: a Review
+       Log note is read, not scrolled. */
+    const listed = refused.slice(0, 8).map((inst) => inst.name);
+    const more = refused.length - listed.length;
+    return [
+      {
+        label: `${refused.length} gable tile${refused.length === 1 ? "" : "s"} built FLAT across the wall where the roof falls through it`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `${listed.join(", ")}${more > 0 ? ` and ${more} more` : ""}. On a wall at an angle to the roof's fall, a ` +
+          "gable tile's top is cut as a compound (dual) bevel so the roof plane lands flush on it. These tiles taper " +
+          "toward the eave, into the band where their own top and bottom plates already merge into one tapered " +
+          "board, and a dual bevel there would need a wedge tapered in two directions at once — a part that has not " +
+          "been specified. They are built flat across the wall instead, which is what every gable tile in this app " +
+          "was before 2026-11-16. The roof above them is within an inch or two of the eave, so the gap is small, " +
+          "but it is a gap and nothing else would mention it.",
+      },
+    ];
+  }, [allInstances, thicknessIn, gableEaveHeightIn, gableCrossRiseInByWallId]);
+
   const memberOverlapReviewEntries = useMemo(() => {
     const isIllustrative = (pair: string) => pair.includes("brace_center_connector");
     const reports = panelFabricationGroups
@@ -12804,6 +12941,9 @@ export default function LayoutEditor() {
       // outranks every material assumption below. His 2026-11-06 condition for
       // leaving the brace/ring collision alone was that this log says so.
       ...memberOverlapReviewEntries,
+      /* Beside it again: this one reports a part that is RIGHT but not as good
+         as it could be, which ranks just under one that cannot be built. */
+      ...gableBevelRefusedReviewEntries,
       // Beside the overlap entry, because it is the same question asked the
       // other way round: that one reports two parts in one place, this one
       // reports a part that is not there at all.
@@ -13006,6 +13146,7 @@ export default function LayoutEditor() {
     zeroBracingReviewEntries,
     squareBaleMergedCornerReviewEntries,
     memberOverlapReviewEntries,
+    gableBevelRefusedReviewEntries,
     headerWithoutWebReviewEntries,
     gableWindowRooflineReviewEntries,
     // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
@@ -16909,6 +17050,7 @@ export default function LayoutEditor() {
                   onPanelContextMenu={handlePanelContextMenu}
                   onSetWindowSillHeight={handleSetWindowSillHeight}
                   onSetWindowHeight={handleSetWindowHeight}
+                  gableCrossRiseInByWallId={gableCrossRiseInByWallId}
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
@@ -16982,6 +17124,7 @@ export default function LayoutEditor() {
               nailerOffsetIn={nailerOffsetIn}
               jackStudConfig={jackStudConfig}
               standardWidthIn={standardWidthIn}
+              gableCrossRiseInByWallId={gableCrossRiseInByWallId}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}

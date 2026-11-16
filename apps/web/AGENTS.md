@@ -155,6 +155,37 @@
   shifted line numbers** — an edit earlier in the file moves every number below
   it, and this file is 17,000 lines long.
 
+- **2026-11-16, the gable's dual bevel, +1.**
+  `preserve-manual-memoization` 76 -> 77. Every other rule byte-identical and
+  no correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1, `no-unused-vars` 35,
+  `no-unescaped-entities` 15).
+
+  One line, `page.tsx:12389` — the dep array of the new
+  `gableBevelRefusedReviewEntries` memo,
+  `[allInstances, thicknessIn, gableEaveHeightIn, gableCrossRiseInByWallId]`.
+  The rule holding a fourth time: one per already-flagged value a dep array
+  touches, nothing for the memo itself.
+
+  ⚠ **Two things in this change cost NOTHING, and the second is the useful
+  one.** The whole compound-bevel part — a new `MemberPosition` field, an
+  exact 3D separating-axis test in `memberPrism`, a rewritten gable top
+  assembly, a new geometry module and three new test files — is outside
+  `apps/web` and never touches this budget at all. And inside `page.tsx`, the
+  wiring itself (a widened memo, four new call sites, a group-key field and a
+  prop threaded through two components) measured **zero**.
+
+  ⚠ **A plain helper function is NOT free, and that is the trap worth
+  remembering.** The cross rise started as
+  `const gableCrossRiseInFor = (wallId: string) => ...` in the component body.
+  A function declared there is a new value every render, so every memo calling
+  it grew a **missing dependency** — `exhaustive-deps` went 12 -> 13, and that
+  rule may never rise. Wrapping it in its own `useMemo` fixed that and cost a
+  `preserve-manual-memoization` instead. Building the record **inside the memo
+  that already derives it** (`gableRoofTops`, which now returns both the map
+  and the record) costs neither. Reach for that shape first: a derived lookup
+  belongs in the memo that produced the data, not beside it.
+
 - **2026-11-15, the octagon's roof meeting its walls, +2.**
   `preserve-manual-memoization` 74 -> 76. Every other rule byte-identical, no
   correctness rule moved (`exhaustive-deps` 12, `refs` 29,

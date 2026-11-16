@@ -29,6 +29,9 @@ export interface BuildingSummaryRenderProps {
   nailerOffsetIn?: number;
   jackStudConfig: JackStudConfig;
   standardWidthIn: number;
+  /** The second bevel on each wall's gable row, forwarded straight through to
+   *  `Building3DView` — see its own prop for what the number means. */
+  gableCrossRiseInByWallId?: Record<string, number>;
   gableTilesByWallId?: Record<
     string,
     {

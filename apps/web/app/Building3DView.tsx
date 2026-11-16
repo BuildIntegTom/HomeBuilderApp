@@ -129,6 +129,11 @@ const BLOB_COLOR = "#b5b0a8";
 // in panelColors.ts's NAMED_PANEL_TYPE_COLORS; a plain neutral lumber tone.
 const ROOF_BEARING_COLOR = "#c2a878";
 const EMPTY_ID_SET: Set<string> = new Set();
+/** Stable empty default, same reason as the tiles one below it: a fresh object
+ *  literal in the parameter list changes identity on every render and would
+ *  invalidate the gable memo each time. */
+const EMPTY_GABLE_CROSS_RISE_BY_WALL_ID: Record<string, number> = {};
+
 const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }[]> =
   {};
 const EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID: Record<string, BoxBeamCoverage> = {};
@@ -955,6 +960,21 @@ interface Building3DViewProps {
    * why order matters). This component subtracts its own `roofBaseHeightIn`
    * before building real member geometry, same as page.tsx does, without
    * reordering. Empty/missing wall = no gable tiles there. */
+  /**
+   * ⚠ **The SECOND bevel on each wall's gable row** — how much higher the
+   * roof plane stands at that wall's interior face than at its exterior one,
+   * signed, in inches. Absent or 0 for a box and for the two octagon facets
+   * that run straight down the roof's fall.
+   *
+   * > *"can we make the top of Gable and dual beveled So that the roof can
+   * > meet it?"* — Tommy, 2026-11-16
+   *
+   * ⚠ **Passed in rather than derived here.** This view already computes roof
+   * planes of its own for other things, and a second derivation is exactly how
+   * the shop sheet and the 3D view start describing different parts — the
+   * fault `computeDeckPanelTakeoff` exists to have fixed once.
+   */
+  gableCrossRiseInByWallId?: Record<string, number>;
   gableTilesByWallId?: Record<
     string,
     {
@@ -1423,6 +1443,7 @@ export default function Building3DView({
   baleFoundationFieldSpacingIn = BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
   floorBottomSkinEnabled = false,
   leastAccessibleCorner,
+  gableCrossRiseInByWallId = EMPTY_GABLE_CROSS_RISE_BY_WALL_ID,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   boxBeamCoverageByWallId = EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID,
@@ -1789,6 +1810,9 @@ export default function Building3DView({
       const wall = footprint.walls.find((w) => w.id === wallId);
       if (!wall || tiles.length === 0) continue;
       const axis = wallAxis(footprint, wall);
+      /* One roof plane over the whole facet, so one number for every tile
+         on it — see `gableCrossRiseInByWallId`. */
+      const crossRiseIn = gableCrossRiseInByWallId[wallId] ?? 0;
       tiles.forEach((tile, tileIndex) => {
         const offsetFt = tile.xStartIn / IN_PER_FT;
         // Pass leftLocalIn/rightLocalIn straight through in this same
@@ -1961,6 +1985,7 @@ export default function Building3DView({
                   cap.rightIn,
                   includeNailer,
                   girtStyle,
+                  crossRiseIn,
                 ).map((m) => ({
                   ...m,
                   position: { ...m.position, zIn: m.position.zIn + roTopZIn },
@@ -1969,7 +1994,7 @@ export default function Building3DView({
         } else {
           members = tile.isSafetyGap
             ? buildSafetyGapMembers(thicknessIn, tallerLocalIn)
-            : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer, girtStyle);
+            : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer, girtStyle, crossRiseIn);
         }
         // A vertical safety-gap filler (Tommy: "an ability to put a safety
         // gap inbetween the truss bottom and the gable end top") stacks
@@ -2007,7 +2032,7 @@ export default function Building3DView({
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableEndsFullHeight, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig]);
+  }, [footprint, gableEndsFullHeight, gableCrossRiseInByWallId, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig]);
   /* ⚠ `standardWidthIn` left this dep list on 2026-11-15: it was read only
      by the `computeOpeningGeometry` call a gable window used to make to
      find its sill run, and a gable window has no sill. */
