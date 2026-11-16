@@ -14,6 +14,7 @@ import {
   shedTallWallId,
   wallRoofTopsFor,
   wallRoofCrossRiseIn,
+  wallPlanMitreForPanelsIn,
   removeCourtyards,
   insertCornerAtWallOffset,
   isSplitRefusal,
@@ -225,6 +226,11 @@ import {
   buildDoorHeaderMembers,
   buildGablePanelMembersIfBuildable,
   gableTopDivesIntoBottom,
+  gableMitreDropsGirtRow,
+  NO_PANEL_PLAN_MITRE,
+  type PanelPlanMitre,
+  panelPlanMitreForSpan,
+  panelPlanMitreFits,
   buildJackStudMembers,
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
@@ -453,6 +459,12 @@ type PanelMemberSource = Pick<
      amount and in a different direction. Arrives here for free: all four
      call sites already hand over the instance. */
   | "wallId"
+  /* And WHICH TILE on that wall, so a corner tile's 22 1/2deg plan mitre
+     reaches the shop sheet. A gable tile's `slotIndexInWall` is negative by
+     construction (`-(tileIndex + 1)`), which is what makes it safe to key a
+     per-tile lookup on. Arrives here for free, like `wallId`: all four call
+     sites already hand over the instance. */
+  | "slotIndexInWall"
 >;
 import { shearMembersFor } from "./shearMembers";
 import {
@@ -635,6 +647,16 @@ const TruckLoad3DView = dynamic(() => import("./TruckLoad3DView"), { ssr: false 
 /** Stable empty default for the gable cross-rise record, so a building with no
  *  mitred walls hands its consumers the same object every render. */
 const EMPTY_CROSS_RISE_BY_WALL_ID: Record<string, number> = {};
+/** ⚠ Module scope for the same reason as the record above: a fresh `{}` in a
+ *  render is a new object every time, which invalidates every memo that reads
+ *  it. */
+const EMPTY_PLAN_MITRE_BY_TILE: Record<string, PanelPlanMitre> = {};
+/** ⚠ A gable tile's identity for the plan-mitre lookup. `slotIndexInWall` is
+ *  NEGATIVE for a gable tile by construction (`-(tileIndex + 1)` in
+ *  `panelInstances.ts`), so this can never collide with a wall slot's key. */
+function gablePlanMitreKey(wallId: string, slotIndexInWall: number): string {
+  return `${wallId}|${slotIndexInWall}`;
+}
 
 const BEARING_ELIGIBLE_TYPES = new Set(["standard", "corner", "safety-oct-corner", "braced", "column"]);
 // Every real wall panel type, straw-filled or not (Safety/Gap included —
@@ -8169,6 +8191,57 @@ export default function LayoutEditor() {
     gableStructuralPanelWallIds,
   ]);
 
+  /**
+   * ⚠ **EACH GABLE TILE'S OWN 22 1/2deg PLAN MITRE, keyed by wall and tile.**
+   *
+   * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+   * > Tommy, 2026-11-16
+   *
+   * Measured on the 16ft Octagon before this existed: every corner rakes
+   * **22.50deg** and pulls a 15 1/2in wall's short face back **6.4203in**, and
+   * until it does the two facets' rows **share 99.51 in^2 of plan area at
+   * each of the eight corners** — exactly the two mitre triangles nobody was
+   * cutting. Nothing reported it: this app's overlap audit asks whether two
+   * members of ONE panel share a volume, and never asks it of two panels.
+   *
+   * ⚠ **Per TILE, not per wall**, and keyed on where the tile actually sits
+   * rather than on its index in the row. A gable row's first tile is usually
+   * at the wall's start corner but not always — a safety gap can hold that
+   * corner, a truss-plate inset can hold the row off it, and a run stop can
+   * stop the row short of it — and in every one of those the tile beside the
+   * corner must stay square. `panelPlanMitreForSpan` asks the question that
+   * answers all three.
+   *
+   * ⚠ Empty on every box building: `wallPlanMitreForPanelsIn` returns all
+   * zeros at a square corner, and an all-zero mitre is not a mitre
+   * (`hasPanelPlanMitre`), so a rectangle's panels are byte-identical.
+   */
+  const gablePlanMitreByTile = useMemo(() => {
+    if (!footprint) return EMPTY_PLAN_MITRE_BY_TILE;
+    const out: Record<string, PanelPlanMitre> = {};
+    for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
+      const wall = footprint.walls.find((w) => w.id === wallId);
+      if (!wall || tiles.length === 0) continue;
+      const wallMitre = wallPlanMitreForPanelsIn(footprint, wall, thicknessIn);
+      const wallLengthIn = wall.lengthFt * 12;
+      tiles.forEach((tile, tileIndex) => {
+        const startIn = tile.xStartIn ?? 0;
+        const mitre = panelPlanMitreForSpan(wallMitre, startIn, startIn + tile.widthIn, wallLengthIn);
+        /* Only the tiles that really take a cut go in the record, so a lookup
+           miss and "square" are the same answer. */
+        if (
+          mitre.startExtIn === 0 &&
+          mitre.startIntIn === 0 &&
+          mitre.endExtIn === 0 &&
+          mitre.endIntIn === 0
+        )
+          return;
+        out[gablePlanMitreKey(wallId, -(tileIndex + 1))] = mitre;
+      });
+    }
+    return out;
+  }, [footprint, gableTilesByWallId, thicknessIn]);
+
   // Real span/pitch/run for the Roof tab's own truss layout editor (Tommy:
   // "i want to see the full 'panelized' layout... paired with... the
   // elevation views of gable end walls") — reads off the SAME real tiled
@@ -8998,6 +9071,11 @@ export default function LayoutEditor() {
                                 includeNailer,
                                 girtStyle,
                                 gableCrossRiseInByWallId[inst.wallId] ?? 0,
+                                /* ⚠ And the 22 1/2deg PLAN mitre, if this tile
+                                   is the one at an octagon corner. */
+                                gablePlanMitreByTile[
+                                  gablePlanMitreKey(inst.wallId, inst.slotIndexInWall)
+                                ] ?? NO_PANEL_PLAN_MITRE,
                               )
                           : null;
       if (instMembers) {
@@ -9613,6 +9691,12 @@ export default function LayoutEditor() {
                          0 for a box and for the two octagon facets that run
                          straight down the roof's fall. */
                       gableCrossRiseInByWallId[source?.wallId ?? ""] ?? 0,
+                      /* ⚠ And the plan mitre, off the same instance — so the
+                         shop sheet's cut list carries the 22 1/2deg swing for
+                         the same two sheets the 3D view draws cut. */
+                      gablePlanMitreByTile[
+                        gablePlanMitreKey(source?.wallId ?? "", source?.slotIndexInWall ?? 0)
+                      ] ?? NO_PANEL_PLAN_MITRE,
                     ) ?? [])
               : panelTypeId === "header"
                 ? sourceSlotType === "door"
@@ -10338,6 +10422,17 @@ export default function LayoutEditor() {
              are fabricated with the bevel reversed. The same trap the deck
              mitre's own group key hit on 2026-11-16. */
           (gableCrossRiseInByWallId[inst.wallId] ?? 0).toFixed(3),
+          /* ⚠ **AND THE PLAN MITRE**, for the same reason: a corner tile and
+             a middle tile of the same width and the same two edge heights are
+             different parts, and the difference is invisible in elevation. A
+             shop page drawn from the first instance in the group would cut
+             every one of them square. */
+          (() => {
+            const m = gablePlanMitreByTile[gablePlanMitreKey(inst.wallId, inst.slotIndexInWall)];
+            return m
+              ? `${m.startExtIn.toFixed(3)},${m.startIntIn.toFixed(3)},${m.endExtIn.toFixed(3)},${m.endIntIn.toFixed(3)}`
+              : "square";
+          })(),
         );
       }
       return parts.join("|");
@@ -12388,6 +12483,92 @@ export default function LayoutEditor() {
     ];
   }, [allInstances, thicknessIn, gableEaveHeightIn, gableCrossRiseInByWallId]);
 
+  /**
+   * ⚠ **Gable tiles at an octagon corner that could not take the 22 1/2deg
+   * mitre, and what that leaves.**
+   *
+   * A mitre eats 6.420in of the panel's interior face on a 15 1/2in wall.
+   * Measured, the binding limit is not the end posts — it is that moving a
+   * full-depth girt bar inboard by that much drives it into the tile's own
+   * centre nailer, so a tile narrower than about **24 1/3in** refuses and is
+   * built square (see `panelPlanMitreFits`).
+   *
+   * ⚠ **A refused tile leaves its corner's overlap in place**, which is the
+   * whole reason this entry exists: the two walls' rows go on sharing that
+   * corner's wood, the panel still draws and still prices, and nothing else
+   * in the app would mention it.
+   */
+  const gableMitreRefusedReviewEntries = useMemo(() => {
+    const mitreFor = (inst: (typeof allInstances)[number]) => {
+      if (inst.panelType !== "gable" || inst.isSafetyGap) return null;
+      return gablePlanMitreByTile[gablePlanMitreKey(inst.wallId, inst.slotIndexInWall)] ?? null;
+    };
+    const pullBackIn = thicknessIn * Math.tan(Math.PI / 8);
+    const sharedSqIn = thicknessIn * pullBackIn;
+    const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
+
+    const refused = allInstances.filter((inst) => {
+      const mitre = mitreFor(inst);
+      return mitre !== null && !panelPlanMitreFits(mitre, inst.widthIn, thicknessIn);
+    });
+    if (refused.length > 0) {
+      const listed = refused.slice(0, 8).map((inst) => inst.name);
+      const more = refused.length - listed.length;
+      entries.push({
+        label: `${refused.length} gable tile${refused.length === 1 ? "" : "s"} at a building corner built SQUARE, not mitred`,
+        status: "pending-BI-confirmation",
+        note:
+          `${listed.join(", ")}${more > 0 ? ` and ${more} more` : ""}. Where two walls meet at anything other than a ` +
+          "right angle, each one's end panel is cut on an angle in plan so the two close on the corner's own " +
+          `bisector — 22.50° at an octagon corner, pulling the panel's interior face back ` +
+          `${pullBackIn.toFixed(3)}in. These tiles are narrower than that cut leaves room to frame, so they are ` +
+          "built square instead. The consequence is that the two walls' rows go on occupying the same wood at that " +
+          `corner — about ${sharedSqIn.toFixed(1)} sq in of plan area, over the full height of the row — which is ` +
+          "what the mitre exists to remove. A wider tile at that corner, or a thinner wall, takes the cut.",
+      });
+    }
+
+    /* ⚠ **The frequent one, and the one that would otherwise be silent.** */
+    const lostGirts = allInstances.filter((inst) => {
+      const mitre = mitreFor(inst);
+      if (mitre === null) return false;
+      return gableMitreDropsGirtRow(
+        inst.widthIn,
+        thicknessIn,
+        gableLocalEdgeHeightIn(inst.leftEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
+        gableLocalEdgeHeightIn(inst.rightEdgeHeightIn, inst.sourceSlotType, gableEaveHeightIn),
+        includeNailer,
+        girtStyle,
+        mitre,
+      );
+    });
+    if (lostGirts.length > 0) {
+      const listed = lostGirts.slice(0, 8).map((inst) => inst.name);
+      const more = lostGirts.length - listed.length;
+      entries.push({
+        label: `${lostGirts.length} mitred corner tile${lostGirts.length === 1 ? "" : "s"} built with NO girt row`,
+        status: "pending-BI-confirmation",
+        note:
+          `${listed.join(", ")}${more > 0 ? ` and ${more} more` : ""}. A girt bar runs the full depth of the wall, ` +
+          `so the 22.50° corner mitre moves it inboard by the whole ${pullBackIn.toFixed(3)}in pull-back — and on ` +
+          "a tile this narrow that lands it on the panel's own centre nailer, which cannot move because a centre " +
+          "vertical stacks on the wall stud below it. The row is left out rather than drawn through the nailer. " +
+          "What a girt braces is the clear span between the panel's two end posts, and on a mitred tile that span " +
+          "is well inside the 3ft these rules are written around — but it is a real reduction in the part and " +
+          "nothing else in the app would mention it. If the row should stay, the alternative is cutting the bar " +
+          "on the 22.50° in plan, which is the one thing the 2026-11-16 decision kept square.",
+      });
+    }
+    return entries;
+  }, [
+    allInstances,
+    thicknessIn,
+    gablePlanMitreByTile,
+    gableEaveHeightIn,
+    includeNailer,
+    girtStyle,
+  ]);
+
   const memberOverlapReviewEntries = useMemo(() => {
     const isIllustrative = (pair: string) => pair.includes("brace_center_connector");
     const reports = panelFabricationGroups
@@ -12944,6 +13125,10 @@ export default function LayoutEditor() {
       /* Beside it again: this one reports a part that is RIGHT but not as good
          as it could be, which ranks just under one that cannot be built. */
       ...gableBevelRefusedReviewEntries,
+      /* Beside it: the other half of the same ask, reporting the same kind of
+         thing — a part built as it always was where a new rule could not
+         reach it. */
+      ...gableMitreRefusedReviewEntries,
       // Beside the overlap entry, because it is the same question asked the
       // other way round: that one reports two parts in one place, this one
       // reports a part that is not there at all.
@@ -13147,6 +13332,7 @@ export default function LayoutEditor() {
     squareBaleMergedCornerReviewEntries,
     memberOverlapReviewEntries,
     gableBevelRefusedReviewEntries,
+    gableMitreRefusedReviewEntries,
     headerWithoutWebReviewEntries,
     gableWindowRooflineReviewEntries,
     // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
@@ -17051,6 +17237,7 @@ export default function LayoutEditor() {
                   onSetWindowSillHeight={handleSetWindowSillHeight}
                   onSetWindowHeight={handleSetWindowHeight}
                   gableCrossRiseInByWallId={gableCrossRiseInByWallId}
+                  gablePlanMitreByTile={gablePlanMitreByTile}
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
@@ -17125,6 +17312,7 @@ export default function LayoutEditor() {
               jackStudConfig={jackStudConfig}
               standardWidthIn={standardWidthIn}
               gableCrossRiseInByWallId={gableCrossRiseInByWallId}
+              gablePlanMitreByTile={gablePlanMitreByTile}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}

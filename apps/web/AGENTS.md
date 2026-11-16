@@ -186,6 +186,53 @@
   and the record) costs neither. Reach for that shape first: a derived lookup
   belongs in the memo that produced the data, not beside it.
 
+- **2026-11-16, the gable row's 22½° corner mitre, +1.**
+  `preserve-manual-memoization` 77 -> 78 (**183 / 136 / 47** against the
+  dual-bevel run's 182 / 135 / 47). Every other rule byte-identical and no
+  correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1, `no-unused-vars` 35,
+  `no-unescaped-entities` 15).
+
+  One line, **`page.tsx:12567`** — `gableEaveHeightIn` in the dep array of the
+  new `gableMitreRefusedReviewEntries` memo. The rule from 2026-11-15 holding a
+  fifth time: one per already-flagged value a dep array touches, nothing for
+  the memo itself. Its other five deps (`allInstances`, `thicknessIn`,
+  `gablePlanMitreByTile`, `includeNailer`, `girtStyle`) cost nothing.
+
+  ⚠ **A whole new `useMemo` cost ZERO again** — `gablePlanMitreByTile`, over
+  `[footprint, gableTilesByWallId, thicknessIn]`. Same shape as
+  `trueGableEndWallIds` on 2026-11-15: its deps are state and other memos that
+  are not themselves flagged, so the memo is free no matter how much work it
+  does. And the rest of the change — a new geometry export, a new catalogue
+  module, a rewritten girt row, a prop threaded through two components, a plan
+  shear on a 3D mesh and two new test files — measured zero.
+
+  ⚠ **THE CHEAP BISECT WORKS AND IS WORTH THE TWO MINUTES.** Linting
+  `app/page.tsx` ALONE reproduced this rule's count exactly (**77** at HEAD,
+  78 with the change), and the whole-app run confirmed all 78 are in that one
+  file. Method, which is the 2026-11-15 note's own and has now been used
+  twice without a phantom:
+
+  ```
+  cp apps/web/app/page.tsx <scratchpad>/page_new.tsx
+  git checkout HEAD -- apps/web/app/page.tsx
+  (cd apps/web && node --max-old-space-size=6144 ../../node_modules/eslint/bin/eslint.js app/page.tsx -f json > base.json)
+  cp <scratchpad>/page_new.tsx apps/web/app/page.tsx
+  ```
+
+  then resolve each run's flagged line numbers against ITS OWN file, sort the
+  resulting source-line TEXT, and `diff`. Here that printed exactly one added
+  line, `gableEaveHeightIn,` — and because that text occurs four times in the
+  file, the last step is to go back to the JSON and find which of the four
+  line numbers is new. Three were already flagged (8416, 8655, 12257); 12567
+  is the new memo.
+
+  ⚠ **The whole-app run took ~15 minutes twice and produced a ZERO-BYTE file
+  both times when a dev server was running beside it.** ESLint only writes the
+  JSON at the end, so 0 bytes mid-run is normal — but at 6144 with Next's dev
+  server competing for memory it never finished. Stop the preview server
+  first. A good run's stderr is still the one benign Babel note.
+
 - **2026-11-15, the octagon's roof meeting its walls, +2.**
   `preserve-manual-memoization` 74 -> 76. Every other rule byte-identical, no
   correctness rule moved (`exhaustive-deps` 12, `refs` 29,

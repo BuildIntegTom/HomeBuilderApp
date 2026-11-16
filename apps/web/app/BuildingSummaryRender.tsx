@@ -1,7 +1,14 @@
 "use client";
 
 import type { BoxBeamCoverage, Footprint, PanelSlot, WallRunStop } from "@building-integrity/geometry";
-import type { BoxBeamSizeId, BracingStyle, GirtStyle, JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
+import type {
+  BoxBeamSizeId,
+  BracingStyle,
+  GirtStyle,
+  JackStudConfig,
+  PanelPlanMitre,
+  StudConfig,
+} from "@building-integrity/panel-catalog";
 import Building3DView from "./Building3DView";
 import type { MidWallBeam } from "./midWallBeam";
 import type { SpanningHeader } from "./spanningHeader";
@@ -32,6 +39,7 @@ export interface BuildingSummaryRenderProps {
   /** The second bevel on each wall's gable row, forwarded straight through to
    *  `Building3DView` — see its own prop for what the number means. */
   gableCrossRiseInByWallId?: Record<string, number>;
+  gablePlanMitreByTile?: Record<string, PanelPlanMitre>;
   gableTilesByWallId?: Record<
     string,
     {

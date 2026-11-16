@@ -71,6 +71,8 @@ import {
   buildGablePeakPanelMembers,
   buildCornerPanelMembers,
   buildGablePanelMembers,
+  NO_PANEL_PLAN_MITRE,
+  type PanelPlanMitre,
   buildOpeningAssemblyMembers,
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
@@ -133,6 +135,7 @@ const EMPTY_ID_SET: Set<string> = new Set();
  *  literal in the parameter list changes identity on every render and would
  *  invalidate the gable memo each time. */
 const EMPTY_GABLE_CROSS_RISE_BY_WALL_ID: Record<string, number> = {};
+const EMPTY_GABLE_PLAN_MITRE_BY_TILE: Record<string, PanelPlanMitre> = {};
 
 const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }[]> =
   {};
@@ -780,6 +783,7 @@ function SlopedTopBox({
   leftHeightFt,
   rightHeightFt,
   depthFt,
+  planMitreFt,
   color,
   opacity = 0.6,
 }: {
@@ -787,6 +791,20 @@ function SlopedTopBox({
   leftHeightFt: number;
   rightHeightFt: number;
   depthFt: number;
+  /**
+   * ⚠ **The 22½° PLAN mitre, so the SOLID view agrees with the framed one.**
+   *
+   * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+   * > Tommy, 2026-11-16
+   *
+   * The framed view draws real members, which carry the cut. This box is
+   * drawn from four numbers, so without this the simplified view keeps the
+   * overlap at every octagon corner that the whole change exists to remove —
+   * and the simplified view is the one you look at to SEE a corner. A mitre
+   * is linear through the depth, so it is a shear of the far face's two x
+   * values: the near (exterior) face keeps its full width.
+   */
+  planMitreFt?: { startExtFt: number; startIntFt: number; endExtFt: number; endIntFt: number };
   color: string;
   opacity?: number;
 }) {
@@ -795,17 +813,22 @@ function SlopedTopBox({
     const d = depthFt;
     const hL = leftHeightFt;
     const hR = rightHeightFt;
+    const m = planMitreFt;
+    const nearLo = m ? m.startExtFt : 0;
+    const nearHi = m ? w - m.endExtFt : w;
+    const farLo = m ? m.startIntFt : 0;
+    const farHi = m ? w - m.endIntFt : w;
     /* View space, the same frame PanelMembersGroup renders in: X = width,
        Y = up, Z = depth from the exterior face. */
     const corners: [number, number, number][] = [
-      [0, 0, 0],
-      [w, 0, 0],
-      [w, hR, 0],
-      [0, hL, 0],
-      [0, 0, d],
-      [w, 0, d],
-      [w, hR, d],
-      [0, hL, d],
+      [nearLo, 0, 0],
+      [nearHi, 0, 0],
+      [nearHi, hR, 0],
+      [nearLo, hL, 0],
+      [farLo, 0, d],
+      [farHi, 0, d],
+      [farHi, hR, d],
+      [farLo, hL, d],
     ];
     const faces: [number, number, number, number][] = [
       [0, 1, 2, 3],
@@ -828,7 +851,7 @@ function SlopedTopBox({
     geom.setIndex(indices);
     geom.computeVertexNormals();
     return geom;
-  }, [widthFt, leftHeightFt, rightHeightFt, depthFt]);
+  }, [widthFt, leftHeightFt, rightHeightFt, depthFt, planMitreFt]);
 
   /* DoubleSide for the same defensive reason buildPrismGeometry uses it: the
      winding above was reasoned out, not validated against three.js' own
@@ -975,6 +998,19 @@ interface Building3DViewProps {
    * fault `computeDeckPanelTakeoff` exists to have fixed once.
    */
   gableCrossRiseInByWallId?: Record<string, number>;
+  /**
+   * ⚠ **Each gable tile's own 22 1/2deg PLAN mitre, keyed `wallId|slotIndex`**
+   * — page.tsx's `gablePlanMitreByTile`, handed over rather than re-derived.
+   *
+   * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+   * > Tommy, 2026-11-16
+   *
+   * Per TILE and not per wall, because only the tile that actually reaches a
+   * corner takes that corner's cut — and which tile that is depends on safety
+   * gaps, the truss-plate inset and any run stop. Absent, or missing a tile,
+   * means square, which is every corner of a box.
+   */
+  gablePlanMitreByTile?: Record<string, PanelPlanMitre>;
   gableTilesByWallId?: Record<
     string,
     {
@@ -1444,6 +1480,7 @@ export default function Building3DView({
   floorBottomSkinEnabled = false,
   leastAccessibleCorner,
   gableCrossRiseInByWallId = EMPTY_GABLE_CROSS_RISE_BY_WALL_ID,
+  gablePlanMitreByTile = EMPTY_GABLE_PLAN_MITRE_BY_TILE,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   boxBeamCoverageByWallId = EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID,
@@ -1803,6 +1840,9 @@ export default function Building3DView({
       leftHeightFt: number;
       rightHeightFt: number;
       depthFt: number;
+      /** ⚠ In FEET, for the simplified box — the framed view reads the cut off
+       *  the members themselves. */
+      planMitreFt?: { startExtFt: number; startIntFt: number; endExtFt: number; endIntFt: number };
       isSafetyGap: boolean;
       verticalGapHeightFt: number;
     }[] = [];
@@ -1815,6 +1855,11 @@ export default function Building3DView({
       const crossRiseIn = gableCrossRiseInByWallId[wallId] ?? 0;
       tiles.forEach((tile, tileIndex) => {
         const offsetFt = tile.xStartIn / IN_PER_FT;
+        /* ⚠ This tile's own plan mitre — keyed by the SAME negative slot
+           index `panelInstances.ts` gives a gable tile, so the model and the
+           shop sheet cannot disagree about which tile is the corner one. */
+        const planMitreIn =
+          gablePlanMitreByTile[`${wallId}|${-(tileIndex + 1)}`] ?? NO_PANEL_PLAN_MITRE;
         // Pass leftLocalIn/rightLocalIn straight through in this same
         // order — NOT min/max'd — so a tile whose real roofline falls
         // left-to-right (e.g. one to the right of a peak) builds correctly
@@ -1986,6 +2031,7 @@ export default function Building3DView({
                   includeNailer,
                   girtStyle,
                   crossRiseIn,
+                  planMitreIn,
                 ).map((m) => ({
                   ...m,
                   position: { ...m.position, zIn: m.position.zIn + roTopZIn },
@@ -1994,7 +2040,16 @@ export default function Building3DView({
         } else {
           members = tile.isSafetyGap
             ? buildSafetyGapMembers(thicknessIn, tallerLocalIn)
-            : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer, girtStyle, crossRiseIn);
+            : buildGablePanelMembers(
+                tile.widthIn,
+                thicknessIn,
+                leftLocalIn,
+                rightLocalIn,
+                includeNailer,
+                girtStyle,
+                crossRiseIn,
+                planMitreIn,
+              );
         }
         // A vertical safety-gap filler (Tommy: "an ability to put a safety
         // gap inbetween the truss bottom and the gable end top") stacks
@@ -2028,11 +2083,24 @@ export default function Building3DView({
           depthFt: thicknessIn / IN_PER_FT,
           isSafetyGap: !!tile.isSafetyGap,
           verticalGapHeightFt: Math.max(tile.verticalGapIn?.leftIn ?? 0, tile.verticalGapIn?.rightIn ?? 0) / IN_PER_FT,
+          /* ⚠ The same cut the members carry, in feet, so the SIMPLIFIED box
+             agrees with the framed one — and the simplified view is the one
+             you look at to see a corner. */
+          ...(planMitreIn === NO_PANEL_PLAN_MITRE
+            ? {}
+            : {
+                planMitreFt: {
+                  startExtFt: planMitreIn.startExtIn / IN_PER_FT,
+                  startIntFt: planMitreIn.startIntIn / IN_PER_FT,
+                  endExtFt: planMitreIn.endExtIn / IN_PER_FT,
+                  endIntFt: planMitreIn.endIntIn / IN_PER_FT,
+                },
+              }),
         });
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableEndsFullHeight, gableCrossRiseInByWallId, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig]);
+  }, [footprint, gableEndsFullHeight, gableCrossRiseInByWallId, gablePlanMitreByTile, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig]);
   /* ⚠ `standardWidthIn` left this dep list on 2026-11-15: it was read only
      by the `computeOpeningGeometry` call a gable window used to make to
      find its sill run, and a gable window has no sill. */
@@ -3492,6 +3560,7 @@ export default function Building3DView({
               leftHeightFt,
               rightHeightFt,
               depthFt,
+              planMitreFt,
               isSafetyGap,
               verticalGapHeightFt,
             }) => (
@@ -3503,6 +3572,7 @@ export default function Building3DView({
                       leftHeightFt={leftHeightFt}
                       rightHeightFt={rightHeightFt}
                       depthFt={depthFt}
+                      planMitreFt={planMitreFt}
                       color={isSafetyGap ? NAMED_PANEL_TYPE_COLORS["safety-gap"] : NAMED_PANEL_TYPE_COLORS.gable}
                     />
                     {verticalGapHeightFt > 0 && (
