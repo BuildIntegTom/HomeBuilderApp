@@ -201,3 +201,51 @@ toggle message. `trueGableEndWallIds` is now the pair.
 ⚠ **Still open, and NOT caused by this** (verified against the diff): the Width
 and Depth dimension handles on an octagon read one **facet** (6'-7½" on the
 16ft tile) rather than the building's 16ft. `dimensionHandles` was not touched.
+
+#### ✅ His follow-up, same day: the roof rests ON the gable rows
+
+> *"can we have the roof be basically cut to fit the raised octagon gable
+> perimeter? roof panels resting on top of gable panels for shed octagon ... it
+> seems like the tallest gable end is extra tall and makes the roof on a
+> different angle than the gable ends besides it ... the smallest two gable end
+> trapezoids are kind of tall on their lower side - the roof panels should be
+> fully sitting on their 15.5" wall and then rest on the gable end panels as
+> the incline rises."*
+
+He read all of this off the screenshots before anything was measured, and every
+part of it was there. **One cause**: `gableEndsFullHeight` was lifting every
+mitered row by the roof's plumb thickness, **16 3/8in**, so the gable closed
+OVER the roof instead of bearing under it.
+
+| what he saw | measured, 16ft Octagon |
+|---|---|
+| *"tallest gable end is extra tall"* | NE facet built to **80.34in** at its north end; the cross-tilt row on the wall beside it tops out at **64.00in** — a 16 3/8in step at a shared corner |
+| *"smallest two trapezoids tall on their lower side"* | SE/SW low ends built to **16.35in** where the roofline is **0** |
+
+Fixed by `gableRowsCloseOverRoof` = `gableEndsFullHeight && !isMiteredShape`.
+A box's gable ends still close over the roof — his 2026-10-29 rule is
+untouched — while a mitered row's top IS the roof's underside. The NE facet now
+lands on 64.00in flush with the cross-tilt row, and the SE facet runs out to
+0.01in so the roof sits on the 15 1/2in wall and the sliver is demoted to a
+filler rather than built as a panel.
+
+#### ⚠ STILL OPEN — "cut to fit the perimeter", and it needs his decision
+
+`deckPanelPlacements` lays floor AND roof panels across the footprint's
+**bounding box**: every panel is full-span, so on an octagon the deck is a
+square. Measured:
+
+| | deck area | the octagon | overhang |
+|---|---|---|---|
+| 16ft tile | 256.0 sq ft | 212.1 sq ft | **43.9 sq ft, 20.7%** |
+| 32ft tile | 1024.0 sq ft | 848.3 sq ft | **175.7 sq ft, 20.7%** |
+
+Each of the four corners sticks out a right triangle **4.69ft x 4.69ft** (9.37ft
+on the 32ft tile). ⚠ The FLOOR deck does the same thing, from the same
+function — he asked about the roof.
+
+⚠ **Cutting it to the perimeter means roof panels with ANGLED ENDS**, which is
+a new part: `buildFloorRoofPanelMembers` makes rectangles, and a panel crossing
+a 45-degree facet needs a mitred end — and because a panel has width, that end
+is a sloped cut across its own width, i.e. a trapezoid. That is a fabrication
+decision, not a coding one, so it is his.

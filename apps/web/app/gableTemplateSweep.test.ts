@@ -683,6 +683,64 @@ describe("⚠ an octagon's roof meets its walls", () => {
     expect(small.form).toBe("shed");
   });
 
+  it("⚠ a mitered row BEARS the roof — no roof-top lift, so the roof rests on it", () => {
+    /**
+     * > *"roof panels resting on top of gable panels for shed octagon ... it
+     * > also looks like the smallest two gable end trapezoids are kind of tall
+     * > on their lower side - the roof panels should be fully sitting on their
+     * > 15.5" wall and then rest on the gable end panels as the incline
+     * > rises."* — Tommy, 2026-11-15
+     *
+     * On a box, `gableEndsFullHeight` lifts a gable to the roof's TOP surface
+     * so it closes the building's end over the roof's edge — his 2026-10-29
+     * rule, unchanged. A mitered shape's rows are not ends, they are BEARING,
+     * and lifting them put every one 16 3/8in proud of the roof it carries.
+     * He saw both symptoms on screen before anything was measured; the numbers
+     * below are what they were.
+     */
+    const drawn = drawTemplate({ shape: "octagon", widthFt: 16, depthFt: 16 })!;
+    const roof = simpleRoofPlanes(drawn.fp, { form: "shed", pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT });
+    const tallId = shedTallWallId(drawn.fp, { form: "shed", pitchIn12: PITCH_IN12, eaveHeightFt: WALL_HEIGHT_FT })!;
+    const tops = new Map(wallRoofTopsFor(drawn.fp, roof, WALL_HEIGHT_FT).map((t) => [t.wallId, t]));
+
+    /* ⚠ `gableRowsCloseOverRoof` in page.tsx is `gableEndsFullHeight &&
+       !isMiteredShape(footprint)` — false here, which is the whole change. */
+    const liftFor = (tile: { widthIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }, closesOver: boolean) =>
+      gableTileRoofTopLiftIn(tile, closesOver, drawn.thicknessIn, PITCH_IN12, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN);
+
+    for (const wallId of drawn.gableWallIds) {
+      const wall = drawn.fp.walls.find((w) => w.id === wallId)!;
+      const where = `16ft octagon, wall ${wallId} (${wallCompassDirection(wall, drawn.fp)})`;
+      for (const t of rowFor(drawn, wallId, [])) {
+        const tile = { widthIn: t.widthIn, leftEdgeHeightIn: t.leftHeightIn, rightEdgeHeightIn: t.rightHeightIn };
+        expect(liftFor(tile, false), `${where}: a bearing row was lifted off the roof it carries`).toBe(0);
+      }
+    }
+
+    /* ⚠ **The two corners he pointed at, by the numbers.** */
+    const dirOf = (id: string) => wallCompassDirection(drawn.fp.walls.find((w) => w.id === id)!, drawn.fp);
+    const ne = drawn.gableWallIds.find((id) => dirOf(id) === "NE")!;
+    const se = drawn.gableWallIds.find((id) => dirOf(id) === "SE")!;
+
+    /* The NE facet's tall end must land exactly on the roof height the
+       cross-tilt row beside it is built to — 64in, flush, no step. */
+    const neTiles = rowFor(drawn, ne, []);
+    const neTallestIn = Math.max(...neTiles.flatMap((t) => [t.leftHeightIn, t.rightHeightIn])) - EAVE_IN;
+    expect(neTallestIn).toBeCloseTo(64, 1);
+    expect(tops.get(tallId)!.tallerAboveEaveIn, "the cross-tilt wall's roof height").toBeCloseTo(64, 1);
+    /* ⚠ Lifted, it was 80.34in — 16 3/8in proud of the row next to it. */
+    const neTallTile = neTiles.find((t) => Math.max(t.leftHeightIn, t.rightHeightIn) - EAVE_IN > 63)!;
+    expect(
+      neTallestIn + liftFor({ widthIn: neTallTile.widthIn, leftEdgeHeightIn: neTallTile.leftHeightIn, rightEdgeHeightIn: neTallTile.rightHeightIn }, true),
+    ).toBeCloseTo(80.34, 1);
+
+    /* The SE facet has to run OUT at the eave corner, so the roof lands on the
+       15 1/2in wall there rather than on a panel. Lifted, its low end was
+       16.35in tall under a roofline of zero. */
+    const seLowestIn = Math.min(...rowFor(drawn, se, []).flatMap((t) => [t.leftHeightIn, t.rightHeightIn])) - EAVE_IN;
+    expect(seLowestIn, "the SE facet does not reach the eave").toBeLessThan(GABLE_PANEL_MIN_HEIGHT_IN);
+  });
+
   it("a rectangle is untouched by all of it", () => {
     /* The safety property: these templates must draw exactly as before. */
     for (const plan of [

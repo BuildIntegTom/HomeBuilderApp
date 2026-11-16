@@ -7698,8 +7698,46 @@ export default function LayoutEditor() {
     }
   };
 
+  /**
+   * ⚠ **DOES A GABLE ROW CLOSE OVER THE ROOF, OR BEAR UNDER IT?**
+   *
+   * > *"can we have the roof be basically cut to fit the raised octagon gable
+   * > perimeter? roof panels resting on top of gable panels for shed octagon
+   * > ... it also looks like the smallest two gable end trapezoids are kind of
+   * > tall on their lower side - the roof panels should be fully sitting on
+   * > their 15.5" wall and then rest on the gable end panels as the incline
+   * > rises."* — Tommy, 2026-11-15
+   *
+   * On a BOX the two gable walls are the building's ends, and
+   * `gableEndsFullHeight` makes them close the building up to the roof's TOP
+   * surface — the gable wraps the roof's edge, which is his 2026-10-29 rule
+   * and is unchanged here.
+   *
+   * ⚠ **On a MITERED shape the rows are not ends, they are bearing.** They run
+   * all the way round under a roof that slopes across them, so the roof has to
+   * land ON them. Lifting them to the roof's top surface put every one of them
+   * **16 3/8in proud of the roof they carry**, and he spotted both symptoms of
+   * it on screen before anyone measured it:
+   *
+   * - the 16ft Octagon's NE facet built to **80.34in** at its north end while
+   *   the cross-tilt row on the wall beside it tops out at the roof's underside
+   *   of **64.00in** — a 16 3/8in step at a shared corner, which is the
+   *   *"tallest gable end is extra tall and makes the roof on a different
+   *   angle than the gable ends besides it"*;
+   * - the SE and SW facets' low ends built to **16.35in** where the roofline is
+   *   **0** and the roof should simply be sitting on the 15 1/2in wall — the
+   *   *"smallest two gable end trapezoids are kind of tall on their lower
+   *   side"*.
+   *
+   * With no lift a mitered row's top IS the roof's underside, so the roof rests
+   * on it, the row runs out to nothing at the eave corner (the last sliver is
+   * demoted to a filler rather than built as a panel), and the row meets the
+   * cross-tilt panels flush at the tall corner.
+   */
+  const gableRowsCloseOverRoof = gableEndsFullHeight && !(footprint !== null && isMiteredShape(footprint));
+
   const gableTileRoofTopOffsetIn = (leftHeightIn: number, rightHeightIn: number, widthIn: number) => {
-    if (!gableEndsFullHeight || !(widthIn > 0)) return gableEndsFullHeight ? thicknessIn : 0;
+    if (!gableRowsCloseOverRoof || !(widthIn > 0)) return gableRowsCloseOverRoof ? thicknessIn : 0;
     return thicknessIn * Math.hypot(1, Math.abs(rightHeightIn - leftHeightIn) / widthIn);
   };
   const gablePreviewLowEdgeHeightIn = gableEaveHeightIn;
@@ -8281,7 +8319,7 @@ export default function LayoutEditor() {
     const result: typeof gableTilesByWallId = {};
     for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
       result[wallId] = tiles.map((t) => {
-        const liftIn = gableTileRoofTopLiftIn(t, gableEndsFullHeight, thicknessIn, pitchIn12, gableEaveHeightIn, GABLE_PANEL_MAX_HEIGHT_IN);
+        const liftIn = gableTileRoofTopLiftIn(t, gableRowsCloseOverRoof, thicknessIn, pitchIn12, gableEaveHeightIn, GABLE_PANEL_MAX_HEIGHT_IN);
         /* Both edges by the SAME amount, so the tile's own rake — and with it
            every slope label and cut angle derived from it — is untouched.
            ⚠ **AND THE RIDGE WITH THEM.** `apexHeightIn` was left behind when
@@ -8302,7 +8340,7 @@ export default function LayoutEditor() {
       });
     }
     return result;
-  }, [gableTilesByWallId, roofTrussLayoutContext, gableEndsFullHeight, thicknessIn, gableEaveHeightIn]);
+  }, [gableTilesByWallId, roofTrussLayoutContext, gableRowsCloseOverRoof, thicknessIn, gableEaveHeightIn]);
 
   // Computed once, across every nameable panel type together, so a panel's
   // number always reflects its true position in the along-wall sequence —
@@ -16830,7 +16868,10 @@ export default function LayoutEditor() {
                      there with its own note. */
                   roofPitchIn12={deckPanelTakeoffInput.roofPitchIn12}
                   roofEaveHeightFt={deckPanelTakeoffInput.roofEaveHeightFt}
-                  gableEndsFullHeight={gableEndsFullHeight}
+                  /* ⚠ The 3D view reads this ONLY to apply the roof-top lift,
+                     so it gets the "closes over the roof" answer rather than
+                     the raw setting — a mitered row bears the roof instead. */
+                  gableEndsFullHeight={gableRowsCloseOverRoof}
                   roofGableEndInsetIn={deckPanelTakeoffInput.roofGableEndInsetIn}
                   roofForm={deckPanelTakeoffInput.roofForm}
                   roofDeckSolid={showRoofDeck3DSolid}
