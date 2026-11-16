@@ -185,3 +185,39 @@ export function wallMitredEndsFor(
     end: wallEndMitreFor(footprint, wall, "end", wallThicknessIn),
   };
 }
+
+/**
+ * The same two mitres in the form a PANEL takes them: a pull-back at each of
+ * the four plan corners, in inches along the wall.
+ *
+ * `Ext` is the wall's exterior face and `Int` its interior one, and exactly
+ * one of each pair is non-zero — whichever face is the SHORT one at that
+ * corner. All four zero at a square corner, which is every corner of a box
+ * and is the identity the panel builders treat as "not mitred".
+ *
+ * ⚠ **The field names, not a boolean, are what carry `interiorIsShort`.** A
+ * convex corner pulls the interior back; the inside of a notch pulls the
+ * exterior back. Writing the number into the face it belongs to means nothing
+ * downstream has to remember which way round a flag went, and a shape with
+ * both kinds of corner needs no special case.
+ */
+export interface WallPlanMitreIn {
+  startExtIn: number;
+  startIntIn: number;
+  endExtIn: number;
+  endIntIn: number;
+}
+
+export function wallPlanMitreForPanelsIn(
+  footprint: Footprint,
+  wall: Wall,
+  wallThicknessIn: number,
+): WallPlanMitreIn {
+  const ends = wallMitredEndsFor(footprint, wall, wallThicknessIn);
+  return {
+    startExtIn: ends.start.interiorIsShort ? 0 : ends.start.pullBackIn,
+    startIntIn: ends.start.interiorIsShort ? ends.start.pullBackIn : 0,
+    endExtIn: ends.end.interiorIsShort ? 0 : ends.end.pullBackIn,
+    endIntIn: ends.end.interiorIsShort ? ends.end.pullBackIn : 0,
+  };
+}
