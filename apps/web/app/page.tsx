@@ -17396,6 +17396,12 @@ export default function LayoutEditor() {
                 onOpenInviteToken={(token) => {
                   window.location.href = `/invite/${encodeURIComponent(token)}`;
                 }}
+                onOpenProposalToken={(token) => {
+                  window.location.href = `/proposal/${encodeURIComponent(token)}`;
+                }}
+                /* The same serializer a cloud save uses, so a proposal and a
+                   saved version are the same file. */
+                buildProposalDocument={() => serializeProject(buildProjectState())}
                 /* ⚠ No way out when there is nothing behind Home. An ✕ that
                    leads to a blank canvas is a trap dressed as an exit; the
                    tiles' own "Draw your own" is the real route to an empty

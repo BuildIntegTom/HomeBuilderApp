@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 import StarterTemplatePicker, { type StarterTemplatePickerProps } from "./StarterTemplatePicker";
 import { useOptionalAuth } from "./auth/AuthProvider";
 import { shareTokenFromPastedLink, invitePathFromPastedLink } from "./cloud/shareLinkPath";
+import { proposalTokenFromPastedLink } from "./cloud/proposalPath";
+import SendAsProposal from "./SendAsProposal";
 import styles from "./HomePage.module.css";
 
 /**
@@ -93,9 +95,17 @@ export interface HomePageProps {
     } | null;
   };
 
+  /**
+   * The design as a file, for a proposal. ⚠ A FUNCTION, not a document:
+   * building one serialises the whole project, and Home renders on every
+   * change — so it is done when somebody presses the button and not before.
+   */
+  buildProposalDocument: () => unknown;
+
   /** Where a pasted link goes. */
   onOpenShareToken: (token: string) => void;
   onOpenInviteToken: (token: string) => void;
+  onOpenProposalToken: (token: string) => void;
 
   /** Closes Home. Absent when there is nothing behind it to close to. */
   onClose: (() => void) | null;
@@ -104,7 +114,8 @@ export interface HomePageProps {
 /** A stable no-op for the one share state with no next step to take. */
 const noop = () => {};
 
-const PASTE_HELP = "Paste the whole link — a shared design or an invitation both work here.";
+const PASTE_HELP =
+  "Paste the whole link — a shared design, an invitation or a proposal all work here.";
 const PASTE_UNRECOGNISED =
   "That doesn't look like one of our links. Copy the whole thing from the message you were sent, including the https:// part.";
 
@@ -131,6 +142,8 @@ export default function HomePage(props: HomePageProps) {
     cloud,
     onOpenShareToken,
     onOpenInviteToken,
+    onOpenProposalToken,
+    buildProposalDocument,
     onClose,
   } = props;
 
@@ -155,6 +168,19 @@ export default function HomePage(props: HomePageProps) {
     if (share) {
       setPasteError(null);
       onOpenShareToken(share);
+      return;
+    }
+    /* ⚠ **THIRD, and the order is not arbitrary.** All three tokens are 43
+       characters of base64url and are indistinguishable from one another, so
+       what tells them apart is the PATH — and each of these three functions
+       refuses the other two paths explicitly rather than relying on its own
+       regex missing them. A bare token with no path at all is claimed by the
+       first of the three, which is the invite; that is the pre-existing
+       behaviour and this does not change it. */
+    const proposal = proposalTokenFromPastedLink(pasted);
+    if (proposal) {
+      setPasteError(null);
+      onOpenProposalToken(proposal);
       return;
     }
     setPasteError(PASTE_UNRECOGNISED);
@@ -383,6 +409,13 @@ export default function HomePage(props: HomePageProps) {
               {shareStep.note}
             </p>
           )}
+          {/* ⚠ **Beside Share, because it is the answer to what Share cannot
+              do.** Three of `shareStep`'s four states exist to explain that
+              sharing needs an account and a saved design. This needs neither,
+              which is the whole of his *"building integrity can recieve a link
+              from a not signed in account"* — and it is invisible as an answer
+              unless the two sit together. */}
+          <SendAsProposal buildDocument={buildProposalDocument} hasDrawing={current !== null} />
           {cloud.refile && (
             <label className={styles.refileRow} data-home-refile="">
               {/* The owner-named heading, kept as the visible label rather
