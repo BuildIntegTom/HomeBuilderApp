@@ -70,6 +70,7 @@ import {
   buildColumnStyleMembers,
   buildGablePeakPanelMembers,
   buildCornerPanelMembers,
+  cornerPanelPlanMitre,
   buildGablePanelMembers,
   NO_PANEL_PLAN_MITRE,
   type PanelPlanMitre,
@@ -136,6 +137,7 @@ const EMPTY_ID_SET: Set<string> = new Set();
  *  invalidate the gable memo each time. */
 const EMPTY_GABLE_CROSS_RISE_BY_WALL_ID: Record<string, number> = {};
 const EMPTY_GABLE_PLAN_MITRE_BY_TILE: Record<string, PanelPlanMitre> = {};
+const EMPTY_WALL_PLAN_MITRE_BY_WALL_ID: Record<string, PanelPlanMitre> = {};
 
 const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }[]> =
   {};
@@ -233,6 +235,14 @@ function membersForSlot(
   // panelInstances.ts's own doc comment on this same degrade. A still-tall
   // band next to a beam keeps its real bracing unaffected.
   isMidWallBandAffected: boolean,
+  /**
+   * ⚠ **This slot's own 22½° plan mitre, when it is the panel sitting on a
+   * building corner.** Zero everywhere else, and on every right angle.
+   *
+   * Only the CORNER cases read it: a standard panel in the middle of a wall
+   * has nothing at either end but the next panel along.
+   */
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
 ): PanelMember[] | null {
   switch (slot.type) {
     case "standard":
@@ -295,7 +305,14 @@ function membersForSlot(
       // the tiler never widens it (see `cornerMayWidenForTiling`).
       return isSquareBalePanelization
         ? buildSquareBaleCornerPanelMembers(thicknessIn, heightIn, includeNailer, nailerOffsetIn)
-        : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, slot.widthIn);
+        : buildCornerPanelMembers(
+            thicknessIn,
+            heightIn,
+            includeNailer,
+            slot.widthIn,
+            undefined,
+            planMitreIn,
+          );
     case "safety-gap":
       return buildSafetyGapMembers(thicknessIn, heightIn);
     case "window":
@@ -1011,6 +1028,15 @@ interface Building3DViewProps {
    * means square, which is every corner of a box.
    */
   gablePlanMitreByTile?: Record<string, PanelPlanMitre>;
+  /**
+   * ⚠ **Each WALL's two-end plan mitre, for the CORNER PANELS on it** —
+   * page.tsx's `wallPlanMitreByWallId`, handed over rather than re-derived.
+   *
+   * Per WALL rather than per slot, which is what lets the ground story and the
+   * second story read one record: `cornerPanelPlanMitre` decides which END a
+   * given slot takes, from its index alone.
+   */
+  wallPlanMitreByWallId?: Record<string, PanelPlanMitre>;
   gableTilesByWallId?: Record<
     string,
     {
@@ -1481,6 +1507,7 @@ export default function Building3DView({
   leastAccessibleCorner,
   gableCrossRiseInByWallId = EMPTY_GABLE_CROSS_RISE_BY_WALL_ID,
   gablePlanMitreByTile = EMPTY_GABLE_PLAN_MITRE_BY_TILE,
+  wallPlanMitreByWallId = EMPTY_WALL_PLAN_MITRE_BY_WALL_ID,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   boxBeamCoverageByWallId = EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID,
@@ -1673,10 +1700,17 @@ export default function Building3DView({
           jackStudConfig,
           standardWidthIn,
           box.midWallBandIndex !== undefined,
+          /* ⚠ Keyed by WALL, with the slot's own index deciding which end it
+             takes — so both stories read one record. */
+          cornerPanelPlanMitre(
+            wallPlanMitreByWallId[box.wallId] ?? NO_PANEL_PLAN_MITRE,
+            box.slotIndex,
+          ),
         ),
       })),
     [
       slotBoxes,
+      wallPlanMitreByWallId,
       thicknessIn,
       includeNailer,
       girtStyle,
@@ -1776,10 +1810,17 @@ export default function Building3DView({
           jackStudConfig,
           standardWidthIn,
           box.midWallBandIndex !== undefined,
+          /* ⚠ Keyed by WALL, with the slot's own index deciding which end it
+             takes — so both stories read one record. */
+          cornerPanelPlanMitre(
+            wallPlanMitreByWallId[box.wallId] ?? NO_PANEL_PLAN_MITRE,
+            box.slotIndex,
+          ),
         ),
       })),
     [
       secondStorySlotBoxes,
+      wallPlanMitreByWallId,
       thicknessIn,
       includeNailer,
       girtStyle,

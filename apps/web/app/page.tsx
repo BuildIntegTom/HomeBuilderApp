@@ -229,6 +229,7 @@ import {
   gableMitreDropsGirtRow,
   NO_PANEL_PLAN_MITRE,
   type PanelPlanMitre,
+  cornerPanelPlanMitre,
   panelPlanMitreForSpan,
   panelPlanMitreFits,
   buildJackStudMembers,
@@ -651,6 +652,10 @@ const EMPTY_CROSS_RISE_BY_WALL_ID: Record<string, number> = {};
  *  render is a new object every time, which invalidates every memo that reads
  *  it. */
 const EMPTY_PLAN_MITRE_BY_TILE: Record<string, PanelPlanMitre> = {};
+/** Each WALL's two-end mitre, for the corner panels on it. ⚠ Module scope for
+ *  the same reason as the records above: a fresh `{}` per render invalidates
+ *  every memo that reads it. */
+const EMPTY_PLAN_MITRE_BY_WALL: Record<string, PanelPlanMitre> = {};
 /** ⚠ A gable tile's identity for the plan-mitre lookup. `slotIndexInWall` is
  *  NEGATIVE for a gable tile by construction (`-(tileIndex + 1)` in
  *  `panelInstances.ts`), so this can never collide with a wall slot's key. */
@@ -8216,6 +8221,42 @@ export default function LayoutEditor() {
    * zeros at a square corner, and an all-zero mitre is not a mitre
    * (`hasPanelPlanMitre`), so a rectangle's panels are byte-identical.
    */
+  /**
+   * ⚠ **EACH WALL'S 22½° PLAN MITRE, for the CORNER PANELS on it — the ground
+   * story's own half of the octagon-corner ask.**
+   *
+   * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+   * > Tommy, 2026-11-16. The gable row was cut that day; this is the story
+   * > below it, which had the identical defect.
+   *
+   * Measured: every octagon corner rakes **22.50°**, a 15½in wall pulls its
+   * short face back **6.4203in**, and until it does the two walls' panel runs
+   * share **99.51 in² of plan area at each of the eight corners** — over the
+   * full height of the wall, on every story. The 2D plan has drawn that
+   * trapezoid since 2026-09 (`computeSlotRects`) and the MEMBERS never
+   * followed.
+   *
+   * ⚠ **Per WALL, not per slot, and that is what makes it story-agnostic.**
+   * Which SLOT takes which end is `cornerPanelPlanMitre`'s job, from the slot
+   * index alone — so the ground story and the second story read one record
+   * even though they keep separate slot arrays.
+   *
+   * ⚠ Empty on every right-angled building: `wallPlanMitreForPanelsIn`
+   * returns all zeros at a square corner, and an all-zero mitre is not a
+   * mitre, so a rectangle's panels are byte-identical.
+   */
+  const wallPlanMitreByWallId = useMemo(() => {
+    if (!footprint) return EMPTY_PLAN_MITRE_BY_WALL;
+    const out: Record<string, PanelPlanMitre> = {};
+    for (const wall of footprint.walls) {
+      const mitre = wallPlanMitreForPanelsIn(footprint, wall, thicknessIn);
+      if (mitre.startIntIn !== 0 || mitre.startExtIn !== 0 || mitre.endIntIn !== 0 || mitre.endExtIn !== 0) {
+        out[wall.id] = mitre;
+      }
+    }
+    return out;
+  }, [footprint, thicknessIn]);
+
   const gablePlanMitreByTile = useMemo(() => {
     if (!footprint) return EMPTY_PLAN_MITRE_BY_TILE;
     const out: Record<string, PanelPlanMitre> = {};
@@ -9020,7 +9061,19 @@ export default function LayoutEditor() {
                   // Bale's corner is a fixed 39in unit and keeps its own build.
                   isSquareBalePanelization
                   ? cornerPanelMembers3D
-                  : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, inst.widthIn, girtStyle)
+                  : buildCornerPanelMembers(
+                      thicknessIn,
+                      heightIn,
+                      includeNailer,
+                      inst.widthIn,
+                      girtStyle,
+                      /* ⚠ The 22½° plan mitre, if this panel is the one on the
+                         corner. Zero on every right angle. */
+                      cornerPanelPlanMitre(
+                        wallPlanMitreByWallId[inst.wallId] ?? NO_PANEL_PLAN_MITRE,
+                        inst.slotIndexInWall,
+                      ),
+                    )
                 : inst.panelType === "safety-gap"
                   ? // This instance's own sheet, picked off the width the tiler
                     // reserved — a 1/2in gap must contribute 1/2in plywood to
@@ -9672,7 +9725,19 @@ export default function LayoutEditor() {
               // one really is a single unit, and the tiler never widens it.
               isSquareBalePanelization
               ? cornerPanelMembers3D
-              : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, widthIn, girtStyle)
+              : buildCornerPanelMembers(
+                  thicknessIn,
+                  heightIn,
+                  includeNailer,
+                  widthIn,
+                  girtStyle,
+                  /* ⚠ Off the same instance, so the sheet describes the part
+                     the 3D view draws. */
+                  cornerPanelPlanMitre(
+                    wallPlanMitreByWallId[source?.wallId ?? ""] ?? NO_PANEL_PLAN_MITRE,
+                    source?.slotIndexInWall ?? 0,
+                  ),
+                )
             : panelTypeId === "gable"
               ? isSafetyGapOverride
                 ? buildSafetyGapMembers(thicknessIn, Math.max(gableLeftLocalIn, gableRightLocalIn))
@@ -10331,6 +10396,23 @@ export default function LayoutEditor() {
          flag is in the key for the same reason: it changes the member list. */
       if (panelTypeId === "big-header") {
         parts.push((inst.bigHeaderHeightIn ?? bigHeaderDefaultHeightIn.value).toFixed(3), String(inst.includeSillOnBigHeader === true));
+      }
+      /* ⚠ **AND A CORNER PANEL'S OWN PLAN MITRE.** The two corner panels on
+         one octagon wall are MIRROR IMAGES — one cut at its start end, one at
+         its finish — and without this they share a single Shop Fabrication
+         page, which draws and cut-lists the first instance in the group. Half
+         of all sixteen would be built mirrored. Measured on the 16ft Octagon
+         before this line existed: one sheet, `10' Corner 15½" (16)`.
+         The same trap the gable tile's cross rise and the deck mitre's own
+         group key already carry. */
+      if (panelTypeId === "corner" || panelTypeId === "safety-oct-corner") {
+        const m = cornerPanelPlanMitre(
+          wallPlanMitreByWallId[inst.wallId] ?? NO_PANEL_PLAN_MITRE,
+          inst.slotIndexInWall,
+        );
+        parts.push(
+          `${m.startExtIn.toFixed(3)},${m.startIntIn.toFixed(3)},${m.endExtIn.toFixed(3)},${m.endIntIn.toFixed(3)}`,
+        );
       }
       if (panelTypeId === "header" || panelTypeId === "sill") {
         parts.push(inst.sourceSlotType ?? "", resolvedWindowHeightInFor(inst).toFixed(3), resolvedSillHeightInFor(inst).toFixed(3));
@@ -17238,6 +17320,7 @@ export default function LayoutEditor() {
                   onSetWindowHeight={handleSetWindowHeight}
                   gableCrossRiseInByWallId={gableCrossRiseInByWallId}
                   gablePlanMitreByTile={gablePlanMitreByTile}
+                  wallPlanMitreByWallId={wallPlanMitreByWallId}
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
@@ -17313,6 +17396,7 @@ export default function LayoutEditor() {
               standardWidthIn={standardWidthIn}
               gableCrossRiseInByWallId={gableCrossRiseInByWallId}
               gablePlanMitreByTile={gablePlanMitreByTile}
+              wallPlanMitreByWallId={wallPlanMitreByWallId}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}

@@ -40,6 +40,7 @@ export interface BuildingSummaryRenderProps {
    *  `Building3DView` — see its own prop for what the number means. */
   gableCrossRiseInByWallId?: Record<string, number>;
   gablePlanMitreByTile?: Record<string, PanelPlanMitre>;
+  wallPlanMitreByWallId?: Record<string, PanelPlanMitre>;
   gableTilesByWallId?: Record<
     string,
     {

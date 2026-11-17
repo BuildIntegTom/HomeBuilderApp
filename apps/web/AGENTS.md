@@ -186,6 +186,28 @@
   and the record) costs neither. Reach for that shape first: a derived lookup
   belongs in the memo that produced the data, not beside it.
 
+- **2026-11-16, the ground story's corner mitre: ZERO delta.** 183 / 136 / 47,
+  every rule byte-identical again.
+
+  ⚠ **A brand-new `useMemo` cost nothing** — `wallPlanMitreByWallId`, over
+  `[footprint, thicknessIn]`. Both are plain `useState` values, so the rule
+  from 2026-11-15 holds once more: a memo over raw state is free however much
+  it does. Two new call sites, a widened group key and a prop threaded through
+  two components also moved nothing.
+
+  ⚠ **AND THE GATE DID NOT CATCH THE REAL DEFECT IN THIS CHANGE**, which is
+  worth recording beside the number. Giving `buildCornerStuds` a
+  `PanelPlanMitre` closed an import cycle — `panelMemberHelpers` is imported by
+  almost everything and `panelPlanMitre` imports IT for its constants — so
+  `MIN_MITRED_INTERIOR_LENGTH_IN = 2 * PLATE_2X4_THICKNESS_IN` evaluated before
+  that constant existed. **`tsc`, `vitest` and lint all passed; the dev server
+  answered 500** with *"Cannot access 'PLATE_2X4_THICKNESS_IN' before
+  initialization"*. Same family as the module-scope catalog read further up
+  this file. **Adding an import to a widely-imported leaf module is the move
+  to be suspicious of, and only the browser finds it** — which is the argument
+  for opening the preview on any change that touches the catalogue's shared
+  helpers, not only on changes you can see.
+
 - **2026-11-16, proposals (stride C): ZERO delta.** 183 / 136 / 47, every rule
   byte-identical to the corner-mitre run earlier the same day
   (`preserve-manual-memoization` 78, `no-unused-vars` 35, `refs` 29,
