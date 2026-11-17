@@ -163,6 +163,25 @@ is cut, what sets the radius) was answering the wrong question.
     ceiling, which would have overridden his own 12ft maximum from a different
     place. Backed out before commit — one catalog question, one answer.
 
+13. **B34 — Multiplex: a pre-draw with a LOAD-BEARING CENTRE WALL.** Queued
+    2026-11-16, not started. *"a home page option that says multiplex … a
+    36x36' square with a straw wall running down the center and acting as the
+    ridge beam … two rectngle studio apartments … at least the two options
+    for duplex and four plex where its the same drawing, except with another
+    story."* Stairs/decks and the loft are **explicitly deferred by him**.
+    ⚠ **This is not a template, and sizing it as one would be the mistake.**
+    `Footprint` is `corners[] + walls[]` and every wall is an edge of a CLOSED
+    LOOP — the courtyard, the only multi-loop shape, is a second ring wound
+    the other way. A dividing wall ends in **T-junctions**, which the mitre
+    rules, `outwardNormal`'s winding, the gap rules, the roof planes and the
+    deck cut all have no answer for. The real item is *"a wall can be
+    interior"*; the 36x36 duplex is its first customer. ⚠ And *the centre wall
+    acts as the ridge beam* replaces the ridge-beam-on-a-column arrangement
+    entirely — a third roof-bearing case beside shed and peak. Six questions
+    for him, two of which move the geometry, in
+    `Claude outputs/multiplex-template-queued-2026-11-16.md`.
+
+
 ## D. Open questions that are not blocking anything
 
 - **Shipping bundles**: *"full panel height x 3 panel depths tall"* — on the
