@@ -186,6 +186,24 @@
   and the record) costs neither. Reach for that shape first: a derived lookup
   belongs in the memo that produced the data, not beside it.
 
+- **2026-11-16, proposals (stride C): ZERO delta.** 183 / 136 / 47, every rule
+  byte-identical to the corner-mitre run earlier the same day
+  (`preserve-manual-memoization` 78, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ Worth recording for the size of it: three API routes, a server component,
+  **two new client components**, a display module, three test files, and two
+  props threaded through `HomePage` and `page.tsx` — and not one flag moved.
+
+  ⚠ **Why, and it is reusable:** neither new client component has an EFFECT
+  at all. `SendAsProposal` and `AdoptProposal` are `useState` plus event
+  handlers, so `set-state-in-effect` cannot rise and there is no dep array to
+  touch an already-flagged value. The server component has no hooks. That is
+  the same rule from the 2026-11-15 entries read from the other side: the
+  budget is spent by `useMemo`s and by what their dep arrays touch, and a
+  component that memoises nothing is free however much it does.
+
 - **2026-11-16, the gable row's 22½° corner mitre, +1.**
   `preserve-manual-memoization` 77 -> 78 (**183 / 136 / 47** against the
   dual-bevel run's 182 / 135 / 47). Every other rule byte-identical and no
