@@ -100,13 +100,25 @@ describe("⚠ the outline geometry walks straight past it", () => {
     expect(fp.walls.map((w) => wallCompassDirection(w, fp))).toEqual(["N", "E", "S", "W"]);
   });
 
-  it("⚠ the install sequence's ring order never places it", () => {
-    /* B35 numbers panels by their wall's place in the ring. The centre wall
-       is not in a ring, so it needs its own answer later rather than a wrong
-       one now. */
+  it("⚠ B35 numbers it LAST — 'out to in', and a dividing wall is innermost", () => {
+    /* ⚠ **This test asserted the opposite for an hour, and the change is the
+       point.** When the centre wall first existed there was no answer to
+       where it belonged in the install order, so the honest assertion was
+       that nothing placed it. Shipping that is what produced the defect: with
+       no ring it scored 0 on every positional field and its `C1`-`C11` came
+       out INTERLEAVED with the north wall's — 0022, 0035, 0037, 0040 — which
+       would have sent a crew back and forth across the building.
+
+       His own clause answers it: a dividing wall is inside every ring. */
     const order = installRingWallOrder(fp, "A");
-    expect(order.size).toBe(4);
-    expect(order.has(MULTIPLEX_CENTRE_WALL_ID)).toBe(false);
+    expect(order.size).toBe(5);
+    const centre = order.get(MULTIPLEX_CENTRE_WALL_ID)!;
+    expect(centre).toBeDefined();
+    /* Past the one ring the outline has, so every outline panel numbers
+       first. */
+    for (const wall of fp.walls) {
+      expect(order.get(wall.id)!.ringIndex, wall.id).toBeLessThan(centre.ringIndex);
+    }
   });
 });
 

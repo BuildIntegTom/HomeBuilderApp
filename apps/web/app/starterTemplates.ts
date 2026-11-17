@@ -1,5 +1,6 @@
 import {
   addCourtyard,
+  buildMultiplexFootprint,
   buildOctagonFootprint,
   buildRectangleFootprint,
   footprintLoops,
@@ -45,6 +46,7 @@ import {
 export type StarterTemplateId =
   | "tiny-house"
   | "the-tank"
+  | "multiplex"
   | "octagon"
   | "the-cindy"
   | "square-courtyard"
@@ -52,7 +54,11 @@ export type StarterTemplateId =
 
 /** What `page.tsx` has to do to put this building on screen. */
 export interface StarterPlan {
-  shape: "rectangle" | "octagon";
+  /** ⚠ `multiplex` is a rectangle **with a load-bearing wall down the
+   *  middle** — B34. It is its own shape rather than a flag because the
+   *  centre wall's geometry is derived from the wall THICKNESS, so a plan that
+   *  asks for one has to carry that too (see `thicknessIn`). */
+  shape: "rectangle" | "octagon" | "multiplex";
   widthFt: number;
   depthFt: number;
   /**
@@ -107,6 +113,11 @@ export interface StarterTemplate {
 const CINDY_WIDTH_FT = 55 + 3 / 12;
 const CINDY_DEPTH_FT = 34 + 10 / 12;
 
+/** ⚠ His own wall, stated here rather than inherited from the editor — the
+ *  Multiplex's centre wall is measured between the INSIDE faces of the walls
+ *  it butts, so the thickness is part of the plan, not a setting. */
+const DEFAULT_MULTIPLEX_THICKNESS_IN = 15.5;
+
 export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
   {
     id: "tiny-house",
@@ -125,6 +136,24 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
     name: "The Tank",
     blurb: "A gable running the long way, with its ridge column under the peak.",
     options: [{ id: "default", label: "24 × 48 ft", plan: { shape: "rectangle", widthFt: 48, depthFt: 24 } }],
+  },
+  {
+    id: "multiplex",
+    name: "Multiplex",
+    blurb: "Two studio apartments either side of a load-bearing straw wall.",
+    /* ⚠ **His 36x36, and 36 ft is the OUTSIDE dimension — his own answer.**
+       So each studio is 17'-4¼" clear, not 18 ft, and the label says the
+       building's size the way every other tile does. The four-plex (*"the same
+       drawing, except with another story"*) and his 8:12 pitch arrive with the
+       roof, which is the next stride — a tile that promised an upper floor
+       before there was a way up to it would be a drawing, not a plan. */
+    options: [
+      {
+        id: "duplex",
+        label: "36 × 36 ft",
+        plan: { shape: "multiplex", widthFt: 36, depthFt: 36, thicknessIn: DEFAULT_MULTIPLEX_THICKNESS_IN },
+      },
+    ],
   },
   {
     id: "octagon",
@@ -194,7 +223,19 @@ export function footprintForPlan(plan: StarterPlan): { footprint: Footprint; cou
   const base =
     plan.shape === "octagon"
       ? buildOctagonFootprint(plan.widthFt, plan.depthFt)
-      : buildRectangleFootprint(plan.widthFt, plan.depthFt);
+      : plan.shape === "multiplex"
+        ? buildMultiplexFootprint({
+            widthFt: plan.widthFt,
+            depthFt: plan.depthFt,
+            /* ⚠ The centre wall butts the INSIDE faces of the walls it runs
+               into, so its length is the clear span and it cannot be worked
+               out without the thickness. A Multiplex plan that omitted one
+               would silently build its centre wall a whole wall too long,
+               which is why this tile states his 15.5in rather than inheriting
+               whatever the editor happens to be set to. */
+            wallThicknessIn: plan.thicknessIn ?? DEFAULT_MULTIPLEX_THICKNESS_IN,
+          })
+        : buildRectangleFootprint(plan.widthFt, plan.depthFt);
   if (plan.courtyardBuildingWidthFt === undefined) return { footprint: base, courtyardRefused: false };
   const ring = addCourtyard(base, plan.courtyardBuildingWidthFt);
   if (isOffsetRefusal(ring)) return { footprint: base, courtyardRefused: true };

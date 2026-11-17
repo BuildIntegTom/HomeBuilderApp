@@ -447,6 +447,60 @@ export function wallRunFor(wall: Wall, ownership: CornerOwnership, runStop?: Wal
   return applyWallRunStop({ lengthIn, hasCornerStart: start.hasCorner, hasCornerEnd: end.hasCorner }, runStop);
 }
 
+
+/**
+ * ⚠ **TILING THE WALLS THAT ARE NOT ON THE OUTLINE — B34 stride 2,
+ * 2026-11-17.**
+ *
+ * > *"A straw wall running down the center ... all the loads of everything
+ * > transfer down the center row of diving wall panels."* — Tommy, 2026-11-16
+ *
+ * An interior wall is a real wall: it tiles on the same module, out of the
+ * same panels, and everything downstream counts, weighs, prices, draws and
+ * exports it like any other. What is different is only what it meets at each
+ * end.
+ *
+ * ⚠ **NO CORNER PANELS AT EITHER END — his call, and it is the reason the rest
+ * of the building is untouched.** Asked how the two ends meet the walls they
+ * run into, he chose *butts, square* over corner panels and over a safety gap
+ * at each end. Corner panels would have keyed into the north and south walls
+ * and **re-tiled every panel in both of them**; a safety gap would have put a
+ * framed void exactly where the ridge load lands. So both ends are passed as
+ * cornerless and the run is the clear span between the two inside faces,
+ * which `buildMultiplexFootprint` has already measured.
+ *
+ * ⚠ **It gets NO auto-spawned openings.** The seeder puts a 4ft window on the
+ * dead-south wall and 2ft ones elsewhere — a rule about daylight and a
+ * building's outside. A wall between two apartments is not an outside wall,
+ * and a window spawned into one would be a window between two people's
+ * living rooms. Openings on an interior wall are something a person asks for.
+ *
+ * ⚠ **One helper, called from both slot-building loops.** `retile` and
+ * `retilePreservingOpeningsWithRunStopMemory` each walk the outline
+ * separately; two copies of this would be two chances for a Multiplex to
+ * panelize differently depending on which path rebuilt it.
+ */
+export function tileInteriorWalls(fp: Footprint, standardWidthIn: number): Record<string, PanelSlot[]> {
+  const out: Record<string, PanelSlot[]> = {};
+  const mitered = isMiteredShape(fp);
+  for (const wall of fp.interiorWalls ?? []) {
+    out[wall.id] = tileWall(
+      wallFabricationLengthIn(wall),
+      standardWidthIn,
+      /* Unused with both ends cornerless, and passed as the standard width
+         rather than 0 so a future end-with-a-corner cannot silently produce a
+         zero-width corner slot. */
+      standardWidthIn,
+      "end",
+      false,
+      false,
+      !mitered,
+      true,
+    ).slots;
+  }
+  return out;
+}
+
 /** Re-tiles every wall of a footprint from scratch — discards any existing
  * openings, since re-deriving corner ownership can change every wall's
  * available length. Used after any structural change (draw, bump-out,
@@ -468,7 +522,9 @@ export function retile(
    * `resolveCorners`' own doc comment in tiling.ts. */
   cornerMayWiden = true,
 ): Record<string, PanelSlot[]> {
-  const next: Record<string, PanelSlot[]> = {};
+  /* ⚠ The walls that are not on the outline, tiled by the one helper both
+     of these builders share — see `tileInteriorWalls`. */
+  const next: Record<string, PanelSlot[]> = tileInteriorWalls(fp, standardWidthIn);
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);
   const randomFn = openingSeed?.randomFn ?? Math.random;
@@ -787,7 +843,9 @@ export function retilePreservingOpeningsWithRunStopMemory(
    * predates this, and every unstopped project) means nothing to restore. */
   unbuiltOpeningsByWallId?: Record<string, RunStopOpeningMemory>,
 ): RetileWithRunStopMemoryResult {
-  const next: Record<string, PanelSlot[]> = {};
+  /* ⚠ Same helper as `retile`'s — see its note on why this is not two
+     copies. */
+  const next: Record<string, PanelSlot[]> = tileInteriorWalls(fp, standardWidthIn);
   const unbuiltOut: Record<string, RunStopOpeningMemory> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);

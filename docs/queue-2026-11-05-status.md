@@ -190,7 +190,13 @@ is cut, what sets the radius) was answering the wrong question.
     and the one width a corner panel never has. *Sweep the size the app emits,
     not the size the constant is named after.*
 
-13. **B34 — Multiplex.** ✅ **STRIDE 1 BUILT 2026-11-17: a wall can be
+13. **B34 — Multiplex.** ✅ **STRIDES 1 AND 2 BUILT 2026-11-17.** Stride 2:
+    the centre wall is PANELIZED — 11 panels summing to exactly 401in, named
+    `C1`-`C11`, install-numbered 0075-0085, on their own shop sheets and in
+    the price, reachable from a new **Multiplex** Home tile. ⚠ It is in every
+    total and on NO drawing yet, which the Review Log says out loud. ⚠ One
+    building question for him: a cornerless run gets TWO safety gaps where a
+    cornered one gets one. **Stride 1: a wall can be
     interior.** `Footprint.interiorWalls` (optional, so every saved project
     is untouched), `buildMultiplexFootprint` for his 36x36, and the eight
     places that rebuild a footprint now carry it instead of silently

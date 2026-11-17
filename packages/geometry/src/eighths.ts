@@ -124,7 +124,11 @@ export function distributeEighths(budgetEighths: number, count: number): number[
  * mitered shapes from the invariant (that leaves a hole in the one
  * guarantee this whole pass exists to make).
  */
-export function wallFabricationLengthIn(wall: Wall): number {
+/* ⚠ Takes anything with a length, not a `Wall`, so an INTERIOR wall goes
+   through it too — this function's own reason for existing is that a caller
+   must not write `lengthFt * 12` by hand, and that applies to every wall in
+   the building whether or not it is on the outline. */
+export function wallFabricationLengthIn(wall: { lengthFt: number }): number {
   return roundToEighthIn(wall.lengthFt * 12);
 }
 

@@ -42,6 +42,20 @@ import type { CornerId, Footprint } from "./types";
  * corner of the building, which an inner ring does not touch. It keeps its own
  * order, which is still one consistent walk — there is no second PLA to
  * rotate it to, and inventing one would be inventing a fact about the site.
+ *
+ * ## ⚠ An INTERIOR wall is the innermost thing there is — B34, 2026-11-17
+ *
+ * *"Out to in"* answers it exactly: a dividing wall is inside every ring, so
+ * it takes a `ringIndex` past the last of them and its panels number after
+ * every outline panel on the building.
+ *
+ * **Measured before this existed**: the Multiplex's `C1`-`C11` came out
+ * interleaved with the north wall's — 0022, 0035, 0037, 0040 — because a wall
+ * with no ring scored 0 on every positional field and sorted as though it were
+ * the first wall of the outer ring. A crew would have been sent back and forth
+ * across the building between panels. It is the right install order on its own
+ * terms too: you cannot stand a dividing wall up through a finished roof, but
+ * its own run has to wait for the walls it butts.
  */
 export interface RingWallPosition {
   /** 0 = the outer ring. */
@@ -67,6 +81,13 @@ export function installRingWallOrder(
       startIdx <= 0 ? ring.walls : [...ring.walls.slice(startIdx), ...ring.walls.slice(0, startIdx)];
     rotated.forEach((wall, wallIndex) => byWallId.set(wall.id, { ringIndex, wallIndex }));
   });
+
+  /* ⚠ Past the last ring — see this function's own note on "out to in". Their
+     order among themselves is the order they are stored in, which is the order
+     they were drawn; nothing better exists until a building has two. */
+  (footprint.interiorWalls ?? []).forEach((wall, wallIndex) =>
+    byWallId.set(wall.id, { ringIndex: rings.length, wallIndex }),
+  );
 
   return byWallId;
 }

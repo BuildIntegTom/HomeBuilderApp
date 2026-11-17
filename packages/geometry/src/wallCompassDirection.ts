@@ -91,3 +91,49 @@ export function areWallsOppositePair(wallA: Wall, wallB: Wall, footprint: Footpr
   if (wallA.id === wallB.id) return false;
   return wallCompassDirection(wallA, footprint) === OPPOSITE_DIRECTION[wallCompassDirection(wallB, footprint)];
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   B34 — WHAT A WALL THAT FACES NO COMPASS POINT IS CALLED
+
+   > "Labeling walls Ab, BC etc. makes it difficult for me to conceptualize
+   >  which elevation view I want to look at ... Can we change AB to just
+   >  simply be N?"  — Tommy, 2026-10-18
+
+   An INTERIOR wall has two interior faces and no outside, so it has no
+   direction to be named after. Asked what should go on the shop sheets for
+   one, he picked **C, for Centre** — over `INT` and over reusing a compass
+   letter, which would have given a crew two different walls both answering
+   to `N`.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** The letter an interior wall's panel series is named from: `C1`, `C2`, … */
+export const INTERIOR_WALL_SERIES = "C";
+
+/**
+ * The second and later interior walls take a suffix, exactly as a second
+ * north-facing wall does (`N`, `N2`) — one convention, so nobody has to learn
+ * a second one. A building with one dividing wall reads plainly `C`.
+ */
+export type InteriorWallSeries = "C" | `C${number}`;
+
+export function interiorWallSeries(indexInBuilding: number): InteriorWallSeries {
+  return indexInBuilding === 0 ? INTERIOR_WALL_SERIES : (`${INTERIOR_WALL_SERIES}${indexInBuilding + 1}` as const);
+}
+
+/**
+ * ⚠ **What a panel's name series is keyed on.** A compass direction for a wall
+ * on the outline, an interior wall's own letter otherwise.
+ *
+ * Kept as one type rather than widening `CompassDirection` itself: everything
+ * that genuinely means *"which way does this face"* — the roof planes, the
+ * weather side, the sun — must keep refusing an interior wall, and it does
+ * that by still taking a `CompassDirection`.
+ */
+export type WallSeriesLabel = CompassDirection | InteriorWallSeries;
+
+/** Whether a series label is a real compass direction. ⚠ The B35 chip uses
+ *  this to decide on a colour: an interior wall gets the plainly
+ *  non-compass one rather than a borrowed direction's. */
+export function isCompassDirection(label: WallSeriesLabel): label is CompassDirection {
+  return label !== INTERIOR_WALL_SERIES && !/^C\d+$/.test(label);
+}

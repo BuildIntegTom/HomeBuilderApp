@@ -17,11 +17,17 @@ const gableSpanFt = (plan: StarterPlan): number => {
   return wall.lengthFt;
 };
 
-describe("the starter templates are his six", () => {
-  it("lists exactly the six prefabs he named, in his order", () => {
+describe("the starter templates are his six, plus the Multiplex", () => {
+  it("lists his six prefabs in his order, with Multiplex beside the Octagon", () => {
+    /* ⚠ **The seventh, added 2026-11-17 (B34).** The six were his own list
+       from U3; the Multiplex is his later ask (*"a home page option that says
+       multiplex"*) and is the first tile that is a PLAN rather than one open
+       volume. Placed next to the Octagon because, like it, what its sub-
+       options vary is a size and not a shape. */
     expect(STARTER_TEMPLATES.map((t) => t.id)).toEqual([
       "tiny-house",
       "the-tank",
+      "multiplex",
       "octagon",
       "the-cindy",
       "square-courtyard",
@@ -38,7 +44,13 @@ describe("the starter templates are his six", () => {
     for (const t of STARTER_TEMPLATES) {
       for (const o of t.options) {
         expect(Object.keys(o.plan).sort()).toEqual(
-          t.id === "the-cindy"
+          /* ⚠ The Multiplex states a thickness for a different reason than
+             the Cindy does, and the difference is worth keeping: the Cindy's
+             is a property OF HIS BUILDING, while the Multiplex's is an INPUT
+             to its geometry — the centre wall butts the inside faces of the
+             walls it runs into, so without a thickness its length cannot be
+             worked out at all. */
+          t.id === "the-cindy" || t.id === "multiplex"
             ? ["depthFt", "shape", "thicknessIn", "widthFt"]
             : o.plan.courtyardBuildingWidthFt !== undefined
               ? ["courtyardBuildingWidthFt", "depthFt", "shape", "widthFt"]
@@ -84,10 +96,15 @@ describe("the Cindy", () => {
     expect(plan.depthFt * 12).toBeCloseTo(418, 6);
   });
 
-  it("is 15.5in thick, his call, and is the only tile that states a thickness", () => {
+  it("is 15.5in thick, his call, and one of only TWO tiles that state a thickness", () => {
+    /* ⚠ The Multiplex joined it 2026-11-17 and the two reasons differ: the
+       Cindy's thickness is a fact about his building, the Multiplex's is an
+       input its centre wall's length is derived from. Every other tile takes
+       whatever the editor is set to, which is what keeps a template a recipe
+       rather than a frozen project. */
     expect(planOf("the-cindy").thicknessIn).toBe(15.5);
     for (const t of STARTER_TEMPLATES) {
-      if (t.id === "the-cindy") continue;
+      if (t.id === "the-cindy" || t.id === "multiplex") continue;
       for (const o of t.options) expect(o.plan.thicknessIn).toBeUndefined();
     }
   });

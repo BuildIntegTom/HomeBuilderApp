@@ -208,6 +208,26 @@
   for opening the preview on any change that touches the catalogue's shared
   helpers, not only on changes you can see.
 
+- **2026-11-17, B34 stride 2 (the centre wall panelized): ZERO delta.** 185 /
+  137 / 48, every rule byte-identical to the post-B35 baseline
+  (`preserve-manual-memoization` 80, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **A NEW `useMemo` COST NOTHING AGAIN, and its dep is why**:
+  `interiorWallNotDrawnReviewEntries` is keyed on `[footprint]` alone, a plain
+  `useState` value. The 2026-11-15 rule holding for the seventh time — **a memo
+  over raw state is free however much it does.** Worth reaching for
+  deliberately: when a Review Log entry can be derived from state rather than
+  from other memos, it is free, and when it needs another memo it costs one.
+
+  ⚠ **`no-unused-vars` read 36 for one run and it was a real leftover again** —
+  the `CompassDirection` TYPE import in `panelInstances.ts`, dead the moment
+  `counters` and `pushInstance` widened to `WallSeriesLabel`. The function
+  `wallCompassDirection` is still used; only the type went. Second time in two
+  days that widening a type left its narrower neighbour behind, so: **after
+  widening a field's type, check whether the old one is still imported.**
+
 - **2026-11-17, B35's install sequence, +2 (`preserve-manual-memoization`
   78 -> 80).** No correctness rule moved (`exhaustive-deps` 12, `refs` 29,
   `set-state-in-effect` 12, `purity` 1, `immutability` 1,

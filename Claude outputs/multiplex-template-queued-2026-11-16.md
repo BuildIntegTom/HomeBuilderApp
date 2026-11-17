@@ -184,6 +184,37 @@ and why the new collection is honest rather than a workaround.
 four-plex ships with no way to the upper floor, which has to be **said on the
 tile** rather than discovered.
 
+## ⚠ ONE QUESTION STRIDE 2 TURNED UP — how many safety gaps does a butted wall get?
+
+**Measured on the 36×36.** The centre wall's clear span is **401in** and it
+tiles into 11 slots that sum to exactly 401.000in — his dimensional-tightness
+rule holds. But the composition is:
+
+```
+standard 48 | safety-gap ¾ | standard 47¼ | standard 48 ×4 |
+standard 32⅛ ×2 | safety-gap ¾ | standard 48
+```
+
+**Two 3/4in safety gaps, neither of them at an end.** The same 401in run WITH
+corner panels produces **one**. The difference is the cornerless path: the
+tiler was written for walls that end in corner panels, and both-ends-cornerless
+is a case it has not had to answer for before.
+
+⚠ **Nothing is wrong with the arithmetic** — it sums, the panels are buildable,
+and each gap is a real shop item that already prices and exports correctly. The
+question is a BUILDING one, and it is his:
+
+> **Does a wall that butts another wall at both ends need a safety gap at all,
+> or one, or two?** A gap exists to absorb error where a run meets a corner. A
+> butt joint is itself a place to take up error — you scribe or shim at the
+> butt — so the honest answers range from *none* to *the two it currently
+> gets*.
+
+Two gaps costs two extra shop items per interior wall and nothing structural.
+It is **not** blocking: the wall is built, priced and fabricated either way.
+Recorded rather than quietly decided, because picking one would be inventing a
+shop rule.
+
 ## Why it is worth doing beyond this one tile
 
 An interior load-bearing wall is the missing piece for every building that is

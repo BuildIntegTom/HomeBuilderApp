@@ -1,12 +1,13 @@
 import {
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
+  interiorWallSeries,
   isSlotBoxBeamCovered,
   wallCompassDirection,
   zoneFromSlot,
   computeSillRunWidths,
   type BoxBeamCoverage,
-  type CompassDirection,
+  type WallSeriesLabel,
   type Footprint,
   type MidWallBeamGeometry,
   type PanelSlot,
@@ -77,7 +78,10 @@ export interface PanelInstance {
   name: string;
   /** The compass direction this instance's name is built from — a field, so
    * that nothing has to split `name` back apart to recover it. */
-  direction: CompassDirection;
+  /** ⚠ A compass direction for a wall on the OUTLINE, an interior wall's own
+   *  letter (`C`) otherwise — see `WallSeriesLabel`. Widened for B34; every
+   *  outline panel's value is unchanged. */
+  direction: WallSeriesLabel;
   /** This instance's own number within its direction's run, 1-based — the
    * number in `name`, as a number. See `combinedPanelLabel`. */
   panelNumber: number;
@@ -381,10 +385,13 @@ export function allPanelInstances(
   gableEaveHeightIn?: number,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
-  const counters: Partial<Record<CompassDirection, number>> = {};
+  /* ⚠ Keyed on the SERIES label, not the compass direction, so an interior
+     wall's `C1`, `C2`, … counts in the same place by the same rule — see
+     `WallSeriesLabel`. */
+  const counters: Partial<Record<WallSeriesLabel, number>> = {};
 
   const pushInstance = (
-    direction: CompassDirection,
+    direction: WallSeriesLabel,
     wallId: string,
     panelType: NamedPanelType,
     widthIn: number,
@@ -772,6 +779,32 @@ export function allPanelInstances(
           tile.verticalGapIn,
         );
       });
+    }
+  }
+
+  /**
+   * ⚠ **THE WALLS THAT ARE NOT ON THE OUTLINE — B34 stride 2, 2026-11-17.**
+   *
+   * A second loop rather than one over a joined list, because the two differ
+   * in every line of it: an interior wall has no compass direction, no corner
+   * ownership, no box-beam coverage and no gable row above it. Joining them
+   * would mean a conditional on every one of those, and the first time one was
+   * missed a dividing wall would quietly take a neighbour's roofline.
+   *
+   * What it DOES share is everything that matters downstream: the same
+   * `pushInstance`, so its panels are counted, weighed, priced, drawn,
+   * fabricated and exported exactly like any other wall's. That is the whole
+   * claim of *"a wall can be interior"*.
+   */
+  for (const [index, wall] of (footprint.interiorWalls ?? []).entries()) {
+    const series = interiorWallSeries(index);
+    const slots = wallSlots[wall.id] ?? [];
+    for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
+      const slot = slots[slotIndexInWall]!;
+      /* Same rule as the outline loop: a framed void fabricates nothing. */
+      if (slot.type === "open") continue;
+      if (!SIMPLE_NAMED_TYPES.has(slot.type)) continue;
+      pushInstance(series, wall.id, slot.type as NamedPanelType, slot.widthIn, slotIndexInWall);
     }
   }
 

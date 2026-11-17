@@ -91,6 +91,7 @@ import {
   retileWithOpenings,
   type CompassDirection,
   installRingWallOrder,
+  isCompassDirection,
   wallCompassDirection,
   wallDisplayLabelWithId,
   wallDisplayLabelsByWallId,
@@ -11632,10 +11633,18 @@ export default function LayoutEditor() {
 
   /** Each wall-panel instance's own compass direction, for the chip colour.
    *  Read as a FIELD rather than parsed back out of the name — `PanelInstance`
-   *  carries `direction` precisely so nothing has to split `N3` apart. */
+   *  carries `direction` precisely so nothing has to split `N3` apart.
+   *
+   *  ⚠ **An INTERIOR wall is left out on purpose (B34).** Its series label is
+   *  `C`, not a compass point, and it genuinely does not face one — so it
+   *  takes B35's plainly non-compass chip rather than borrowing a direction's
+   *  colour. `isCompassDirection` is the narrowing, and the type system is
+   *  what found this call site when `direction` widened. */
   const wallInstanceDirectionByName = useMemo(() => {
     const map = new Map<string, CompassDirection>();
-    for (const inst of allInstances) map.set(inst.name, inst.direction);
+    for (const inst of allInstances) {
+      if (isCompassDirection(inst.direction)) map.set(inst.name, inst.direction);
+    }
     return map;
   }, [allInstances]);
 
@@ -13018,6 +13027,43 @@ export default function LayoutEditor() {
    * wall, most likely because the wall was shortened afterwards) says so in
    * its own sentence rather than being quietly absorbed.
    */
+  /**
+   * ⚠ **B34 — AN INTERIOR WALL IS IN EVERY TOTAL AND ON NO DRAWING YET.**
+   *
+   * Its panels are tiled, named `C1`…, counted, weighed, priced, numbered in
+   * the install sequence and given shop fabrication sheets. What it has no
+   * part of yet is the 2D plan, the 3D view and the elevation tabs — all three
+   * are built from the OUTLINE, and teaching them about a wall that is an edge
+   * of nothing is its own stride.
+   *
+   * ⚠ **A wall you are paying for and cannot see is the one outcome worth
+   * refusing to let happen quietly.** The first version said this in the
+   * transient placement notice, which was the wrong vehicle twice over: it
+   * renders only inside the elevation view, and it clears itself after eight
+   * seconds. The Review Log is read deliberately and printed with the packet.
+   *
+   * ⚠ Its dep is plain `useState`, so this memo costs nothing against the
+   * `preserve-manual-memoization` budget — the 2026-11-15 rule.
+   */
+  const interiorWallNotDrawnReviewEntries = useMemo(() => {
+    const interior = footprint?.interiorWalls ?? [];
+    if (interior.length === 0) return [];
+    return [
+      {
+        label: `${interior.length} interior wall${interior.length === 1 ? " is" : "s are"} built and priced but NOT drawn`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `${interior.map((w) => w.id).join(", ")}. A dividing wall is a real wall: its panels are tiled on the ` +
+          "project's own module, named in their own series (C1, C2, …), counted, weighed, priced, numbered in the " +
+          "install sequence and given shop fabrication sheets like any other. It is NOT on the 2D plan, in the 3D " +
+          "view, or in the elevation tabs, because all three are built from the building's outline and this wall " +
+          "is an edge of nothing. So the Summary, the packet and the crew export all include it and the drawings " +
+          "do not — which is the wrong way round for anybody checking a price against a picture, and is why this " +
+          "line exists rather than a silence.",
+      },
+    ];
+  }, [footprint]);
+
   const wallRunStopReviewEntries = useMemo(() => {
     if (!footprint) return [];
     const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
@@ -13464,6 +13510,9 @@ export default function LayoutEditor() {
       // header with no web is a part built another way, a gable window
       // through its own roofline is a part that was never built at all.
       ...gableWindowRooflineReviewEntries,
+      /* ⚠ Beside the run-stop entries, because it is the same kind of fact:
+         a wall that is not what a drawing shows it to be. */
+      ...interiorWallNotDrawnReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
       // One line, above the material assumptions because it is about THIS file
@@ -13653,6 +13702,7 @@ export default function LayoutEditor() {
     unhonouredLockedWidths,
     seismicZone,
     unitSystem,
+    interiorWallNotDrawnReviewEntries,
     wallRunStopReviewEntries,
     spanningHeaderReviewEntries,
     zeroBracingReviewEntries,
