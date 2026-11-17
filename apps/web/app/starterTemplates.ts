@@ -59,6 +59,9 @@ export interface StarterPlan {
    *  centre wall's geometry is derived from the wall THICKNESS, so a plan that
    *  asks for one has to carry that too (see `thicknessIn`). */
   shape: "rectangle" | "octagon" | "multiplex";
+  /** Multiplex only: one more interior wall per side, under each roof purlin.
+   *  See `MultiplexFootprintOptions.roofBearingWalls`. */
+  roofBearingWalls?: boolean;
   widthFt: number;
   depthFt: number;
   /**
@@ -140,9 +143,13 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
   {
     id: "multiplex",
     name: "Multiplex",
-    blurb: "Two studio apartments either side of a load-bearing straw wall.",
+    blurb: "Two one-bedrooms either side of a load-bearing straw wall that carries the ridge.",
     /* ⚠ **His 36x36, and 36 ft is the OUTSIDE dimension — his own answer.**
-       So each studio is 17'-4¼" clear, not 18 ft, and the label says the
+       FIVE wall thicknesses cross it: two exterior, the centre wall, and the
+       two purlin walls stride 3c added. So it is four rooms of 7'-4⅝", which
+       is why the blurb says one-bedrooms rather than studios — he chose the
+       purlin walls knowing they divide each studio, over posts standing in the
+       floor and over struts back to the centre wall. The label says the
        building's size the way every other tile does. The four-plex (*"the same
        drawing, except with another story"*) and his 8:12 pitch arrive with the
        roof, which is the next stride — a tile that promised an upper floor
@@ -151,7 +158,13 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
       {
         id: "duplex",
         label: "36 × 36 ft",
-        plan: { shape: "multiplex", widthFt: 36, depthFt: 36, thicknessIn: DEFAULT_MULTIPLEX_THICKNESS_IN },
+        plan: {
+          shape: "multiplex",
+          widthFt: 36,
+          depthFt: 36,
+          thicknessIn: DEFAULT_MULTIPLEX_THICKNESS_IN,
+          roofBearingWalls: true,
+        },
       },
     ],
   },
@@ -234,6 +247,15 @@ export function footprintForPlan(plan: StarterPlan): { footprint: Footprint; cou
                which is why this tile states his 15.5in rather than inheriting
                whatever the editor happens to be set to. */
             wallThicknessIn: plan.thicknessIn ?? DEFAULT_MULTIPLEX_THICKNESS_IN,
+            /* ⚠ **A purlin wall per side — his answer, 2026-11-17.** Without
+               them a 36ft Multiplex cannot be roofed at all: each side covers
+               18ft of ground and an 18ft panel reaches 17.1ft at 4:12 and only
+               15.0ft at 8:12. Asked how to carry an intermediate bearing line
+               he chose a wall under each purlin, over posts to the floor, over
+               raking struts to the centre wall and over a loft knee wall. It
+               takes the worst panel on this building from 21.6ft to 11.2ft.
+               ⚠ **It is why the blurb no longer says "studio".** */
+            roofBearingWalls: plan.roofBearingWalls ?? false,
           })
         : buildRectangleFootprint(plan.widthFt, plan.depthFt);
   if (plan.courtyardBuildingWidthFt === undefined) return { footprint: base, courtyardRefused: false };

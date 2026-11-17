@@ -27,10 +27,13 @@ import type { Footprint, InteriorWall } from "./types";
  *
  * ## ⚠ What 36 ft OUTSIDE actually costs the rooms
  *
- * Each studio is the half-width **less half the wall's thickness**, so on a
- * 15½in wall a 36 ft building gives two studios of **17'-4¼" clear**, not
- * 18 ft. That is the number that belongs on the tile and in a brochure, and
- * it is why the question was worth asking before any of this was drawn.
+ * A 36 ft building gives two studios of **16'-0¾"** clear, not 18 ft: three
+ * wall thicknesses cross its width, two exterior and the centre.
+ * ⚠ **This paragraph said 17'-4¼" until 2026-11-17** — see
+ * `multiplexStudioWidthFt`, which had forgotten the exterior walls. That is
+ * the number that belongs on the tile and in a brochure, and getting it wrong
+ * by a whole wall is why the question was worth asking before any of this was
+ * drawn.
  *
  * ## ⚠ Why the centre wall is NOT in `walls`
  *
@@ -65,7 +68,29 @@ export interface MultiplexFootprintOptions {
   /** The wall thickness the whole building is built at, in inches. The centre
    *  wall is the same panel system as the rest — *"a straw wall"*. */
   wallThicknessIn: number;
+  /**
+   * ⚠ **One more interior wall PER SIDE, under each roof purlin — B34 stride
+   * 3c, his answer of 2026-11-17.**
+   *
+   * A roof panel reaches 17.1ft of ground at 4:12 and only **15.0ft at 8:12**,
+   * and each side of his 36ft building is 18ft. Asked how to carry an
+   * intermediate bearing line, he chose **a wall under each purlin** over
+   * posts to the floor, over raking struts back to the centre wall, and over a
+   * knee wall off a loft deck.
+   *
+   * ⚠ **It changes what the building IS, and he said so when he chose it:**
+   * each studio becomes two rooms. See `multiplexRoomWidthFt`.
+   *
+   * ⚠ **And it adds no purlin BEAM**, which falls out of stride 3's rule
+   * rather than being a second decision — see `roofBearingLines.ts`.
+   */
+  roofBearingWalls?: boolean;
 }
+
+/** The ids of the two purlin walls, west and east of the centre. Distinct from
+ *  `MULTIPLEX_CENTRE_WALL_ID` because they do a different job: the centre wall
+ *  carries the RIDGE (both planes end on it), these each split ONE plane. */
+export const MULTIPLEX_BEARING_WALL_IDS = ["BRG-W", "BRG-E"] as const;
 
 /**
  * The building, with its centre wall. ⚠ **The outline is an ordinary
@@ -92,21 +117,80 @@ export function buildMultiplexFootprint(options: MultiplexFootprintOptions): Foo
     lengthFt: Math.max(0, endY - startY),
   };
 
+  /* ⚠ **Where a purlin wall goes: the two rooms it makes are EQUAL.**
+
+     Two defensible defaults disagree here and the difference is small enough
+     that the building wins. Splitting the plane's RUN in half is the
+     engineering answer — it minimises the worst panel — and gives rooms of
+     7'-0¾" and 7'-8½", because the three wall thicknesses do not fall
+     symmetrically about the midpoint. Splitting the CLEAR WIDTH in half gives
+     two rooms of 7'-4⅝" and bands of 9.32ft and 8.68ft, both still far
+     inside what a panel reaches at his 8:12. So: equal rooms.
+
+     ⚠ **Both rooms are small, and that is worth seeing rather than
+     discovering.** A 36ft Multiplex with purlin walls is two one-bedrooms of
+     about 7'-4" per room, not two studios. The position is one number
+     (`roomWidthFt` below) if he wants it moved. */
+  const interiorWalls: InteriorWall[] = [centreWall];
+  if (options.roofBearingWalls) {
+    const roomWidthFt = multiplexRoomWidthFt(widthFt, options.wallThicknessIn);
+    const bearingXFt = thicknessFt + roomWidthFt + thicknessFt / 2;
+    for (const [index, id] of MULTIPLEX_BEARING_WALL_IDS.entries()) {
+      /* West wall measured in from x = 0, east wall mirrored, so the pair is
+         symmetric by construction rather than by two sums agreeing. */
+      const x = index === 0 ? bearingXFt : widthFt - bearingXFt;
+      interiorWalls.push({
+        id,
+        start: { x, y: startY },
+        end: { x, y: endY },
+        lengthFt: Math.max(0, endY - startY),
+      });
+    }
+  }
+
   /* ⚠ **The corner list is the outline's, untouched.** The centre wall's ends
      are NOT corners: `corners` is the RING, and four modules rebuild the walls
      by walking it in order, so two extra entries would produce an outline that
      runs `D -> CTR0 -> CTR1 -> A`. See `InteriorWall`. */
-  return quantizeFootprint({ ...outline, interiorWalls: [centreWall] });
+  return quantizeFootprint({ ...outline, interiorWalls });
 }
 
 /**
- * ⚠ **The clear width of ONE studio**, which is the number a person cares
- * about and is NOT half the building: `(width − thickness) / 2`.
+ * ⚠ **The clear width of ONE ROOM once a purlin wall divides a studio**, which
+ * is the number that tells you what this building actually is.
  *
- * On his 36 ft at 15½in that is **17'-4¼"**. Exported because the Home tile,
- * the Summary and any brochure all want to say it, and three copies of this
- * arithmetic is three chances to say 18 ft by mistake.
+ * Each studio's clear width less one more wall thickness, halved. On his 36 ft
+ * at 15½in that is **7'-4⅝"** — two of those per studio, four per building.
+ * Exported for the same reason `multiplexStudioWidthFt` is: three copies of
+ * this arithmetic is three chances to quote a room that does not exist.
+ */
+export function multiplexRoomWidthFt(widthFt: number, wallThicknessIn: number): number {
+  const studioFt = multiplexStudioWidthFt(widthFt, wallThicknessIn);
+  return Math.max(0, (studioFt - wallThicknessIn / 12) / 2);
+}
+
+/**
+ * ⚠ **The clear width of ONE studio** — the number a person stands in, and
+ * **NOT** half the building.
+ *
+ * On his 36 ft at 15½in that is **16'-0¾"**.
+ *
+ * ⚠ **IT SAID 17'-4¼" UNTIL 2026-11-17, AND THAT WAS WRONG BY A WHOLE WALL.**
+ * The old formula was `(width − thickness) / 2`, which takes out the centre
+ * wall and stops — so it measured from the building's OUTSIDE FACE to the
+ * centre wall's near face, with the exterior wall still inside the figure.
+ * **Three** wall thicknesses cross a Multiplex's width, not one: two exterior
+ * and the centre. 432in less 3 x 15.5in is 385.5in, so each studio is
+ * 192.75in.
+ *
+ * It reached the spec and a memory as *"17'-4¼\" clear"* and was quoted back
+ * in the stride 1 write-up. Nothing SHIPPED was wrong — the function had no
+ * production caller, only tests — but it is exactly the sort of figure that
+ * ends up in a brochure, which is why it was exported in the first place.
+ * Caught by `multiplexRoomWidthFt` returning 8'-0⅜" for a room that measures
+ * 7'-4⅝".
  */
 export function multiplexStudioWidthFt(widthFt: number, wallThicknessIn: number): number {
-  return Math.max(0, (widthFt - wallThicknessIn / 12) / 2);
+  /* Two exterior walls and the centre wall, then halved. */
+  return Math.max(0, (widthFt * 12 - 3 * wallThicknessIn) / 2 / 12);
 }

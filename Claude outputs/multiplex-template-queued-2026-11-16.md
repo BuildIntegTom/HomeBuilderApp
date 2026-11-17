@@ -323,6 +323,90 @@ with both roof planes falling away from its top. It is in the Review Log,
 because a wall priced to the ceiling under a roof it is meant to reach is
 exactly the silence that log exists to break.
 
+## Stride 3c — a wall under each roof purlin. BUILT 2026-11-17
+
+His answer to the refusal stride 3 surfaced. Offered four ways out he chose an
+**intermediate bearing line**; asked what carries it, he chose **a second
+interior wall under each purlin** over posts to the floor, over raking struts
+back to the centre wall, and over a knee wall off a loft deck.
+
+### ⚠ And therefore no purlin beam
+
+That falls out of stride 3's own rule rather than being a second decision. A
+beam catches panel ends that are over nothing, and a wall under the line
+already catches them. So a bearing line is **not a part**: it is where one run
+of roof panels becomes two, the lower band's plumb tall end and the upper
+band's square eave end both bearing on the same wall top — exactly the
+arrangement the ridge wall already gets.
+
+### What it does to his building
+
+| | without | with |
+| --- | --- | --- |
+| Worst roof panel at 8:12 | **21.6ft** (over the 18ft max) | **11.2ft** |
+| Roof panels | 36 | 72, in two bands |
+| Roof area covered | 1445.8 sq ft | **1445.8 sq ft** |
+| Rooms | two studios | **four rooms of 7'-4⅝"** |
+
+The identical coverage is the acid test: splitting a run must move no material
+at all. Band runs also sum **exactly** to the plane's own run, because the last
+band is the remainder rather than its own subtraction.
+
+### ⚠ It refuses rather than guessing
+
+The wall has to be **parallel to the eave** and **strictly inside the run**. A
+wall at any other angle meets the panel run diagonally, so every panel in the
+band would break at a different distance and the band would not be a band;
+those walls are ignored rather than refused, because they are perfectly good
+walls that simply do not carry a roof. The centre wall is excluded by the same
+test, since it sits AT the high edge — so the Multiplex's three interior
+walls sort themselves out with **no special case at all**.
+
+### ⚠ Where the purlin walls go, and why the rooms are the smaller ones
+
+Two defensible defaults disagree. Splitting the plane's RUN in half is the
+engineering answer and gives rooms of 7'-0¾" and 7'-8½", because the three
+wall thicknesses do not fall symmetrically about the midpoint. Splitting the
+CLEAR WIDTH in half gives two rooms of **7'-4⅝"** and bands of 9.32ft and
+8.68ft, both still far inside what a panel reaches at 8:12. **Equal rooms
+wins**, and the position is one number if you want it moved.
+
+### ⚠ A figure that had been wrong since stride 1
+
+**A studio is 16'-0¾" clear, not 17'-4¼".** `multiplexStudioWidthFt` took out
+the centre wall and stopped, so it measured from the building's OUTSIDE FACE to
+that wall's near face with the exterior wall still inside the number. **Three**
+wall thicknesses cross a Multiplex, not one: 432in less 3 x 15½in is 385½in,
+so each studio is 192¾in.
+
+Nothing shipped was wrong — the function had no production caller, only a
+test — but it reached the spec, a memory and the stride 1 write-up as
+*"17'-4¼" clear"*, and it is exactly the sort of figure that ends up in a
+brochure, which is why it was exported in the first place. Found by the new
+room helper returning 8'-0⅜" for a room that measures 7'-4⅝".
+
+### ⚠ Two things only the browser named
+
+The 3D view's roof-facing list counted RUNS, so it listed each facing twice the
+moment a plane became two bands — harmless to its one consumer, deduped
+anyway. And the viewer's own sentence still read *"panels spanning up the slope
+from each eave to the ridge"*, which stopped being true; it now says how many
+bands and what each one bears on.
+
+### ⚠ One thing left for you: the panel names cannot be read
+
+Three interior walls give `C1`-`C11`, `C21`-`C211` and `C31`-`C311`. **`C21`
+is unreadable** — wall `C2` panel 1, or wall `C` panel 21. The suffix
+convention is yours (*"just letter plus number"*) and the compass series has
+always had this property; it has never mattered because a second north wall is
+rare and rarely has twenty panels. A Multiplex ships with three interior walls,
+so the edge case is now the normal case.
+
+It is in the Review Log rather than fixed, because the fix is a naming
+decision. Three shapes it could take: a separator (`C2-1`), a letter per wall
+(`CA1`, `CB1`, `CC1`), or names that say what the wall does (`RIDGE1`,
+`PURLIN-W1`).
+
 ## Why it is worth doing beyond this one tile
 
 An interior load-bearing wall is the missing piece for every building that is

@@ -190,7 +190,17 @@ is cut, what sets the radius) was answering the wrong question.
     and the one width a corner panel never has. *Sweep the size the app emits,
     not the size the constant is named after.*
 
-13. **B34 — Multiplex.** ✅ **STRIDES 1, 2 AND 3 BUILT 2026-11-17.**
+13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3 AND 3c BUILT 2026-11-17.**
+    **Stride 3c: a wall under each roof purlin — his answer** over posts to
+    the floor, raking struts and a loft knee wall. A plane crossed by an
+    interior wall builds TWO bands of panels, each bearing on that wall, so
+    his worst roof panel goes from 21.6ft to 11.2ft and the refusal clears.
+    No purlin beam either, by stride 3's own rule. ⚠ The tile is now two
+    ONE-BEDROOMS, four rooms of 7'-4⅝", which he chose knowingly. ⚠ And a
+    figure wrong since stride 1 fell out: a studio is **16'-0¾"** clear, not
+    17'-4¼" — three wall thicknesses cross a Multiplex, not one. ⚠ Left for
+    him in the Review Log: `C21` cannot be read (wall C2 panel 1, or wall C
+    panel 21) once a building has more than one interior wall.
     **Stride 3: the centre wall IS the ridge beam.** The ridge now follows the
     wall rather than the building's long dimension (it ran east–west, square
     across it, until this), the gable ends move to N and S with it, and
@@ -200,7 +210,8 @@ is cut, what sets the radius) was answering the wrong question.
     `decideRoofForm`'s `refusal`, which **has never been read anywhere in this
     app**: his 36ft Multiplex needs a 19.0ft roof panel at 4:12 against an 18ft
     maximum, and so does The Cindy at 17.4ft a side. Said in the Review Log
-    now. ⚠ **Stride 3b, named not implied:** the wall is panelized to the
+    now — and CLEARED on the Multiplex by 3c, while The Cindy still shows it,
+    which is correct: it has no interior wall to carry one. ⚠ **Stride 3b, named not implied:** the wall is panelized to the
     story height while the ridge sits a full rise above it, so the row that
     does the carrying is not built. Stride 2:
     the centre wall is PANELIZED — 11 panels summing to exactly 401in, named

@@ -52,13 +52,23 @@ describe("⚠ every existing building is untouched", () => {
 });
 
 describe("the 36x36 he asked for", () => {
-  it("⚠ 36 ft is the OUTSIDE dimension — his answer — so a studio is 17'-4¼\", not 18 ft", () => {
-    /* The question was worth asking before anything was drawn: each studio is
-       the half-width LESS half the wall, and a brochure that says 18 ft is
-       wrong by 7¾in per room. */
+  it("⚠ 36 ft is the OUTSIDE dimension — his answer — so a studio is 16'-0\u00be\", not 18 ft", () => {
+    /* ⚠ **This test asserted 17'-4¼" until 2026-11-17, and the figure was
+       wrong by a whole wall.** The old formula took out the CENTRE wall and
+       stopped, so it measured from the building's outside face to that wall's
+       near face with the exterior wall still inside the number. THREE wall
+       thicknesses cross a Multiplex: two exterior and the centre.
+
+       Nothing shipped was wrong — the function had no production caller, only
+       this test — but it is exactly the kind of figure that ends up in a
+       brochure, which is why it was exported at all. Found by
+       `multiplexRoomWidthFt` returning 8'-0⅜" for a room that measures
+       7'-4⅝". */
     const studioFt = multiplexStudioWidthFt(36, THICKNESS_IN);
-    expect(studioFt).toBeCloseTo(36 / 2 - THICKNESS_IN / 24, 9);
-    expect(studioFt * 12).toBeCloseTo(17 * 12 + 4.25, 6);
+    expect(studioFt * 12).toBeCloseTo(16 * 12 + 0.75, 6);
+    /* Stated the long way round as well, so the three walls are visible in the
+       test rather than hidden inside one expression. */
+    expect(studioFt * 2 * 12 + 3 * THICKNESS_IN).toBeCloseTo(36 * 12, 6);
     /* And the OUTLINE really is 36 ft on every side. */
     const fp = multiplex();
     for (const wall of fp.walls) expect(wall.lengthFt).toBeCloseTo(36, 9);

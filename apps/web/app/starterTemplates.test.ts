@@ -50,11 +50,20 @@ describe("the starter templates are his six, plus the Multiplex", () => {
              to its geometry — the centre wall butts the inside faces of the
              walls it runs into, so without a thickness its length cannot be
              worked out at all. */
-          t.id === "the-cindy" || t.id === "multiplex"
-            ? ["depthFt", "shape", "thicknessIn", "widthFt"]
-            : o.plan.courtyardBuildingWidthFt !== undefined
-              ? ["courtyardBuildingWidthFt", "depthFt", "shape", "widthFt"]
-              : ["depthFt", "shape", "widthFt"],
+          t.id === "multiplex"
+            ? /* ⚠ **And `roofBearingWalls` is a THIRD kind of key again** — not a
+                 property of his building and not a geometry input, but a
+                 STRUCTURAL CHOICE he made (2026-11-17: a wall under each roof
+                 purlin, over posts, struts and a loft knee wall). It is on the
+                 plan rather than in a live default because without it this
+                 building cannot be roofed at all: 18ft a side against the
+                 15.0ft an 18ft panel reaches at 8:12. */
+              ["depthFt", "roofBearingWalls", "shape", "thicknessIn", "widthFt"]
+            : t.id === "the-cindy"
+              ? ["depthFt", "shape", "thicknessIn", "widthFt"]
+              : o.plan.courtyardBuildingWidthFt !== undefined
+                ? ["courtyardBuildingWidthFt", "depthFt", "shape", "widthFt"]
+                : ["depthFt", "shape", "widthFt"],
         );
       }
     }

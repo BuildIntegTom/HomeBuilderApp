@@ -2309,8 +2309,17 @@ export default function Building3DView({
        instead of becoming a flat ghost.
 
        One entry per roof plane, in plane order, which is what this used to be
-       handed as `roof.planes`. */
-    const roofFacings = deckTakeoff.runs.flatMap((r) => (r.kind === "roof" && r.facing ? [{ facing: r.facing }] : []));
+       handed as `roof.planes`.
+
+       ⚠ **DEDUPED SINCE B34 STRIDE 3c.** A plane with an interior wall under
+       it is now several RUNS rather than one, so a straight map over runs
+       listed the same facing twice and this stopped being "one entry per
+       plane" the moment a Multiplex was drawn. `defaultTransparentRoofFacing`
+       happens not to care, which is exactly why it is worth fixing here
+       rather than relying on that. */
+    const roofFacings = [
+      ...new Set(deckTakeoff.runs.flatMap((r) => (r.kind === "roof" && r.facing ? [r.facing] : []))),
+    ].map((facing) => ({ facing }));
     const seeThroughFacing = roofDeckSolid ? null : defaultTransparentRoofFacing(roofFacings);
 
     return deckTakeoff.instances.flatMap((instance) => {

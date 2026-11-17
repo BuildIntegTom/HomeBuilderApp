@@ -4,6 +4,8 @@ import {
   deckRunSplitPointsIn,
   footprintSpanAndRun,
   planDeckRunWidths,
+  roofBearingBands,
+  roofNeedsRidgeBeam,
   simpleRoofPlanes,
   type CompassDirection,
   type DeckPanelCut,
@@ -52,6 +54,15 @@ export interface DeckPanelTakeoffRun {
   kind: "floor" | "roof";
   /** Which roof plane this run lies on; undefined on a floor. */
   planeIndex: number | undefined;
+  /**
+   * ⚠ **Which BAND UP THE SLOPE this run is, 0 at the eave — B34 stride 3c.**
+   *
+   * A plane crossed by an interior wall becomes two or more runs of panels
+   * rather than one, each landing on that wall from its own side. `0` on every
+   * roof without a bearing line, which is every roof this app built before
+   * 2026-11-17, and `undefined` on a floor. See `roofBearingLines.ts`.
+   */
+  slopeBandIndex: number | undefined;
   /** The compass direction that plane looks. Undefined on a floor. */
   facing: CompassDirection | undefined;
   /** How far the row of panels repeats. A roof plane's is its eave, less the
@@ -74,6 +85,9 @@ export interface DeckPanelTakeoffInstance {
   runIndex: number;
   /** Which roof plane this panel is on; undefined on a floor. */
   planeIndex: number | undefined;
+  /** Which band up the slope, 0 at the eave; undefined on a floor. See
+   *  `DeckPanelTakeoffRun.slopeBandIndex`. */
+  slopeBandIndex: number | undefined;
   /** The compass direction a roof plane looks, for the shop sheet's location
    * line — the same label the user reads elsewhere. Undefined on a floor. */
   facing: CompassDirection | undefined;
@@ -310,8 +324,22 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
      above it."* Read here rather than in the view, because the shop sheet
      needs them at least as much as the picture does — a floor panel built
      without them is a panel built to carry a column it cannot. */
+  /* ⚠ **AND ONLY WHEN THERE REALLY IS A RIDGE BEAM — B34 stride 3c.** Stride 3
+     stopped building the beam and its columns when a WALL runs under the ridge,
+     but this block kept laying extra structural girts in the floor panels
+     underneath them: reinforcement for posts that are not built, on every
+     Multiplex, in the shop sheets and in the weight. Found by reading this
+     function rather than by any test, which is the honest record — the girts
+     change no panel COUNT, so nothing on screen moves. `roofNeedsRidgeBeam` is
+     the same single gate `ridgeBeamForPlan` reads, which is the point of it
+     having become one. */
   const columnGirtAlongIn: number[] = [];
-  if (roofForm === "peaked" && roofPitchIn12 !== undefined && roofEaveHeightFt !== undefined) {
+  if (
+    roofForm === "peaked" &&
+    roofPitchIn12 !== undefined &&
+    roofEaveHeightFt !== undefined &&
+    roofNeedsRidgeBeam(roofForm, footprint)
+  ) {
     const peaked = simpleRoofPlanes(footprint, {
       form: "peaked",
       pitchIn12: roofPitchIn12,
@@ -381,6 +409,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
           index: runIndex,
           kind: "floor",
           planeIndex: undefined,
+          slopeBandIndex: undefined,
           facing: undefined,
           runIn: placed.runIn,
           spanIn: placed.spanIn,
@@ -420,6 +449,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
               role: planned.role,
               runIndex,
               planeIndex: undefined,
+              slopeBandIndex: undefined,
               facing: undefined,
               atIn: p.atIn,
               widthIn: p.widthIn,
@@ -460,6 +490,12 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
     });
     roofRefusal = roof.refusal;
     if (roof.refusal === null) {
+      /* ⚠ **B34 stride 3c: an interior wall part way up a plane splits its
+         run of panels in two**, because an 18ft panel reaches only 15.0ft of
+         ground at 8:12 and his 36ft Multiplex needs 18ft a side. Empty on
+         every building without one, which returns a single band per plane and
+         is byte-identical to what this did before. */
+      const bands = roofBearingBands(footprint, roof);
       const tiltRad = Math.atan2(roofPitchIn12, 12);
       const multiPlane = roof.planes.length > 1;
       for (const [planeIndex, plane] of roof.planes.entries()) {
@@ -493,27 +529,62 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             `(${roofGableEndInsetIn.toFixed(1)}in each) leave no room inside.`;
           continue;
         }
-        const spanIn = plane.slopeFt * IN_PER_FT;
-        const plan = planFloorRoofPanelRun({
-          kind: "roof",
-          runLengthIn: edgeLengthIn,
-          spanIn,
-          depthIn,
-          pitchIn12: roofPitchIn12,
-        });
-        if (plan.refusal !== null) {
-          roofRefusal = plan.refusal;
-          continue;
-        }
-        const runIndex = runs.length;
-        runs.push({ index: runIndex, kind: "roof", planeIndex, facing: plane.facing, runIn: edgeLengthIn, spanIn, plan });
         const rotationRad = Math.atan2(edgeDy, edgeDx);
         /* Unit vector along the eave — from the FULL edge, because the inset
            is a distance along that same direction and dividing by the already
            shortened length would scale it wrong. */
         const ux = edgeDx / (fullEdgeLengthIn / IN_PER_FT);
         const uy = edgeDy / (fullEdgeLengthIn / IN_PER_FT);
-        for (const [i, planned] of plan.instances.entries()) {
+        /* ⚠ **UP THE SLOPE IN PLAN**, which is the direction a band's start
+           moves along. Taken from the plane's own two edge midpoints rather
+           than by rotating the eave vector, because the sign of that rotation
+           is exactly what `spanPointsInward` above had to work out and getting
+           it wrong puts the upper band OUTSIDE the building. */
+        const upDx = (plane.highStart.x + plane.highEnd.x) / 2 - lowMidX;
+        const upDy = (plane.highStart.y + plane.highEnd.y) / 2 - lowMidY;
+        const upLen = Math.hypot(upDx, upDy) || 1;
+        const upX = upDx / upLen;
+        const upY = upDy / upLen;
+        /* The slope length one foot of ground buys at this pitch. Taken as a
+           RATIO off the plane rather than recomputed from the pitch, so a band
+           and its own plane can never disagree about how steep the roof is. */
+        const slopePerRunFt = plane.runFt > 0 ? plane.slopeFt / plane.runFt : 1;
+        const planeBands = bands[planeIndex]?.bandRunsFt ?? [plane.runFt];
+        let groundBeforeFt = 0;
+        const multiBand = planeBands.length > 1;
+
+        for (const [slopeBandIndex, bandRunFt] of planeBands.entries()) {
+          const bandBaseFt = groundBeforeFt;
+          groundBeforeFt += bandRunFt;
+          const spanIn = bandRunFt * slopePerRunFt * IN_PER_FT;
+          const plan = planFloorRoofPanelRun({
+            kind: "roof",
+            runLengthIn: edgeLengthIn,
+            spanIn,
+            depthIn,
+            pitchIn12: roofPitchIn12,
+          });
+          if (plan.refusal !== null) {
+            roofRefusal = plan.refusal;
+            continue;
+          }
+          const runIndex = runs.length;
+          runs.push({
+            index: runIndex,
+            kind: "roof",
+            planeIndex,
+            slopeBandIndex,
+            facing: plane.facing,
+            runIn: edgeLengthIn,
+            spanIn,
+            plan,
+          });
+          /* Where this band's own eave sits: `bandBaseFt` of ground up the
+             slope from the plane's, and the matching rise above it. */
+          const bandLowHeightFt = plane.lowHeightFt + (bandBaseFt * roofPitchIn12) / 12;
+          const bandOriginX = originX + upX * bandBaseFt;
+          const bandOriginY = originY + upY * bandBaseFt;
+          for (const [i, planned] of plan.instances.entries()) {
           const options: FloorRoofPanelOptions = {
             kind: "roof",
             widthIn: planned.widthIn,
@@ -527,32 +598,41 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             pitchIn12: roofPitchIn12,
             bearingSeatDepthIn: depthIn,
           };
-          roofCoverageSqFt += (planned.widthIn / IN_PER_FT) * plane.slopeFt;
+          roofCoverageSqFt += (planned.widthIn / IN_PER_FT) * (bandRunFt * slopePerRunFt);
           /* The inset is where the row STARTS, so a panel's distance into the
              building is its distance along the plan plus that inset. */
           const alongFt = (roofGableEndInsetIn + planned.atIn) / IN_PER_FT;
           push(
             {
-              id: `roof-${planeIndex}-${i}`,
-              name: multiPlane ? `${planned.name} (${plane.facing})` : planned.name,
+              id: `roof-${planeIndex}-${slopeBandIndex}-${i}`,
+              /* ⚠ The band has to be in the NAME once there is more than one,
+                 or both bands start again at R1 on the same plane and a crew
+                 has two different panels both called R1 (E). Same argument the
+                 facing suffix already answers one level up. */
+              name: multiBand
+                ? `${planned.name} (${plane.facing} band ${slopeBandIndex + 1})`
+                : multiPlane
+                  ? `${planned.name} (${plane.facing})`
+                  : planned.name,
               kind: "roof",
               role: planned.role,
               runIndex,
               planeIndex,
+              slopeBandIndex,
               facing: plane.facing,
               atIn: planned.atIn,
               widthIn: planned.widthIn,
               spanIn,
               groupKey: optionsKey(options, planned.role),
               world: {
-                anchorX: originX + ux * alongFt,
-                anchorZ: originY + uy * alongFt,
+                anchorX: bandOriginX + ux * alongFt,
+                anchorZ: bandOriginY + uy * alongFt,
                 /* ⚠ The anchor is the panel's TOP at its low edge, because
                    member Y runs downward once the panel is tipped, so it has
                    to clear the plane by the panel's PLUMB thickness for the
                    underside to land on it. `roofTopAboveRooflineIn` is that
                    number and the gable's lift reads the SAME function. */
-                anchorYFt: plane.lowHeightFt + roofTopAboveRooflineIn(depthIn, roofPitchIn12) / IN_PER_FT,
+                anchorYFt: bandLowHeightFt + roofTopAboveRooflineIn(depthIn, roofPitchIn12) / IN_PER_FT,
                 rotationRad,
                 tiltRad,
               },
@@ -560,6 +640,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             options,
             planned.role,
           );
+          }
         }
       }
     }

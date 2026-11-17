@@ -9,8 +9,10 @@ import {
   buildOctagonFootprint,
   allWallPanelJoints,
   isCourtyardFootprint,
+  longestBandRunFt,
   ridgeBearingWallFor,
   ringRoofGableBlockReason,
+  roofBearingBands,
   roofNeedsRidgeBeam,
   roofSpanFt,
   shedTallWallId,
@@ -8579,6 +8581,17 @@ export default function LayoutEditor() {
 
   const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
 
+  /** How many bands one roof plane is built in — 1 on every roof without an
+   *  interior wall under it, which is every roof before B34 stride 3c. Read
+   *  off the takeoff's own runs so the note and the panels agree. */
+  const roofBandCount = useMemo(() => {
+    let most = 0;
+    for (const run of deckPanelTakeoff.runs) {
+      if (run.kind === "roof") most = Math.max(most, (run.slopeBandIndex ?? 0) + 1);
+    }
+    return most;
+  }, [deckPanelTakeoff]);
+
   /**
    * Which walls carry the cross-tilted row, read off the LIVE roof rather
    * than off the form the building happened to be drawn as.
@@ -13077,6 +13090,37 @@ export default function LayoutEditor() {
           "do not — which is the wrong way round for anybody checking a price against a picture, and is why this " +
           "line exists rather than a silence.",
       },
+      /* ⚠ **A SECOND, SEPARATE FACT ABOUT THE SAME WALLS: their panel names
+         are ambiguous once there is more than one of them.** The convention
+         is his own — *"just letter plus number"* — and a second wall in a
+         series takes a suffix exactly as a second north wall does, so three
+         interior walls give `C1`-`C11`, `C21`-`C211` and `C31`-`C311`.
+
+         ⚠ **`C21` cannot be read.** It is wall `C2` panel 1, but it is
+         equally `C` panel 21, and `C211` is worse. On the compass series this
+         has always been true and has never mattered, because a second north
+         wall is rare and rarely has twenty panels. A Multiplex ships with
+         THREE interior walls by default, so the edge case is now the normal
+         case. Said here rather than fixed, because the fix is a naming
+         decision and the naming is his. */
+      ...(interior.length > 1
+        ? [
+            {
+              label: `Panel names on ${interior.length} interior walls are ambiguous (C21 is wall C2 panel 1, or wall C panel 21)`,
+              status: "pending-BI-confirmation" as const,
+              note:
+                `The second and later walls in a series take a number suffix, the same convention a second ` +
+                `north-facing wall uses, so this building has ${interior
+                  .map((w, i) => (i === 0 ? "C1…" : `C${i + 1}1…`))
+                  .join(", ")}. Nothing is wrong in the model — every panel is distinct, correctly placed and ` +
+                `correctly numbered in the install sequence — but a crew reading a name off a sheet has no way ` +
+                `to split the wall from the panel. It has always been true of a second N or E wall and has ` +
+                `never bitten, because those are rare; three interior walls by default make it the normal ` +
+                `case. The fix is a naming decision, not a defect: a separator, a letter per wall, or names ` +
+                `that say what the wall does.`,
+            },
+          ]
+        : []),
     ];
   }, [footprint]);
 
@@ -13115,15 +13159,28 @@ export default function LayoutEditor() {
        re-running the form decision, because a user who has dragged the peak to
        an end has a shed, and a refusal describing a peak they do not have is
        worse than silence. */
-    const runFt = roofFormFromProfile === "shed" ? spanFt : spanFt / 2;
+    /* ⚠ **JUDGED PER BAND SINCE B34 STRIDE 3c, not per plane.** An interior
+       wall part way up a plane splits its run of panels in two, so the number
+       the 18ft limit judges is the WORST BAND, not the whole slope. On his
+       36x36 that is what takes a 21.6ft panel down to 11.2ft. A building with
+       no such wall gets one band per plane and the figure is exactly what it
+       was. */
+    const roofPlanes = simpleRoofPlanes(footprint, {
+      form: roofFormFromProfile,
+      pitchIn12,
+      eaveHeightFt: gableEaveHeightIn / 12,
+    });
+    const bands = roofPlanes.refusal === null ? roofBearingBands(footprint, roofPlanes) : [];
+    const runFt =
+      bands.length > 0 ? longestBandRunFt(bands) : roofFormFromProfile === "shed" ? spanFt : spanFt / 2;
     const neededIn = roofPanelLengthForGroundRunIn(runFt * 12, pitchIn12);
     if (neededIn > MAX_PANEL_LENGTH_IN + 1e-9) {
       entries.push({
         label: `Roof panels would have to be ${(neededIn / 12).toFixed(1)}ft long`,
         status: "pending-BI-confirmation" as const,
         note:
-          `This building spans ${spanFt.toFixed(1)}ft across the ridge, so each ` +
-          `${roofFormFromProfile === "shed" ? "panel runs clear across" : "side of the roof covers"} ` +
+          `This building spans ${spanFt.toFixed(1)}ft across the ridge, so the longest run one panel has to ` +
+          `cover is ` +
           `${runFt.toFixed(1)}ft of ground, which needs ${(neededIn / 12).toFixed(1)}ft of panel at ` +
           `${pitchIn12}:12 — past the ${(MAX_PANEL_LENGTH_IN / 12).toFixed(0)}ft maximum. The roof is drawn, ` +
           `counted and priced anyway, out of panels that long. Three ways out, all his: narrow the building, ` +
@@ -13145,25 +13202,44 @@ export default function LayoutEditor() {
        from its top. That is stride 3b, and it is named rather than implied,
        because a wall priced to the ceiling under a roof it is meant to reach
        is exactly the silence this log exists to break. */
+    /* ⚠ **EVERY roof-bearing interior wall, not only the ridge one.** Since
+       stride 3c a Multiplex has three: the centre wall under the ridge, and a
+       purlin wall part way up each plane. All three stop at the story height
+       and all three have roof above them, at three different heights. Listing
+       only the ridge would have quietly under-reported the building by two
+       walls the day the purlin walls arrived. */
+    const carrying: { wallId: string; aboveEaveIn: number }[] = [];
     const ridgeWall = ridgeBearingWallFor(footprint);
     if (ridgeWall && roofFormFromProfile === "peaked") {
-      const riseIn = ((spanFt / 2) * 12 * pitchIn12) / 12;
+      carrying.push({ wallId: ridgeWall.wallId, aboveEaveIn: ((spanFt / 2) * 12 * pitchIn12) / 12 });
+    }
+    for (const plane of bands) {
+      for (const line of plane.bearingLines) {
+        if (carrying.some((c) => c.wallId === line.wallId)) continue;
+        carrying.push({ wallId: line.wallId, aboveEaveIn: (line.atRunFt * 12 * pitchIn12) / 12 });
+      }
+    }
+    if (carrying.length > 0) {
+      carrying.sort((a, b) => b.aboveEaveIn - a.aboveEaveIn);
+      const heights = carrying
+        .map((c) => `${c.wallId} by ${formatLengthIn(c.aboveEaveIn, unitSystem)}`)
+        .join(", ");
       entries.push({
-        label: `Interior wall ${ridgeWall.wallId} carries the ridge but stops ${formatLengthIn(riseIn, unitSystem)} below it`,
+        label: `${carrying.length} interior wall${carrying.length === 1 ? "" : "s"} carr${carrying.length === 1 ? "ies" : "y"} the roof but stop${carrying.length === 1 ? "s" : ""} short of it`,
         status: "pending-BI-confirmation" as const,
         note:
-          `The ridge now runs along ${ridgeWall.wallId} and no ridge beam is built, because the wall carries ` +
-          `the roof directly — his "all the loads of everything transfer down the center row of diving wall ` +
-          `panels". But this wall's panels are tiled at the story height, and the ridge sits ` +
-          `${formatLengthIn(riseIn, unitSystem)} above the eave at ${pitchIn12}:12 over a ` +
-          `${spanFt.toFixed(1)}ft span. The row from the ceiling up to the ridge is NOT built, NOT drawn and ` +
-          `NOT priced. Nothing else in the building is wrong because of it: the roof planes, the gable ends and ` +
-          `the panel counts are all as they should be.`,
+          `No ridge or purlin beam is built over ${carrying.length === 1 ? "it" : "any of them"}, because the ` +
+          `wall carries the roof directly — his "all the loads of everything transfer down the center row of ` +
+          `diving wall panels". But these walls' panels are tiled at the story height, and the roof above them ` +
+          `is higher than that: ${heights}, at ${pitchIn12}:12 over a ${spanFt.toFixed(1)}ft span. ` +
+          `The row from the ceiling up to the roof is NOT built, NOT drawn and NOT priced. Nothing else in the ` +
+          `building is wrong because of it: the roof planes, the bands of roof panels, the gable ends and the ` +
+          `panel counts are all as they should be.`,
       });
     }
 
     return entries;
-  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, unitSystem]);
+  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, unitSystem]);
 
   const wallRunStopReviewEntries = useMemo(() => {
     if (!footprint) return [];
@@ -15891,9 +15967,18 @@ export default function LayoutEditor() {
                 to the ridge" for every roof until 2026-10-28, which was
                 wrong on exactly the roofs the shed work had just made
                 common. */}
-            {roofFormFromProfile === "shed"
-              ? `Laid on the roof's single plane at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from the low wall to the tall one.`
-              : `Laid on the roof's two planes at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from each eave to the ridge.`}
+            {/* ⚠ **AND A PLANE CAN BE MORE THAN ONE RUN SINCE B34 STRIDE 3c.**
+                An interior wall part way up a plane splits its panels in two
+                bands, each landing on that wall from its own side, so "from
+                each eave to the ridge" stopped being true the moment a
+                Multiplex was drawn. Read off the takeoff's own runs rather
+                than counted here, so the sentence cannot drift from the
+                panels it describes. */}
+            {roofBandCount > 1
+              ? `Laid on the roof's ${roofFormFromProfile === "shed" ? "single plane" : "two planes"} at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, in ${roofBandCount} bands up the slope: each band's panels bear on the interior wall under it rather than reaching the whole way.`
+              : roofFormFromProfile === "shed"
+                ? `Laid on the roof's single plane at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from the low wall to the tall one.`
+                : `Laid on the roof's two planes at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from each eave to the ridge.`}
           </p>
         )}
         {roofEnabled && footprint && ringRoofGableBlockReason(footprint) !== null && (

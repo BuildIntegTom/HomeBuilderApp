@@ -40,6 +40,7 @@ export * from "./floorPanelGrid";
 export * from "./joistLayout";
 export * from "./deckPanelPlacement";
 export * from "./deckPanelCut";
+export * from "./roofBearingLines";
 export * from "./simpleRoofPlanes";
 export * from "./pointInPolygon";
 export * from "./clipSegmentToPolygon";

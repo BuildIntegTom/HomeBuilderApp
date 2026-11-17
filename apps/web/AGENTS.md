@@ -228,6 +228,45 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-17, B34 stride 3c (a wall under each roof purlin), +1.**
+  `preserve-manual-memoization` 80 -> 81, **186 problems**. Every other rule
+  byte-identical and no correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1, `no-unused-vars` 35,
+  `no-unescaped-entities` 15).
+
+  Attributed by the single-file bisect plus the flagged-SOURCE-LINE-TEXT diff,
+  which printed **exactly one added line and nothing else**:
+
+  `}, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, unitSystem]);`
+
+  It is `gableEaveHeightIn`, added to `roofBearingReviewEntries`' dep array
+  because that memo now builds the roof planes to work out the panel bands.
+  Same already-flagged value that cost +1 on 2026-11-16, and the rule holding
+  again: **one per already-flagged value a dep array touches.**
+
+  ⚠ **And it is forced.** Drop the dep and `exhaustive-deps` rises instead,
+  which may never rise. One rationed error against one banned one, the same
+  trade as the 2026-11-15 ridge-beam entry.
+
+  ⚠ **A brand-new `useMemo` cost NOTHING again** — `roofBandCount`, over
+  `[deckPanelTakeoff]`. One dep, and that dep is not itself flagged, however
+  large a thing it is. So is everything else in a change of this size: a new
+  geometry module and its tests, a rewritten roof loop in `deckPanelTakeoff.ts`
+  (a run becomes N runs), two new interface fields, a new template option, a
+  deduped facing list in `Building3DView.tsx`, and a new test file.
+
+  ⚠ **AND THE GATE MISSED THE REAL DEFECT AGAIN, for the fourth time this
+  week** — though this one was not found in the browser either. Stride 3
+  stopped building the ridge beam and its posts when a wall runs under the
+  ridge, and `deckPanelTakeoff` went on laying the extra structural girts that
+  go **underneath those posts** into the floor panels: six girts of
+  reinforcement for posts that are not built, on every Multiplex, in the shop
+  sheets and in the weight. It changes no panel COUNT, so nothing on screen
+  moves and no existing test could see it. **Found by reading the function
+  while waiting for a lint run.** The lesson is narrower than "open the
+  browser": **when you stop building a part, grep for what else was built
+  FOR it.**
+
 - **2026-11-17, B34 stride 3 (the centre wall carries the ridge): ZERO delta.**
   **185 problems**, every rule byte-identical to the stride-2 run
   (`preserve-manual-memoization` 80, `no-unused-vars` 35, `refs` 29,
