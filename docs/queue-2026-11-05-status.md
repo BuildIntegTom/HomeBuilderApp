@@ -50,7 +50,10 @@ is cut, what sets the radius) was answering the wrong question.
    not down. One disagreement was named rather than settled — a Big Header is
    given zero straw and a window header a member-aware volume, for the same
    cavity. See `plan-2026-10-31-queue.md`.
-3. **The 3D member hit test** — unblocks BOTH the pointer-drag gesture in the
+3. ~~**The 3D member hit test**~~ — **DONE 2026-11-05**, and this entry was
+   stale until 2026-11-16. `PanelMembersGroup.tsx` carries the picking, the
+   three r3f traps it hit and the `pointerdown`-only decision. Original text:
+   unblocks BOTH the pointer-drag gesture in the
    panel editor and the right-click menu in the 3D view. One piece, two
    surfaces; building it twice is how they come to disagree about what you
    clicked.
@@ -162,6 +165,30 @@ is cut, what sets the radius) was answering the wrong question.
     ⚠ I had begun giving Big Headers a second width path with an 18ft
     ceiling, which would have overridden his own 12ft maximum from a different
     place. Backed out before commit — one catalog question, one answer.
+
+12b. **The overlap sweep's own unfinished edge, and what it found** — **DONE
+    2026-11-16.** This file's sweep had said since 2026-11-14 that floor/roof
+    panels, the truss plate, the box beam and the cross-tilt row were *"still
+    unswept"*. Swept now along their LENGTH. Four were clean first time (roof
+    panel, truss plate, box beam, and the gable carrying BOTH of that day's
+    cuts). **The floor panel had three faults**, all the same mistake: a bound
+    that does not allow for what is in the way — the far lid is 2¼ in not
+    1½ in, a station is not a point, blocking's extent along the span is 3½ in
+    not its 1½ in thickness, and B23's far-end structural girts were
+    unallowed-for. ⚠ **Measured: not one span the app lays out is affected**
+    (22 checked), so it is a guard, not a change to parts he builds — which is
+    exactly why no fixed-size test met it.
+    ⚠ **And it pinned one new clash the 22½° corner mitre had introduced,
+    which is now FIXED rather than left for him.** The nailer yields, not the
+    girt: it BUTTS the bar's inboard face, which is a shop instruction with no
+    measurement in it. ⚠ **Chasing that in the browser turned up the bigger
+    one no test had seen**: on the 15½ in corner panel the app actually
+    builds, the mitre made the two girt bars **overlap each other by
+    2.482in**, on all sixteen corner panels of an octagon. The row is given up
+    rather than the cut — the gable's own answer — and the Review Log names
+    the sixteen. **Every test had built a 25½ in panel**, the COLUMN's width
+    and the one width a corner panel never has. *Sweep the size the app emits,
+    not the size the constant is named after.*
 
 13. **B34 — Multiplex: a pre-draw with a LOAD-BEARING CENTRE WALL.** Queued
     2026-11-16, not started. *"a home page option that says multiplex … a

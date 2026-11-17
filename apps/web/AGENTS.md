@@ -208,6 +208,33 @@
   for opening the preview on any change that touches the catalogue's shared
   helpers, not only on changes you can see.
 
+- **2026-11-16, the corner mitre's girt row and nailer: ZERO delta.**
+  183 / 136 / 47, every rule byte-identical again
+  (`preserve-manual-memoization` 78, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **A new Review Log entry cost NOTHING, and the reason is reusable: it went
+  INTO AN EXISTING MEMO rather than beside it.** The corner-panel
+  no-girt-row entry was added to `gableMitreRefusedReviewEntries`, whose dep
+  array grew three values — `isSquareBalePanelization`, `wallPlanMitreByWallId`
+  and `heightIn` — and **none of the three is itself flagged**, so the rule
+  from 2026-11-15 holds for a sixth time: one per already-flagged value a dep
+  array touches, nothing otherwise. Compare the gable's own entry a few hours
+  earlier, which cost +1 only because it needed `gableEaveHeightIn`. **Adding
+  to a memo you already pay for is the cheapest shape there is**, and here it
+  was also the right one: the two entries are the same finding one story apart
+  and belong next to each other in the log.
+
+  ⚠ **AND THE GATE AGAIN DID NOT CATCH THE REAL DEFECT**, for the second time
+  in a day on this same feature. All three gates passed on a build where the
+  app's own 15½in corner panel had **two girt bars 2.482in inside each other**
+  — because every test built a 25½in panel (`COLUMN_TOTAL_WIDTH_IN`, the
+  COLUMN's width and one a corner panel never has). **The browser's Review Log
+  named it in one line.** Open the preview on anything that touches the
+  catalogue's shared builders, and check it at the size the app EMITS, not the
+  size the constant is named after.
+
 - **2026-11-16, proposals (stride C): ZERO delta.** 183 / 136 / 47, every rule
   byte-identical to the corner-mitre run earlier the same day
   (`preserve-manual-memoization` 78, `no-unused-vars` 35, `refs` 29,

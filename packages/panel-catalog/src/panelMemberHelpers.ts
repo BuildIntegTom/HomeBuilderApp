@@ -742,7 +742,14 @@ export function buildCornerStuds(
  * numeric position control, not a literal drag gesture in the 3D/2D view
  * yet — flagged as a simplification of "slide."
  */
-export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): PanelMember {
+export function buildNailer(
+  widthIn: number,
+  heightIn: number,
+  offsetIn = 0,
+  /** Why it was slid, for the part itself — a shop reads *"held against the
+   *  girt bar"* and needs no tape; it reads *"slid 1.232in"* and needs one. */
+  slideReason?: string,
+): PanelMember {
   const nailerLengthIn = heightIn - NAILER_LENGTH_DEFICIT_IN;
   return {
     memberId: "nailer",
@@ -773,8 +780,84 @@ export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): Pa
     qty: 1,
     notes:
       "OPTIONAL — \"with nailer\" vs \"bare standard\". 3.5in face oriented outward as exterior surface, 1.5in into the straw." +
-      (offsetIn !== 0 ? ` Slid ${offsetIn > 0 ? "+" : ""}${offsetIn}in from center along the exterior wythe.` : " Centered on exterior wythe."),
+      (offsetIn !== 0
+        ? ` Slid ${offsetIn > 0 ? "+" : ""}${parseFloat(offsetIn.toFixed(3))}in from center along the exterior wythe${slideReason ? ` — ${slideReason}` : ""}.`
+        : " Centered on exterior wythe."),
   };
+}
+
+/**
+ * ⚠ **How far a centre nailer has to SLIDE along its wythe to clear the two
+ * end members of its girt rows — and it is **0 on every square panel this app
+ * has ever built**, which is what keeps those byte-identical.
+ *
+ * > *"Nailer studs should be able to slide on the wyth they are on."*
+ * > — Tommy, which is why `buildNailer` has an `offsetIn` at all.
+ *
+ * ⚠ **It exists for the 22½° MITRED corner panel.** A girt bar runs the full
+ * depth of the wall, so a mitre drives it inboard by the whole pull-back —
+ * 6.420in on a 15½ in wall — and on a 24in core that lands it **1.232in into
+ * the centre nailer**, measured. Two solids cannot share a volume.
+ *
+ * ⚠ **The nailer is the piece that yields, not the girt**, and that ordering is
+ * the whole decision. A girt bar carries the row's blocking or web and is fixed
+ * by the cut: the only x at which a full-depth board clears a 22½° face is the
+ * one its deepest face allows. A nailer is a nailing surface whose job is a
+ * 1.5in face to the plasterer and a stud bay no wider than
+ * `MAX_STUD_SPACING_IN`; a few inches along the wythe costs it nothing. On the
+ * mitred corner panel the two bays either side come out **8½ in and 7½ in**,
+ * against the 24in the rule names.
+ *
+ * ⚠ **It BUTTS against the bar — a minimal slide, not a re-centring, and no
+ * measurement.** Three reasons, and the first is the one that matters:
+ *
+ * - **A butt joint is how this gets built.** *Hold the nailer against the girt
+ *   bar and nail it* needs no tape, and it is the instruction the part carries.
+ *   Snapping to the nearest 1/16in instead was tried and measured: it clears by
+ *   **0.018in**, which is a number a shop would read as touching anyway, with a
+ *   measurement to get wrong on top.
+ * - **A panel that already clears does not move at all**, so nothing this app
+ *   builds today changes — the square corner panel is byte-identical.
+ * - **It balances the bays better than centring in the clear span would.**
+ *   Butted: **8½ in and 7½ in** either side. Centred in what the bars leave:
+ *   10½ in and 5½ in. Neither is near the 24in limit, but the nailer is a
+ *   nailing line and an even one is worth more than an arbitrary one.
+ *
+ * ⚠ **The end member is a different width per style, and `ring` is why.** A
+ * blocking/web row ends in a girt BAR, 3½ in across x. A ring ends in a 1½ in
+ * short piece — its RAILS do span the nailer, and they are not asked about
+ * here, because Tommy already answered that case: a rail is cut around
+ * anything perfectly vertical and a tie closes it behind
+ * (`cutRingGirtsAroundVerticals`). Only the members that are NOT cut around
+ * the nailer can push it.
+ *
+ * ⚠ **Returns `null` when the bay between those end members cannot hold a
+ * nailer at all — and the caller's answer to that is to drop the girt ROW, not
+ * the nailer.** It is reachable: two bars fit in a 10in window and the nailer
+ * needs 13½ in, so a window between those two numbers satisfies the row and
+ * starves the nailer. In that band the clear span between the bars is 0 to
+ * 3½ in, so the row is bracing nothing — see `buildColumnStyleMembers`, which
+ * also explains why a silently missing nailer is the one outcome not allowed.
+ */
+export function nailerSlideClearOfGirtRowIn(
+  style: GirtStyle,
+  widthIn: number,
+  spanFromXIn: number,
+  spanToXIn: number,
+): number | null {
+  const endFootprintIn = style === "ring" ? PLATE_2X4_THICKNESS_IN : PLATE_2X4_WIDTH_IN;
+  const clearFromIn = spanFromXIn + PLATE_2X4_THICKNESS_IN + endFootprintIn;
+  const clearToIn = spanToXIn - PLATE_2X4_THICKNESS_IN - endFootprintIn;
+  if (clearToIn - clearFromIn < NAILER_WIDTH_IN - 1e-9) return null;
+
+  const homeFromIn = widthIn / 2 - NAILER_WIDTH_IN / 2;
+  if (homeFromIn > clearFromIn - 1e-9 && homeFromIn + NAILER_WIDTH_IN < clearToIn + 1e-9) return 0;
+
+  /* Exactly flush with the face it is held against — both sides of this
+     subtraction come from the same girt window, so the audit's own
+     touching-is-not-overlapping test is met by derivation and not by a
+     tolerance that could be tuned away. */
+  return homeFromIn < clearFromIn ? clearFromIn - homeFromIn : clearToIn - NAILER_WIDTH_IN - homeFromIn;
 }
 
 /**

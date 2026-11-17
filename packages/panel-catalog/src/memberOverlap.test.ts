@@ -335,6 +335,10 @@ interface HeightCase {
   anchorIn: number;
 }
 
+/* ⚠ One octagon corner's own pull-back on a 15½ in wall: `t × tan 22½°`,
+   written out rather than recomputed so every mitred case below is cut by the
+   same number. A corner panel is mitred at ONE end — the end on the corner. */
+const START_MITRE = { startExtIn: 0, startIntIn: 6.4203, endExtIn: 0, endIntIn: 0 } as const;
 const WALL_LO = 32;
 const WALL_HI = 144;
 
@@ -396,6 +400,118 @@ const HEIGHT_CASES: HeightCase[] = [
     at: (h) => buildGablePanelMembers(48, D, h, h + 24, false, "blocking"),
     loIn: 0,
     hiIn: WALL_LO,
+    anchorIn: 48,
+  },
+
+  /* ──────────────────────────────────────────────────────────────────────
+     ⚠ **THE FAMILIES THAT VARY ALONG THEIR LENGTH, swept 2026-11-16.**
+
+     This file's own note has said since 2026-11-14 that floor/roof panels,
+     the truss plate, the box beam and the cross-tilt row were *"still
+     unswept — named in the file so nobody assumes otherwise"*. They are the
+     ones whose geometry moves with a span rather than a height, so the
+     `at(h)` here is reading a LENGTH; the harness does not care which, and
+     saying so is cheaper than a second harness.
+
+     ⚠ **Worth doing now rather than later**: the deck was cut to the
+     building's own outline on 2026-11-16, which rewrote three of the floor
+     panel's member builders and gave its joists a plan bevel. A family that
+     has just changed shape is exactly the one a single sample is least
+     likely to represent.
+     ────────────────────────────────────────────────────────────────────── */
+  {
+    name: "floor panel by length",
+    at: (l) =>
+      buildFloorRoofPanelMembers({
+        kind: "floor",
+        widthIn: 19.25,
+        depthIn: D,
+        lengthIn: l,
+        structuralGirtEnds: ["start", "end"],
+      }),
+    loIn: 24,
+    hiIn: 300,
+    anchorIn: 300,
+  },
+  {
+    name: "roof panel by length",
+    at: (l) =>
+      buildFloorRoofPanelMembers({ kind: "roof", widthIn: 19.25, depthIn: D, lengthIn: l, structuralGirtEnds: [] }),
+    loIn: 24,
+    hiIn: 300,
+    anchorIn: 300,
+  },
+  /* ⚠ The MITRED deck panel — his 2026-11-15 *"cut to fit the raised octagon
+     gable perimeter"*. The pull-back is held at an octagon corner's own
+     6.420in while the span sweeps, so a length at which the cut eats more
+     than the panel has shows up as a refusal or as an interference. */
+  {
+    name: "floor panel mitred by length",
+    at: (l) =>
+      buildFloorRoofPanelMembers({
+        kind: "floor",
+        widthIn: 19.25,
+        depthIn: D,
+        lengthIn: l,
+        structuralGirtEnds: ["start", "end"],
+        mitreIn: { startNearIn: 0, startFarIn: 6.4203, endNearIn: 6.4203, endFarIn: 0 },
+      }),
+    loIn: 24,
+    hiIn: 300,
+    anchorIn: 300,
+  },
+  { name: "truss plate by length", at: (l) => buildTrussPlateMembers(l, D), loIn: 24, hiIn: 300, anchorIn: 120 },
+  { name: "box beam by length", at: (l) => buildBoxBeamMembers(l, D), loIn: 24, hiIn: 300, anchorIn: 120 },
+
+  /* ──────────────────────────────────────────────────────────────────────
+     ⚠ **THE 22½° PLAN MITRE, swept — both panels that take it.**
+
+     Built 2026-11-16 and tested at a handful of sizes. A mitre moves posts,
+     shortens plates per wythe and turns two sheets into oblique prisms, all
+     of which interact with the height- and width-dependent rules this sweep
+     exists for — so it belongs here rather than only in its own file.
+     ────────────────────────────────────────────────────────────────────── */
+  /* ⚠ **AT THE WIDTH THE APP ACTUALLY BUILDS, 15½ in** (`cornerPanelWidthIn`),
+     and that is the whole point of these two. The first version of this case
+     used 25½ in — `COLUMN_TOTAL_WIDTH_IN`, the COLUMN's width and the one
+     width a corner panel never has — and a 25½ in core has room to frame a
+     mitred girt row where a 14in core does not. Every unit test passed while
+     the Review Log in the browser reported `girt_1_bar_left x
+     girt_1_bar_right` on all sixteen corner panels of an octagon. **Sweep the
+     size the app emits, not the size the constant is named after.** */
+  {
+    name: "corner mitred",
+    at: (h) => buildCornerPanelMembers(D, h, false, 15.5, undefined, START_MITRE),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
+    anchorIn: 96,
+  },
+  {
+    name: "corner mitred + nailer",
+    at: (h) => buildCornerPanelMembers(D, h, true, 15.5, undefined, START_MITRE),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
+    anchorIn: 96,
+  },
+  /* A WIDE mitred corner panel is a real case too — the tiler emits one from
+     the 51in-75.5in band — and it is the case where the row DOES fit and the
+     centre nailer butts against the bar instead. */
+  {
+    name: "corner mitred wide + nailer",
+    at: (h) => buildCornerPanelMembers(D, h, true, 25.5, undefined, START_MITRE),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
+    anchorIn: 96,
+  },
+  /* ⚠ The gable with BOTH of 2026-11-16's cuts at once — the compound bevel
+     across its depth and the plan mitre at its end. The two were built hours
+     apart and compose on every diagonal octagon facet, which is the building
+     he asked about. */
+  {
+    name: "gable mitred + bevelled",
+    at: (h) => buildGablePanelMembers(39.75, D, h, h + 24, false, "blocking", 3.6534, START_MITRE),
+    loIn: WALL_LO,
+    hiIn: WALL_HI,
     anchorIn: 48,
   },
   /* The same wedge mirrored, so the merge is pinned at both orientations the
@@ -540,6 +656,103 @@ function sweepFindings({ at, loIn, hiIn }: HeightCase): string[] {
  * ──────────────────────────────────────────────────────────────────────────
  */
 const SWEEP_FINDINGS: Record<string, string[]> = {
+  /* ──────────────────────────────────────────────────────────────────────
+     ⚠ **SWEPT ALONG THEIR LENGTH, 2026-11-16** — the families this file's
+     own note had listed as unswept since 2026-11-14.
+
+     **Four were clean from the first run**: the roof panel, the truss plate,
+     the box beam, and the gable carrying BOTH of 2026-11-16's cuts at once.
+     Their empty lists are the strongest statement here and are written out
+     rather than omitted, so deleting one reads as a change.
+
+     **The floor panel was not**, and the two findings were the same mistake
+     the column blocking bug was: a bound that does not allow for what is
+     actually in the way.
+
+     1. The far end's lid is `SKIN + PLATE` = **2 1/4in**, and the station
+        bound read only the 1 1/2in plate — so a girt was admitted 3/4in
+        inside the sheet. And a station is not a point: the member standing
+        on it has its own thickness, which nothing allowed for either. An
+        anti-twist girt ran into the lid at **66.5-68.5in and every 60in
+        after**; blocking at **42.5-46in and every 36in after**.
+     2. Blocking's extent ALONG the span is `PLATE_2X4_WIDTH_IN` (3 1/2in),
+        not its 1 1/2in thickness — it is built `horizontal` at 90deg. Reading
+        the thickness left exactly 2in of the interference in place, which is
+        how it was caught: the band narrowed rather than closing. The same
+        misreading sat in `buildBlocking`'s own mitred per-side test.
+     3. Fixing those two exposed a third they had been masking: B23's pair of
+        structural girts at the FAR end. The datum allows for the pair at the
+        START and nothing allowed for the one at the end. A station landing on
+        a structural girt is now dropped — a structural girt IS blocking at
+        that station, and carrying a wall besides.
+
+     ⚠ **Why no fixed-size test ever met any of it**: the interference is
+     periodic and about 2in wide, and the 300in span this file pins, the 192in
+     and 96in runs the app lays out, and every template all fall in the clear.
+     Exactly how 96in missed the column blocking bug in November.
+     ────────────────────────────────────────────────────────────────────── */
+  "floor panel by length": [],
+  "roof panel by length": [],
+  "floor panel mitred by length": [],
+  "truss plate by length": [],
+  "box beam by length": [],
+
+  /* ──────────────────────────────────────────────────────────────────────
+     ⚠ **THE 22½° PLAN MITRE, swept.** The gable carrying the mitre AND the
+     compound bevel is clean at every height it builds — which is the case the
+     16ft Octagon's diagonal facets actually are.
+
+     The corner panel carries the four `girt bar x blocking` pairs the
+     unmitred column, column-style and corner already carry: a BUILDING
+     question recorded in `BASELINE`, the girt bar 1/4in into the blocking
+     rows, and sweeping does not change the answer.
+
+     ⚠ **ONE PAIR WAS NEW AND WAS THE MITRE'S DOING — `girt_N_bar_left x
+     nailer`, and it is now FIXED rather than pinned.** Measured against the
+     same panel built square: the mitre moves a full-depth girt bar inboard by
+     the whole pull-back, and on a 24in core that put it **1.232in into the
+     centre nailer**, on every row, at every height.
+
+     The nailer yields and the girt does not — `nailerSlideClearOfGirtRowIn`
+     has the reasoning and the measurements. It is held against the bar's
+     inboard face, which is a butt joint a shop builds without a tape, leaves
+     the two stud bays at 8½ in and 7½ in, and moves nothing on a square panel.
+
+     ⚠ **It was NOT answered the way the gable answered the same collision.**
+     A gable drops the whole girt row (`gableGirtRowFitsMitredSpan`), which is
+     cheap on a 19 7/8in tile. Doing that here would have taken the girts out
+     of all sixteen corner panels of an octagon — structure, to protect a
+     nailing surface that is free to move and that Tommy had already said
+     *should be able to slide on the wyth they are on*.
+     ────────────────────────────────────────────────────────────────────── */
+  /* ⚠ **EMPTY, and both empties are load-bearing.** At the 15½ in the app
+     actually builds, a mitred corner panel has no girt row at all — so it
+     cannot carry the four `girt bar x blocking` pairs the unmitred panels do,
+     and the nailer has nothing to butt against and stays centred. Four pinned
+     lines went away here when the row did. */
+  "corner mitred": [],
+  "corner mitred + nailer": [
+    /* Pre-existing and unrelated to the mitre: the optional nailer inside the
+       exterior blocking rows, the same board asked for twice — on the square
+       panel too, and recorded in `BASELINE` as one of his open questions. */
+    "nailer x blocking_N_exterior @ 32..144",
+  ],
+  /* The WIDE mitred corner panel is where the row DOES fit, so it keeps those
+     four pre-existing `girt bar x blocking` pairs — a BUILDING question
+     recorded in `BASELINE`, the bar 1/4in into the blocking rows, and the
+     mitre does not change the answer. ⚠ `girt_N_bar_left x nailer` stood here
+     too, at 1.232in, until the nailer was slid clear; its absence is the
+     assertion. */
+  "corner mitred wide + nailer": [
+    "girt_N_bar_left x blocking_N_exterior @ 47.5..144",
+    "girt_N_bar_left x blocking_N_interior @ 47.5..144",
+    "girt_N_bar_right x blocking_N_exterior @ 47.5..144",
+    "girt_N_bar_right x blocking_N_interior @ 47.5..144",
+    /* Pre-existing: the optional nailer inside the blocking rows, on the
+       square panel too. */
+    "nailer x blocking_N_exterior @ 32..144",
+  ],
+  "gable mitred + bevelled": [],
   standard: [],
   "standard narrow": [],
   "safety gap": [],

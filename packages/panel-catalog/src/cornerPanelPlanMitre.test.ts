@@ -5,9 +5,14 @@ import {
   cornerPanelPlanMitre,
   panelPlanMitreXRangeIn,
 } from "./panelPlanMitre";
-import { buildCornerPanelMembers } from "./cornerPanelMembers";
+import { buildCornerPanelMembers, cornerMitreDropsGirtRow } from "./cornerPanelMembers";
 import { COLUMN_TOTAL_WIDTH_IN, buildColumnPanelMembers } from "./columnPanelMembers";
-import { memberLocalCornersIn } from "./panelMemberHelpers";
+import {
+  MAX_STUD_SPACING_IN,
+  memberBoxIn,
+  memberLocalCornersIn,
+  nailerSlideClearOfGirtRowIn,
+} from "./panelMemberHelpers";
 import { membersOverlap } from "./memberPrism";
 import { computePanelCutList } from "./panelCutList";
 import type { PanelMember } from "./componentSchema";
@@ -242,5 +247,164 @@ describe("⚠ which END a corner slot takes, from its index alone", () => {
     for (const index of [0, 1, 5]) {
       expect(cornerPanelPlanMitre(NO_PANEL_PLAN_MITRE, index), String(index)).toEqual(NO_PANEL_PLAN_MITRE);
     }
+  });
+});
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THE CENTRE NAILER SLIDES CLEAR OF THE GIRT BAR THE MITRE MOVED
+
+   Found by the length/height sweep (`memberOverlap.test.ts`) the same day the
+   mitre shipped: a girt bar runs the FULL depth of the wall, so the cut drives
+   it inboard by the whole pull-back, and on a 24in core that put it 1.232in
+   into the centre nailer.
+
+   The nailer is the piece that yields. It is a nailing surface Tommy had
+   already said *should be able to slide on the wyth they are on*; a girt bar
+   carries the row and has exactly one x at which a full-depth board clears a
+   22 1/2deg face.
+   ────────────────────────────────────────────────────────────────────────── */
+describe("the centre nailer slides clear of a mitred girt bar", () => {
+  const MITRE = startMitre;
+  const boxOf = (members: readonly PanelMember[], id: string) => {
+    const box = memberBoxIn(members.find((m) => m.memberId === id)!);
+    return { fromIn: box.xFromIn, toIn: box.xToIn };
+  };
+
+  it("⚠ on a SQUARE panel it does not move at all — byte-identical", () => {
+    const square = buildCornerPanelMembers(DEPTH, 96, true, COLUMN_TOTAL_WIDTH_IN);
+    const withNoMitre = buildCornerPanelMembers(DEPTH, 96, true, COLUMN_TOTAL_WIDTH_IN, undefined, {
+      ...NO_PANEL_PLAN_MITRE,
+    });
+    expect(withNoMitre).toEqual(square);
+    const nailer = square.find((m) => m.memberId === "nailer")!;
+    expect(nailer.notes).toContain("Centered on exterior wythe");
+  });
+
+  it("butts against the bar's inboard face, and nothing of it is left inside", () => {
+    const members = buildCornerPanelMembers(DEPTH, 96, true, COLUMN_TOTAL_WIDTH_IN, undefined, MITRE);
+    const bar = boxOf(members, "girt_1_bar_left");
+    const nailer = boxOf(members, "nailer");
+    /* Flush: the slide is derived from the same girt window the bar is, so
+       this is an equality and not a tolerance. */
+    expect(nailer.fromIn).toBeCloseTo(bar.toIn, 9);
+    /* Both rows, since a nailer is full height and every row shares the x. */
+    expect(boxOf(members, "girt_2_bar_left").toIn).toBeCloseTo(bar.toIn, 9);
+    /* And it has actually MOVED — otherwise the assertion above could pass on
+       a panel where the bar had not been driven inboard at all. */
+    const square = boxOf(buildCornerPanelMembers(DEPTH, 96, true, COLUMN_TOTAL_WIDTH_IN), "nailer");
+    expect(nailer.fromIn - square.fromIn).toBeGreaterThan(1);
+  });
+
+  it("the part carries the butt as an instruction, not a measurement to take", () => {
+    const members = buildCornerPanelMembers(DEPTH, 96, true, COLUMN_TOTAL_WIDTH_IN, undefined, MITRE);
+    const nailer = members.find((m) => m.memberId === "nailer")!;
+    expect(nailer.notes).toContain("held against the inboard face of the girt bar");
+    expect(nailer.notes).toContain("needs no measurement");
+  });
+
+  it("⚠ leaves both stud bays far inside the spacing rule", () => {
+    const members = buildCornerPanelMembers(DEPTH, 96, true, COLUMN_TOTAL_WIDTH_IN, undefined, MITRE);
+    const nailer = boxOf(members, "nailer");
+    /* The exterior wythe's two posts, which are what a bay is measured
+       between — stud_corner_1 and _2 are the y 0..3.5 pair. */
+    const left = boxOf(members, "stud_corner_1");
+    const right = boxOf(members, "stud_corner_2");
+    for (const bayIn of [nailer.fromIn - left.toIn, right.fromIn - nailer.toIn]) {
+      expect(bayIn).toBeGreaterThan(0);
+      expect(bayIn).toBeLessThan(MAX_STUD_SPACING_IN);
+    }
+  });
+
+  it("⚠ no girt bar is left overlapping the nailer, at any wall height", () => {
+    for (const heightIn of [96, 108, 120, 144]) {
+      const members = buildCornerPanelMembers(DEPTH, heightIn, true, COLUMN_TOTAL_WIDTH_IN, undefined, MITRE);
+      const nailer = members.find((m) => m.memberId === "nailer")!;
+      for (const bar of members.filter((m) => /^girt_\d+_bar_/.test(m.memberId))) {
+        expect(membersOverlap(nailer, bar).overlaps, `${heightIn}in ${bar.memberId}`).toBe(false);
+      }
+    }
+  });
+
+  it("⚠ a RING row does not push the nailer — its rails are cut around it instead", () => {
+    /* `cutRingGirtsAroundVerticals` is Tommy's own answer for a vertical
+       crossing a ring: cut the rail, tie behind it. Only the members that are
+       NOT cut can move the nailer, which for a ring is its 1 1/2in short end
+       piece — and that one already clears. */
+    const slide = nailerSlideClearOfGirtRowIn("ring", 24, 6.482, 23.938);
+    expect(slide).toBe(0);
+    expect(nailerSlideClearOfGirtRowIn("blocking", 24, 6.482, 23.938)).toBeGreaterThan(1);
+  });
+
+  it("⚠ returns null when the bay cannot hold a nailer at all", () => {
+    /* Reachable: two bars fit in a 10in window and the nailer needs 13 1/2in,
+       so a window between the two satisfies the row and starves the nailer.
+       The builder's answer to a null is to drop the ROW — see below. */
+    expect(nailerSlideClearOfGirtRowIn("blocking", 24, 8, 20)).toBeNull();
+    expect(nailerSlideClearOfGirtRowIn("blocking", 24, 0, 13.4)).toBeNull();
+    expect(nailerSlideClearOfGirtRowIn("blocking", 24, 0, 13.6)).not.toBeNull();
+  });
+});
+
+/* ──────────────────────────────────────────────────────────────────────────
+   AT THE WIDTH THE APP ACTUALLY BUILDS, THE GIRT ROW GOES
+
+   ⚠ Found in the BROWSER, not here. A corner panel is **15 1/2in** wide
+   (`cornerPanelWidthIn`), so its core is 14in, and a 22 1/2deg cut on a
+   15 1/2in wall takes 6.482in of that. A row needs 10in of window and this
+   one leaves 7.456in — so the two girt bars **overlapped each other by
+   2.482in**, on every row, on all sixteen corner panels of an octagon. The
+   Review Log reported it as `girt_1_bar_left x girt_1_bar_right`.
+
+   ⚠ Every test in this file and in the sweep had built a **25 1/2in** panel —
+   `COLUMN_TOTAL_WIDTH_IN`, the COLUMN's width and the one width a corner panel
+   never has. A 25 1/2in core has room and shows nothing.
+   ────────────────────────────────────────────────────────────────────────── */
+describe("a mitred corner panel too narrow for a girt row gives up the row", () => {
+  const APP_WIDTH_IN = 15.5;
+  const girtIds = (members: readonly PanelMember[]) =>
+    members.filter((m) => m.role === "girt" || m.role === "girt_web").map((m) => m.memberId);
+
+  it("⚠ the 15 1/2in panel the app builds loses its rows, and keeps everything else", () => {
+    const square = buildCornerPanelMembers(DEPTH, HEIGHT, true, APP_WIDTH_IN);
+    const mitred = buildCornerPanelMembers(DEPTH, HEIGHT, true, APP_WIDTH_IN, undefined, startMitre);
+    expect(girtIds(square).length).toBeGreaterThan(0);
+    expect(girtIds(mitred)).toEqual([]);
+    /* The nailer is NOT one of the casualties — with no row to clear it stays
+       centred, which is the whole reason the row's fit and the nailer's room
+       are decided together. */
+    expect(mitred.some((m) => m.memberId === "nailer")).toBe(true);
+    expect(mitred.find((m) => m.memberId === "nailer")!.notes).toContain("Centered on exterior wythe");
+  });
+
+  it("⚠ no two members share a volume on it, at any wall height", () => {
+    for (const heightIn of [96, 120, 144]) {
+      const members = buildCornerPanelMembers(DEPTH, heightIn, false, APP_WIDTH_IN, undefined, startMitre);
+      for (let i = 0; i < members.length; i++)
+        for (let j = i + 1; j < members.length; j++)
+          expect(
+            membersOverlap(members[i]!, members[j]!).overlaps,
+            `${heightIn}in ${members[i]!.memberId} x ${members[j]!.memberId}`,
+          ).toBe(false);
+    }
+  });
+
+  it("a WIDE mitred corner panel keeps its rows — the row is given up only where it cannot go", () => {
+    const wide = buildCornerPanelMembers(DEPTH, HEIGHT, true, COLUMN_TOTAL_WIDTH_IN, undefined, startMitre);
+    expect(girtIds(wide).length).toBeGreaterThan(0);
+  });
+
+  it("`cornerMitreDropsGirtRow` answers the Review Log's question by building both ways", () => {
+    expect(cornerMitreDropsGirtRow(DEPTH, HEIGHT, true, APP_WIDTH_IN, undefined, startMitre)).toBe(true);
+    /* The wide panel keeps its row, so there is nothing to report. */
+    expect(cornerMitreDropsGirtRow(DEPTH, HEIGHT, true, COLUMN_TOTAL_WIDTH_IN, undefined, startMitre)).toBe(false);
+    /* And a right-angled building never reports anything, at any width. */
+    for (const w of [APP_WIDTH_IN, COLUMN_TOTAL_WIDTH_IN])
+      expect(cornerMitreDropsGirtRow(DEPTH, HEIGHT, true, w, undefined, NO_PANEL_PLAN_MITRE), String(w)).toBe(false);
+  });
+
+  it("⚠ a square 15 1/2in panel is untouched — the row goes only because of the cut", () => {
+    expect(
+      buildCornerPanelMembers(DEPTH, HEIGHT, true, APP_WIDTH_IN, undefined, NO_PANEL_PLAN_MITRE),
+    ).toEqual(buildCornerPanelMembers(DEPTH, HEIGHT, true, APP_WIDTH_IN));
   });
 });

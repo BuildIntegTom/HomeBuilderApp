@@ -2,6 +2,7 @@ import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./com
 import {
   NO_PANEL_PLAN_MITRE,
   type PanelPlanMitre,
+  gableGirtRowFitsMitredSpan,
   mitredPostsForBand,
   mitrePanelMembersInPlan,
   panelPlanMitreAngleDeg,
@@ -21,6 +22,7 @@ import {
   buildGirtRows,
   type GirtStyle,
   buildNailer,
+  nailerSlideClearOfGirtRowIn,
   buildPlates,
   buildSkins,
   shiftTrapezoidCorners,
@@ -496,6 +498,55 @@ export function buildColumnStyleMembers(
   /* A girt bar and a ring rail run the FULL depth, so the only x at which
      they clear the cut is the one the deepest face allows. */
   const girtSpanIn = panelPlanMitreClearXRangeIn(coreMitre, coreWidthIn, depthIn, 0, depthIn);
+  /**
+   * ⚠ **A MITRED CORNER PANEL TOO NARROW FOR THE ROW GIVES UP THE ROW, NOT
+   * THE MITRE — the same answer the gable row already gives, and found in the
+   * BROWSER rather than by any test.**
+   *
+   * The app's corner panel is **15½ in** wide (`cornerPanelWidthIn`), so its
+   * core is 14in and a 22½° cut on a 15½ in wall takes 6.482in of that. A girt
+   * row puts a bar 1½ in inside each end of its window and each bar is 3½ in
+   * across, so it needs 10in and the window leaves **7.456in** — and the two
+   * bars then **overlapped EACH OTHER by 2.482in**, on every row, on all
+   * sixteen corner panels of an octagon. Measured in the Review Log, which
+   * named it `girt_1_bar_left x girt_1_bar_right`.
+   *
+   * ⚠ **Every unit test missed it because they all built a 25½ in panel** —
+   * `COLUMN_TOTAL_WIDTH_IN`, which is the COLUMN's width and the one width the
+   * app never gives a corner panel. A 25½ in core has room and shows nothing.
+   *
+   * What a girt braces is the clear span between the panel's two end posts,
+   * and on a mitred corner panel that span is **4½ in** against the 3ft his own
+   * spacing rule is written around. So the row goes rather than the cut, as it
+   * does on a narrow gable tile, and the Review Log names the panels.
+   *
+   * ⚠ **No verticals are passed, deliberately.** The gable hands this
+   * predicate its centre nailer because a gable's nailer CANNOT move — a centre
+   * vertical stacks on the wall stud below it. A corner panel's optional nailer
+   * can and does (`nailerSlideClearOfGirtRowIn`), so asking about it here would
+   * drop a row that only needed the nailer to step aside.
+   */
+  /**
+   * ⚠ **And the nailer's own room is part of the SAME question, so that it is
+   * never dropped without anyone being told.**
+   *
+   * There is a narrow band — a girt window between 10in and 13½ in — where two
+   * bars fit but the 3½ in nailer has nowhere left to butt. Left to themselves
+   * the two rules above would keep the row and quietly lose the nailer, which
+   * is the failure mode this whole fix exists to stop.
+   *
+   * In that band the ROW goes instead, and the measurement says why: the clear
+   * span between the two bars there is **0 to 3½ in**, so the blocking or web
+   * bridging them is a token piece bracing nothing, while the nailer is a real
+   * 1½ in face the plasterer finishes against. The dropped row is reported in
+   * the Review Log; a dropped nailer would not be.
+   */
+  const nailerSlideIfKeptIn = includeNailer
+    ? nailerSlideClearOfGirtRowIn(girtStyle, coreWidthIn, girtSpanIn.startIn, girtSpanIn.endIn)
+    : 0;
+  const girtRowFitsIn =
+    gableGirtRowFitsMitredSpan(coreWidthIn, girtSpanIn.startIn, girtSpanIn.endIn, []) &&
+    nailerSlideIfKeptIn !== null;
 
   const core: PanelMember[] = [
     ...buildSkins(coreWidthIn, depthIn, heightIn),
@@ -511,18 +562,41 @@ export function buildColumnStyleMembers(
     /* ⚠ The post positions, not the mitre — see `buildCornerStuds`' own note
        on the import cycle that closed. */
     ...buildCornerStuds(coreWidthIn, depthIn, heightIn, [extPosts, intPosts]),
-    ...buildGirtRows(
-      COLUMN_GIRT_ROW_COUNT,
-      coreWidthIn,
-      depthIn,
-      studSpanIn,
-      undefined,
-      girtStyle,
-      girtSpanIn.startIn,
-      girtSpanIn.endIn,
-    ),
+    ...(girtRowFitsIn
+      ? buildGirtRows(
+          COLUMN_GIRT_ROW_COUNT,
+          coreWidthIn,
+          depthIn,
+          studSpanIn,
+          undefined,
+          girtStyle,
+          girtSpanIn.startIn,
+          girtSpanIn.endIn,
+        )
+      : []),
   ];
-  if (includeNailer) core.push(buildNailer(coreWidthIn, heightIn));
+  if (includeNailer) {
+    /* ⚠ The nailer SLIDES clear of the girt bars the mitre drove inboard — see
+       `nailerSlideClearOfGirtRowIn`. Zero on every square panel, and `null`
+       when the bay cannot hold a nailer at all, which no panel the app lays
+       out reaches. */
+    /* ⚠ Only a row that was actually BUILT can push the nailer. Asking when
+       the row was dropped would have taken the nailer out too — the window it
+       measures against is the one that could not hold the row in the first
+       place — and that is exactly what it silently did until the browser
+       showed a 15½ in corner panel one member short. */
+    const nailerSlideIn = girtRowFitsIn ? (nailerSlideIfKeptIn ?? 0) : 0;
+    core.push(
+      buildNailer(
+        coreWidthIn,
+        heightIn,
+        nailerSlideIn,
+        nailerSlideIn === 0
+          ? undefined
+          : "held against the inboard face of the girt bar the plan mitre drove inboard, so it needs no measurement",
+      ),
+    );
+  }
 
   /* ⚠ Cut AFTER the shift, not before: the ring and the verticals it is cut
      around both move by the side ply's thickness, and the pass reads real

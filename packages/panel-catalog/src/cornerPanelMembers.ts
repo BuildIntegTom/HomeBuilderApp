@@ -1,7 +1,7 @@
-import type { PanelComponentSchema } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember } from "./componentSchema";
 import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMembers";
 import { LEGACY_GIRT_STYLE, type GirtStyle } from "./panelMemberHelpers";
-import { NO_PANEL_PLAN_MITRE, type PanelPlanMitre } from "./panelPlanMitre";
+import { NO_PANEL_PLAN_MITRE, type PanelPlanMitre, hasPanelPlanMitre } from "./panelPlanMitre";
 
 /**
  * A Corner Panel is built exactly like a Column Panel (Tommy: "corner
@@ -94,4 +94,38 @@ export function buildCornerPanelSchema(
     ],
     disclaimer: "Reference only — not engineered, not for construction.",
   };
+}
+
+/**
+ * ⚠ **Did the 22½° plan mitre cost this corner panel its girt rows?** — the
+ * Review Log's question, answered the way `gableMitreDropsGirtRow` answers it:
+ * by building the panel both ways and counting, rather than restating the girt
+ * rules a second time where the two copies could drift apart.
+ *
+ * ⚠ **On the app's own 15½ in corner panel the answer is YES, on all sixteen
+ * corner panels of an octagon.** A 14in core less a 6.482in cut leaves a
+ * 7.456in girt window and a row needs 10in, so until 2026-11-16 the two bars
+ * overlapped each other by 2.482in. The row is given up rather than the cut —
+ * what a girt braces is the clear span between the end posts, and here that is
+ * 4½ in against the 3ft his own spacing rule is written around.
+ *
+ * It still has to be SAID: a part quietly built with fewer pieces than its
+ * neighbours reads as correct.
+ */
+export function cornerMitreDropsGirtRow(
+  depthIn: number,
+  heightIn: number,
+  includeNailer: boolean,
+  totalWidthIn: number,
+  girtStyle: GirtStyle | undefined,
+  planMitreIn: PanelPlanMitre,
+): boolean {
+  if (!hasPanelPlanMitre(planMitreIn)) return false;
+  const girtCount = (members: readonly PanelMember[]) =>
+    members.filter((m) => m.role === "girt" || m.role === "girt_web").length;
+  const square = buildCornerPanelMembers(depthIn, heightIn, includeNailer, totalWidthIn, girtStyle);
+  if (girtCount(square) === 0) return false;
+  return (
+    girtCount(buildCornerPanelMembers(depthIn, heightIn, includeNailer, totalWidthIn, girtStyle, planMitreIn)) === 0
+  );
 }

@@ -1521,7 +1521,12 @@ function buildBlocking(o: FloorRoofPanelOptions, zIn: number, index: number): Pa
       for (const atXIn of [xIn, xIn + JOIST_2X6_THICKNESS_IN]) {
         const clear = mitre.clearRangeIn(atXIn);
         if (zIn < clear.startIn - 1e-9) return false;
-        if (zIn + PLATE_2X4_THICKNESS_IN > clear.endIn + 1e-9) return false;
+        /* ⚠ `PLATE_2X4_WIDTH_IN`, the block's real extent ALONG the span — it
+           is built `horizontal` at 90deg, so its 3 1/2in face lies that way.
+           Reading the 1 1/2in thickness here left the block 2in into the
+           mitred end lid, on the same periodic bands the square panel showed
+           before its own bound was fixed. */
+        if (zIn + PLATE_2X4_WIDTH_IN > clear.endIn + 1e-9) return false;
       }
       return true;
     })
@@ -1900,19 +1905,95 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
      where the plumb cut has already pulled back by the full bevel. Bounding
      the loop at the panel's nominal length instead would drive the last
      girt straight through the new plate on every 4:12 roof. */
-  const lastStationIn = plumb
+  /**
+   * ⚠ **WHERE THE FAR END'S LID REALLY STARTS — and it is 2 1/4in, not
+   * 1 1/2in.**
+   *
+   * A lid is a plywood skin faced with 2x4s, `SKIN_THICKNESS_IN +
+   * PLATE_2X4_THICKNESS_IN` of it, exactly as `buildJoists` already reads
+   * when it cuts the joists to run BETWEEN the lids. This bound read only the
+   * 2x4 and so admitted a station 3/4in inside the sheet.
+   *
+   * ⚠ **And a station is not a point — the member standing on it has its own
+   * thickness**, which this never allowed for either. Both omissions together
+   * are why the two loops below now ask whether the WHOLE member clears the
+   * lid rather than whether its near face does.
+   *
+   * Found 2026-11-16 by sweeping the panel along its LENGTH (the sweep's own
+   * note had said floor and roof panels were still unswept). The interference
+   * is periodic and narrow, which is why no fixed-size test had ever met it:
+   * an anti-twist girt runs into the lid on a span of 66.5-68.5in and every
+   * 60in after that, blocking on 42.5-46in and every 36in after. **The 300in
+   * span this file pins, and the 192in and 96in runs the app actually lays
+   * out, all fall in the clear** — the same way 96in missed the column
+   * blocking bug this sweep found in November.
+   *
+   * ⚠ Dropping the station is the whole fix, and it cannot open a gap wider
+   * than the spacing rule allows: the previous station is one spacing back,
+   * so the interval left to the lid stays under the 60in or 36in it was
+   * placed at. A framer leaves the last short interval to the lid, which is
+   * the backing there anyway — the same reasoning the column's own row count
+   * carries.
+   */
+  const lidStartsAtIn = plumb
     ? plumb.setBackAtYIn(o.depthIn, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN)
-    : o.lengthIn - PLATE_2X4_THICKNESS_IN;
+    : o.lengthIn - (SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN);
+  const clearsLid = (zIn: number, ownThicknessIn: number) => zIn + ownThicknessIn <= lidStartsAtIn + 1e-9;
+
+  /**
+   * ⚠ **A STATION THAT LANDS ON A STRUCTURAL GIRT IS DROPPED, not shifted.**
+   *
+   * B23 puts a PAIR of structural girts at every wall-bearing end, and the
+   * datum allows for the one at the START — nothing allowed for the pair at
+   * the FAR end, which sits inboard of the lid. Found by the same length
+   * sweep, and only AFTER the lid fix above: the blocking interference was
+   * masking it, which is the ordinary way of these things.
+   *
+   * Dropping is right rather than nudging: a structural girt IS blocking at
+   * that station, and it is carrying a wall besides. Shifting the station
+   * would move a piece his spacing rule places from a datum.
+   *
+   * ⚠ A per-station test rather than a tighter bound, because a girt can sit
+   * anywhere along the span — truncating the run at the first one would drop
+   * every station past it, including ones with nothing in their way.
+   */
+  const girtBandsIn = wallBearingGirtStationsIn(o).map(
+    (s) => [s.zIn, s.zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN] as const,
+  );
+  const clearsGirts = (zIn: number, ownThicknessIn: number) =>
+    girtBandsIn.every(([aIn, bIn]) => zIn + ownThicknessIn <= aIn + 1e-9 || zIn >= bIn - 1e-9);
+  const stationFits = (zIn: number, ownThicknessIn: number) =>
+    clearsLid(zIn, ownThicknessIn) && clearsGirts(zIn, ownThicknessIn);
 
   let index = 0;
-  for (let zIn = datumIn + ANTI_TWIST_SPACING_IN; zIn < lastStationIn; zIn += ANTI_TWIST_SPACING_IN) {
+  const antiTwistThicknessIn = ANTI_TWIST_WEB_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  for (
+    let zIn = datumIn + ANTI_TWIST_SPACING_IN;
+    clearsLid(zIn, antiTwistThicknessIn);
+    zIn += ANTI_TWIST_SPACING_IN
+  ) {
+    /* ⚠ The index advances only when a girt is really placed, so the ids a
+       shop reads stay contiguous rather than carrying a hole where a station
+       was dropped. */
+    if (!stationFits(zIn, antiTwistThicknessIn)) continue;
     members.push(...buildAntiTwistGirt(o, zIn, index));
     index += 1;
   }
 
   if (o.kind === "floor") {
     let blockIndex = 0;
-    for (let zIn = datumIn + BLOCKING_SPACING_IN; zIn < lastStationIn; zIn += BLOCKING_SPACING_IN) {
+    for (
+      /* ⚠ **`PLATE_2X4_WIDTH_IN`, not its thickness.** Blocking is built
+         `horizontal` at 90deg, which `memberBoxSizeIn` maps to
+         `{ xIn: thickness, yIn: length, zIn: WIDTH }` — so the 3 1/2in face is
+         the one lying along the span. Reading the 1 1/2in here left exactly
+         2in of the interference still in place, which is how this was caught:
+         the band narrowed from 42.5-46in to 44.5-46in instead of closing. */
+      let zIn = datumIn + BLOCKING_SPACING_IN;
+      clearsLid(zIn, PLATE_2X4_WIDTH_IN);
+      zIn += BLOCKING_SPACING_IN
+    ) {
+      if (!stationFits(zIn, PLATE_2X4_WIDTH_IN)) continue;
       members.push(...buildBlocking(o, zIn, blockIndex));
       blockIndex += 1;
     }

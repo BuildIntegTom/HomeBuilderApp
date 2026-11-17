@@ -226,6 +226,7 @@ import {
   buildDoorHeaderMembers,
   buildGablePanelMembersIfBuildable,
   gableTopDivesIntoBottom,
+  cornerMitreDropsGirtRow,
   gableMitreDropsGirtRow,
   NO_PANEL_PLAN_MITRE,
   type PanelPlanMitre,
@@ -12641,6 +12642,46 @@ export default function LayoutEditor() {
           "on the 22.50° in plan, which is the one thing the 2026-11-16 decision kept square.",
       });
     }
+
+    /* ⚠ **THE SAME LOSS ONE STORY DOWN, and the frequent one of the two.**
+       A corner panel is 15½ in wide, so its 14in core less the 6.482in cut
+       leaves a 7.456in girt window where a row needs 10in — and until
+       2026-11-16 its two girt bars overlapped EACH OTHER by 2.482in on all
+       sixteen corner panels of an octagon. This entry exists because the row
+       is now dropped instead, and sixteen panels quietly built with fewer
+       pieces than their neighbours would read as correct. */
+    const cornersWithoutGirts = allInstances.filter((inst) => {
+      if (inst.panelType !== "corner" && inst.panelType !== "safety-oct-corner") return false;
+      if (isSquareBalePanelization) return false;
+      return cornerMitreDropsGirtRow(
+        thicknessIn,
+        heightIn,
+        includeNailer,
+        inst.widthIn,
+        girtStyle,
+        cornerPanelPlanMitre(wallPlanMitreByWallId[inst.wallId] ?? NO_PANEL_PLAN_MITRE, inst.slotIndexInWall),
+      );
+    });
+    if (cornersWithoutGirts.length > 0) {
+      const listed = cornersWithoutGirts.slice(0, 8).map((inst) => inst.name);
+      const more = cornersWithoutGirts.length - listed.length;
+      entries.push({
+        label: `${cornersWithoutGirts.length} mitred corner panel${
+          cornersWithoutGirts.length === 1 ? "" : "s"
+        } built with NO girt row`,
+        status: "pending-BI-confirmation",
+        note:
+          `${listed.join(", ")}${more > 0 ? ` and ${more} more` : ""}. The ground story's own version of the ` +
+          "entry above, and the same reasoning. A girt bar runs the full depth of the wall, so the 22.50° corner " +
+          `mitre moves it inboard by the whole ${pullBackIn.toFixed(3)}in pull-back; a row needs 10in of clear ` +
+          "width for its two bars and a mitred corner panel leaves less, so the two bars would occupy the same " +
+          "wood. The row is left out rather than drawn through itself. What a girt braces is the clear span " +
+          "between the panel's two end posts, and on a mitred corner panel that span is a few inches against the " +
+          "3ft these rules are written around. If the row should stay, the alternatives are a narrower bar, a " +
+          "single bar instead of two, or cutting the bar on the 22.50° in plan — which is the one thing the " +
+          "2026-11-16 decision kept square.",
+      });
+    }
     return entries;
   }, [
     allInstances,
@@ -12649,6 +12690,9 @@ export default function LayoutEditor() {
     gableEaveHeightIn,
     includeNailer,
     girtStyle,
+    isSquareBalePanelization,
+    wallPlanMitreByWallId,
+    heightIn,
   ]);
 
   const memberOverlapReviewEntries = useMemo(() => {
