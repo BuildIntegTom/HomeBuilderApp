@@ -460,6 +460,43 @@ transaction, and running it twice changes nothing.
   `state.projectName` alone. The history UI may *label* a row "Renamed to …",
   but must not skip, collapse or trust-diff it on the strength of `kind`.
 
+## Stage 7 (`0014_proposals.sql`) — not applied yet
+
+Everything needed to apply it by hand is in **`Claude outputs/apply-0014-proposals-2026-11-14.md`**:
+a pre-flight, the migration, and three post-flight blocks including a live
+round trip inside a transaction it rolls back. The migration is also there as
+`Claude outputs/0014_proposals.txt`, byte-identical, because a phone will not
+open a `.sql` — and that identity is pinned by a test
+(`apps/web/app/cloud/proposalPasteChunks.test.ts`).
+
+⚠ **One block at a time — the SQL editor shows only the last result**, so a
+pre-flight pasted together with anything else hides the very answer it is for.
+
+### What verifies it, and what each one covers
+
+| run this | covers |
+| --- | --- |
+| `node supabase/tests/stage7_proposals.pglite.mjs` | the migration — all four functions round-tripped on a real Postgres, including that a submitted design can actually be ADOPTED (the trip that found a real defect). |
+| `node supabase/tests/stage7_flight_checks.pglite.mjs` | **the apply document's own SQL**, by executing every block in it — the pre-flight against a database standing at 0013, the rest against one with 0014 applied. |
+
+Both need `npm i --no-save @electric-sql/pglite` once, and neither can reach
+the hosted project: PGlite is in-process and there is no connection string in
+either file.
+
+⚠ **The second harness exists because the first one did not cover the
+deliverable.** The apply document's blocks had never been run, and running
+them found the pre-flight **failing outright on Postgres 17** — which is what
+Supabase runs. `conname like '%folder%'` on `public.projects` matches two
+constraints once NOT NULL became catalogued in `pg_constraint`, so the scalar
+subquery raised *"more than one row returned by a subquery used as an
+expression"* and took the whole pre-flight with it. A check nobody has run is
+worse than no check, because it is read as reassurance.
+
+⚠ The post-flight line that matters most is **who may execute what**: `anon`
+may call `submit_proposal` and `proposal_preview` and **must not** reach
+`proposal_document`, which returns the building. `service_role` gets nothing at
+all — a stolen service key buys no reach into proposals.
+
 ## Applying it — the exact steps
 
 Everything below is **read-only except step 2.**

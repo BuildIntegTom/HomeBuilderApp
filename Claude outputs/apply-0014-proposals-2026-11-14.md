@@ -24,9 +24,11 @@ union all select 'project_versions table',  case when to_regclass('public.projec
 union all select 'companies table',         case when to_regclass('public.companies')        is not null then 'yes' else 'NO' end
 union all select 'is_member_of()',          case when to_regprocedure('public.is_member_of(uuid)') is not null then 'yes' else 'NO' end
 union all select 'proposals folder allowed',
-       case when (select pg_get_constraintdef(oid) from pg_constraint
-                   where conrelid = 'public.projects'::regclass and conname like '%folder%')
-                 like '%proposals%' then 'yes' else 'NO' end
+       case when exists (select 1 from pg_constraint
+                          where conrelid = 'public.projects'::regclass
+                            and contype = 'c'
+                            and pg_get_constraintdef(oid) like '%proposals%')
+                 then 'yes' else 'NO' end
 union all select 'proposals table NOT already here',
        case when to_regclass('public.proposals') is null then 'yes' else 'already exists' end;
 ```

@@ -75,10 +75,11 @@
 -- per-IP counter needs the IP, which the database does not have, and a
 -- per-token one is defeated by minting tokens. The honest options are an edge
 -- rule in front of the route or a counter in the route handler, and both are
--- out of scope here. Deferred DELIBERATELY, on the grounds that nobody does
--- real work in this app before November 2026 and the endpoint is not yet
--- reachable from a published page. **If this ships to real users, that is the
--- thing to build first.**
+-- out of scope here. Deferred DELIBERATELY, on the grounds that nobody uses
+-- this app for real until it is hardened off -- Tommy, 2026-11-16: "no one
+-- plans on using this app until hardened off by february 1", meaning
+-- 1 FEBRUARY 2027. **That is the deadline this owes, and it is the thing to
+-- build first when the hardening window opens in January.**
 --
 -- ---------------------------------------------------------------------------
 -- Re-runnable, like every migration since 0006: `create table if not exists`,
