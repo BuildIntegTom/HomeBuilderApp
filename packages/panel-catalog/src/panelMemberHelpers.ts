@@ -527,8 +527,30 @@ export function buildSkins(widthIn: number, depthIn: number, heightIn: number): 
 }
 
 /** Bottom + top plate 2x4s (ext + int wythe edges), 1.5in clear at each end. */
-export function buildPlates(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
-  const plateLengthIn = widthIn - 2 * PLATE_END_CLEARANCE_IN;
+export function buildPlates(
+  widthIn: number,
+  depthIn: number,
+  heightIn: number,
+  /**
+   * ⚠ **The run this wythe's plates occupy, when it is not the whole
+   * panel** — the inner faces of its own two end posts.
+   *
+   * These plates are edge rails running BETWEEN the posts in the SAME height
+   * band, not sole plates under them. So on a mitred panel a plate cannot
+   * follow the cut out to the mitre face: it would occupy exactly the wood
+   * its own end post stands in. It ends at the post instead, as it does at a
+   * square end — and because the two wythes' posts have slid by different
+   * amounts, the two wythes' plates come out different lengths.
+   *
+   * ⚠ Per WYTHE and not per panel, which is why this is two numbers rather
+   * than a mitre: the caller works out each wythe's own run from
+   * `mitredPostsForBand` and calls this twice. Absent, both wythes get the
+   * familiar `PLATE_END_CLEARANCE_IN` inset and the panel is byte-identical.
+   */
+  runFromXIn: number = PLATE_END_CLEARANCE_IN,
+  runToXIn: number = widthIn - PLATE_END_CLEARANCE_IN,
+): PanelMember[] {
+  const plateLengthIn = Math.max(0, runToXIn - runFromXIn);
   const members: PanelMember[] = [];
   for (const [prefix, zIn] of [
     ["bottom", SKIN_THICKNESS_IN],
@@ -543,7 +565,7 @@ export function buildPlates(widthIn: number, depthIn: number, heightIn: number):
         nominalSize: "2x4",
         actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: plateLengthIn },
         orientation: "flat",
-        position: { xIn: PLATE_END_CLEARANCE_IN, yIn: 0, zIn, rotationDeg: 0 },
+        position: { xIn: runFromXIn, yIn: 0, zIn, rotationDeg: 0 },
         role: "plate",
         qty: 1,
         notes: "exterior-wythe edge",
@@ -556,7 +578,7 @@ export function buildPlates(widthIn: number, depthIn: number, heightIn: number):
         nominalSize: "2x4",
         actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: plateLengthIn },
         orientation: "flat",
-        position: { xIn: PLATE_END_CLEARANCE_IN, yIn: depthIn - PLATE_2X4_WIDTH_IN, zIn, rotationDeg: 0 },
+        position: { xIn: runFromXIn, yIn: depthIn - PLATE_2X4_WIDTH_IN, zIn, rotationDeg: 0 },
         role: "plate",
         qty: 1,
         notes: "interior-wythe edge",
@@ -660,14 +682,39 @@ export function buildCentreNailerStuds(widthIn: number, depthIn: number, heightI
 }
 
 /** All 4 corner studs, spanning the full stud height between the 2 skins. */
-export function buildCornerStuds(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
+export function buildCornerStuds(
+  widthIn: number,
+  depthIn: number,
+  heightIn: number,
+  /**
+   * ⚠ **Where each wythe's two posts stand, when a mitre has moved them** —
+   * `[exterior, interior]`, in the same order this function walks its depth
+   * bands. Absent, they stand at the panel's own two ends, which is every
+   * right-angled building.
+   *
+   * > *"Sheets and plates follow it; the sticks stay square and slide inboard
+   * > until they clear."* — Tommy, 2026-11-16. Measured before that answer: a
+   * post CUT to a 22½° mitre keeps **0.051in of itself at its deep face**,
+   * which is a knife edge and not a part. So it slides — and the two wythes'
+   * posts stop lining up, which is what a mitre means.
+   *
+   * ⚠ **Numbers, not a mitre, and that is deliberate.** This module is
+   * imported by almost everything in the catalogue, and the module that works
+   * those numbers out (`panelPlanMitre`) imports THIS one for its constants.
+   * Taking a `PanelPlanMitre` here closed that loop, and the failure is
+   * nasty: `tsc`, `vitest` and lint all pass while the dev server answers 500
+   * with *"Cannot access 'PLATE_2X4_THICKNESS_IN' before initialization"*.
+   * The caller already has the answer; it hands it over.
+   */
+  postsByBand?: readonly { leftXIn: number; rightXIn: number }[],
+): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
-  const cornerXs = [0, widthIn - PLATE_2X4_THICKNESS_IN];
   const cornerYs = [0, depthIn - PLATE_2X4_WIDTH_IN];
   const members: PanelMember[] = [];
   let cornerIdx = 0;
-  for (const yIn of cornerYs) {
-    for (const xIn of cornerXs) {
+  for (const [bandIndex, yIn] of cornerYs.entries()) {
+    const posts = postsByBand?.[bandIndex] ?? { leftXIn: 0, rightXIn: widthIn - PLATE_2X4_THICKNESS_IN };
+    for (const xIn of [posts.leftXIn, posts.rightXIn]) {
       cornerIdx++;
       members.push({
         memberId: `stud_corner_${cornerIdx}`,

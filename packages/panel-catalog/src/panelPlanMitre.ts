@@ -233,6 +233,41 @@ export function panelPlanMitreFits(
 }
 
 /**
+ * ⚠ **Where an end POST stands once the mitre has moved it, and where the
+ * boards that run between the posts therefore end.**
+ *
+ * One expression, because two panel families need the same answer and a
+ * second copy is how they come to disagree. A post is clear of the cut only
+ * once its DEEPER face is, so the window is the intersection of its band's
+ * two faces and not their average — which is why this takes the band rather
+ * than a single depth.
+ *
+ * `runFromXIn` / `runToXIn` are the post's inner faces: a plate, a blocking
+ * board or anything else spanning between the posts at that depth ends there,
+ * exactly as it does at a square end. At a square end this returns
+ * `0` / `widthIn - postThicknessIn` and the run is the familiar
+ * `PLATE_END_CLEARANCE_IN` inset, so an unmitred panel is byte-identical.
+ */
+export function mitredPostsForBand(
+  mitre: PanelPlanMitre,
+  widthIn: number,
+  depthIn: number,
+  bandFromYIn: number,
+  bandToYIn: number,
+  postThicknessIn: number,
+): { leftXIn: number; rightXIn: number; runFromXIn: number; runToXIn: number } {
+  const clear = panelPlanMitreClearXRangeIn(mitre, widthIn, depthIn, bandFromYIn, bandToYIn);
+  const leftXIn = Math.min(Math.max(0, clear.startIn), widthIn - postThicknessIn);
+  const rightXIn = Math.max(Math.min(widthIn - postThicknessIn, clear.endIn - postThicknessIn), 0);
+  return {
+    leftXIn,
+    rightXIn,
+    runFromXIn: leftXIn + postThicknessIn,
+    runToXIn: rightXIn,
+  };
+}
+
+/**
  * ⚠ **Can a girt row be framed inside this x window, clear of the panel's own
  * verticals?**
  *
@@ -309,6 +344,31 @@ export function panelPlanMitreForSpan(
     startIntIn: atStart ? wallMitre.startIntIn : 0,
     endExtIn: atEnd ? wallMitre.endExtIn : 0,
     endIntIn: atEnd ? wallMitre.endIntIn : 0,
+  };
+}
+
+/**
+ * A CORNER PANEL's share of its wall's mitre, from its slot index alone.
+ *
+ * ⚠ **Only the slot INDEX is needed, and that is worth justifying rather
+ * than looking clever.** A corner-typed slot exists only at a wall END — the
+ * tiler emits exactly two per wall on a mitred shape, `corner` at the start
+ * and `safety-oct-corner` at the finish (measured on the 16ft Octagon:
+ * `corner 25.5 | gap 0.5 | standard 28 | safety-oct-corner 25.5`). So index 0
+ * is the start corner and any other corner slot is the end one, and no caller
+ * has to carry a slot count around to work that out — which matters because
+ * the ground and second stories keep separate slot records.
+ *
+ * ⚠ On a right-angled building `wallMitre` is all zeros, so this returns
+ * "not mitred" whatever the index, and every rectangle stays byte-identical.
+ */
+export function cornerPanelPlanMitre(wallMitre: PanelPlanMitre, slotIndexInWall: number): PanelPlanMitre {
+  const atStart = slotIndexInWall === 0;
+  return {
+    startExtIn: atStart ? wallMitre.startExtIn : 0,
+    startIntIn: atStart ? wallMitre.startIntIn : 0,
+    endExtIn: atStart ? 0 : wallMitre.endExtIn,
+    endIntIn: atStart ? 0 : wallMitre.endIntIn,
   };
 }
 

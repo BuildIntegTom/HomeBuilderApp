@@ -29,6 +29,7 @@ import {
   type PlanMitreRefusal,
   gableGirtRowFitsMitredSpan,
   hasPanelPlanMitre,
+  mitredPostsForBand,
   mitrePanelMembersInPlan,
   panelPlanMitreClearXRangeIn,
   panelPlanMitreFits,
@@ -244,20 +245,15 @@ function buildGableCornerStuds(
     /* This wythe's own clear window: the tighter of its two depth faces,
        because a post 3 1/2in deep is clear of the cut only once its deeper
        face is. */
-    const clearIn = panelPlanMitreClearXRangeIn(
+    const posts = mitredPostsForBand(
       planMitreIn,
       widthIn,
       depthIn,
       yIn,
       yIn + PLATE_2X4_WIDTH_IN,
+      PLATE_2X4_THICKNESS_IN,
     );
-    const cornerXs: [number, number] = [
-      Math.min(Math.max(0, clearIn.startIn), widthIn - PLATE_2X4_THICKNESS_IN),
-      Math.max(
-        Math.min(widthIn - PLATE_2X4_THICKNESS_IN, clearIn.endIn - PLATE_2X4_THICKNESS_IN),
-        0,
-      ),
-    ];
+    const cornerXs: [number, number] = [posts.leftXIn, posts.rightXIn];
     for (let side = 0; side < 2; side++) {
       idx++;
       /* ⚠ No stud where the panel has no height for one. The ids stay with
@@ -973,25 +969,15 @@ export function buildGablePanelMembersReportingMitre(
    * byte-identical to the constants it replaced.
    */
   const plateRunAtDepth = (centreDepthIn: number) => {
-    const clearIn = panelPlanMitreClearXRangeIn(
+    const posts = mitredPostsForBand(
       planMitre,
       widthIn,
       depthIn,
       centreDepthIn - PLATE_2X4_WIDTH_IN / 2,
       centreDepthIn + PLATE_2X4_WIDTH_IN / 2,
+      PLATE_2X4_THICKNESS_IN,
     );
-    const leftPostXIn = Math.min(
-      Math.max(0, clearIn.startIn),
-      widthIn - PLATE_2X4_THICKNESS_IN,
-    );
-    const rightPostXIn = Math.max(
-      Math.min(widthIn - PLATE_2X4_THICKNESS_IN, clearIn.endIn - PLATE_2X4_THICKNESS_IN),
-      0,
-    );
-    return {
-      fromXIn: leftPostXIn + PLATE_END_CLEARANCE_IN,
-      toXIn: rightPostXIn,
-    };
+    return { fromXIn: posts.runFromXIn, toXIn: posts.runToXIn };
   };
   /** The two wythes' plate runs, which differ only on a mitred panel. */
   const extPlateRunIn = plateRunAtDepth(PLATE_2X4_WIDTH_IN / 2);

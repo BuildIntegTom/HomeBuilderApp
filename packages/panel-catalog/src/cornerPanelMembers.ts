@@ -1,6 +1,7 @@
 import type { PanelComponentSchema } from "./componentSchema";
 import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMembers";
 import { LEGACY_GIRT_STYLE, type GirtStyle } from "./panelMemberHelpers";
+import { NO_PANEL_PLAN_MITRE, type PanelPlanMitre } from "./panelPlanMitre";
 
 /**
  * A Corner Panel is built exactly like a Column Panel (Tommy: "corner
@@ -46,8 +47,17 @@ export function buildCornerPanelMembers(
    * this app built before girts had styles — never to the project default,
    * so an un-taught call site draws a stale panel rather than a wrong one. */
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  /**
+   * ⚠ **The 22½° plan mitre, and a CORNER panel is the part that needs it.**
+   *
+   * A Column Panel stands in the middle of a wall and is never mitred; a
+   * Corner Panel sits on the building's corner, which on anything but a right
+   * angle means its end face is raked. Forwarded rather than re-derived — see
+   * `buildColumnStyleMembers`' own parameter for the measurement.
+   */
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
 ) {
-  return buildColumnStyleMembers(totalWidthIn, depthIn, heightIn, includeNailer, girtStyle);
+  return buildColumnStyleMembers(totalWidthIn, depthIn, heightIn, includeNailer, girtStyle, planMitreIn);
 }
 
 export function buildCornerPanelSchema(

@@ -1,4 +1,14 @@
-import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./componentSchema";
+import {
+  NO_PANEL_PLAN_MITRE,
+  type PanelPlanMitre,
+  mitredPostsForBand,
+  mitrePanelMembersInPlan,
+  panelPlanMitreAngleDeg,
+  panelPlanMitreClearXRangeIn,
+  panelPlanMitreCutsEnd,
+  panelPlanMitreXRangeIn,
+} from "./panelPlanMitre";
 import { ROOF_CATCHER_BEAM_DEPTH_IN } from "./roofCatcherBeamMembers";
 import {
   LUMBER_SPECIES_GRADE,
@@ -147,8 +157,24 @@ export function computeColumnBlockingRowCount(studSpanIn: number): number {
  * exactly on the studs' own inner faces ("same distance between the studs
  * horizontally") — flagged here so an independent future change to either
  * constant doesn't silently break that framing unnoticed. */
-function buildColumnBlocking(depthIn: number, studSpanIn: number, coreWidthIn: number = COLUMN_CORE_WIDTH_IN): PanelMember[] {
-  const lengthIn = coreWidthIn - 2 * PLATE_END_CLEARANCE_IN;
+function buildColumnBlocking(
+  depthIn: number,
+  studSpanIn: number,
+  coreWidthIn: number = COLUMN_CORE_WIDTH_IN,
+  /**
+   * ⚠ **Each FACE's own run, for a mitred panel** — the inner faces of the
+   * two end posts at that face's depth.
+   *
+   * Blocking is *"between the corner studs … matching the plate runners' own
+   * length"*, so it answers to the mitre the same way a plate does and for
+   * the same reason: it shares the posts' height band, so following the cut
+   * out to the mitre face would put it in the post's own wood. The exterior
+   * face barely moves (the cut eats 0.62in at 1½in deep) and the interior
+   * one moves by nearly the whole pull-back, so the two faces' boards come
+   * out different lengths — which is new for this part.
+   */
+  runByFace?: { exterior: { fromXIn: number; toXIn: number }; interior: { fromXIn: number; toXIn: number } },
+): PanelMember[] {
   const rowCount = computeColumnBlockingRowCount(studSpanIn);
   const members: PanelMember[] = [];
   for (let row = 1; row <= rowCount; row++) {
@@ -157,6 +183,11 @@ function buildColumnBlocking(depthIn: number, studSpanIn: number, coreWidthIn: n
       ["exterior", 0],
       ["interior", depthIn - PLATE_2X4_THICKNESS_IN],
     ] as const) {
+      const run = runByFace?.[face] ?? {
+        fromXIn: PLATE_END_CLEARANCE_IN,
+        toXIn: coreWidthIn - PLATE_END_CLEARANCE_IN,
+      };
+      const lengthIn = Math.max(0, run.toXIn - run.fromXIn);
       members.push({
         memberId: `blocking_${row}_${face}`,
         material: "dimensional_lumber",
@@ -165,7 +196,7 @@ function buildColumnBlocking(depthIn: number, studSpanIn: number, coreWidthIn: n
         nominalSize: "2x4",
         actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
         orientation: "horizontal",
-        position: { xIn: PLATE_END_CLEARANCE_IN, yIn, zIn, rotationDeg: 0 },
+        position: { xIn: run.fromXIn, yIn, zIn, rotationDeg: 0 },
         role: "blocking",
         qty: 1,
         notes: `Blocking row ${row} of ${rowCount}, ${face} face — between the corner studs, on edge, matching the plate runners' own length.`,
@@ -182,25 +213,106 @@ function buildColumnSidePly(
   depthIn: number,
   heightIn: number,
   coreWidthIn: number = COLUMN_CORE_WIDTH_IN,
+  /** The panel's mitre, in FULL-PANEL coordinates — this sheet is the panel's
+   *  own end face, so it is the one member that is not built in core space. */
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
+  totalWidthIn: number = coreWidthIn + 2 * COLUMN_SIDE_PLY_THICKNESS_IN,
 ): PanelMember[] {
-  return (["left", "right"] as const).map((side) => ({
-    memberId: `side_ply_${side}`,
-    material: "plywood",
-    speciesGrade: null,
-    plySpec: COLUMN_SIDE_PLY_SPEC,
-    nominalSize: null,
-    actualDimsIn: { thicknessIn: COLUMN_SIDE_PLY_THICKNESS_IN, widthIn: depthIn, lengthIn: heightIn },
-    orientation: "vertical",
-    position: {
-      xIn: side === "left" ? 0 : coreWidthIn + COLUMN_SIDE_PLY_THICKNESS_IN,
-      yIn: 0,
-      zIn: 0,
-      rotationDeg: 0,
-    },
-    role: "skin",
-    qty: 1,
-    notes: `${side} face, full height x panel thickness.`,
-  }));
+  return (["left", "right"] as const).map((side) => {
+    const squareXIn = side === "left" ? 0 : coreWidthIn + COLUMN_SIDE_PLY_THICKNESS_IN;
+    const atEnd = side === "left" ? "start" : "end";
+    const cut = panelPlanMitreCutsEnd(planMitreIn, atEnd);
+
+    /**
+     * ⚠ **THIS SHEET IS THE PANEL'S END FACE, so at a mitred corner it IS
+     * the mitre — it turns onto the cut rather than being cut by it.**
+     *
+     * Everything else in this panel runs along the wall and meets the mitre
+     * edge-on. The side ply does not: it is the face two panels press
+     * together at a corner, so the 22½° is the plane it lies in. Clipping it
+     * square would have left **nothing at all at the interior face** —
+     * measured, a 3/4in sheet at x 0 to 0.75 against a cut that starts at
+     * 6.42in there.
+     *
+     * ⚠ **So it is a different CUT SIZE, which is the part a shop notices**:
+     * lying on the rake it spans `depth / cos(rake)` across — **16.78in on a
+     * 15½in wall at an octagon corner**, not 15½. Its thickness is unchanged,
+     * because that is measured perpendicular to its own faces either way.
+     *
+     * In plan it becomes a parallelogram: at each depth it runs from the cut
+     * to `thickness / cos(rake)` inboard of it. Two quads at two depths, which
+     * is `trapezoidFarCornersIn` — the same mechanism the dual bevel uses,
+     * on the other axis.
+     */
+    if (!cut) {
+      return {
+        memberId: `side_ply_${side}`,
+        material: "plywood" as const,
+        speciesGrade: null,
+        plySpec: COLUMN_SIDE_PLY_SPEC,
+        nominalSize: null,
+        actualDimsIn: { thicknessIn: COLUMN_SIDE_PLY_THICKNESS_IN, widthIn: depthIn, lengthIn: heightIn },
+        orientation: "vertical" as const,
+        position: { xIn: squareXIn, yIn: 0, zIn: 0, rotationDeg: 0 },
+        role: "skin" as const,
+        qty: 1,
+        notes: `${side} face, full height x panel thickness.`,
+      };
+    }
+
+    const rakeDeg = panelPlanMitreAngleDeg(planMitreIn, depthIn, atEnd);
+    const cosRake = Math.cos((rakeDeg * Math.PI) / 180);
+    /* The sheet's own width measured ALONG the face it now lies in. */
+    const faceWidthIn = depthIn / cosRake;
+    /* A perpendicular thickness becomes this much of an x offset on a raked
+       face — the same `1 / cos` the gable's plumb cuts use. */
+    const alongXIn = COLUMN_SIDE_PLY_THICKNESS_IN / cosRake;
+    const faceAt = (atDepthIn: number) => {
+      const span = panelPlanMitreXRangeIn(planMitreIn, totalWidthIn, depthIn, atDepthIn);
+      return side === "left"
+        ? { fromXIn: span.startIn, toXIn: span.startIn + alongXIn }
+        : { fromXIn: span.endIn - alongXIn, toXIn: span.endIn };
+    };
+    const quadAt = (atDepthIn: number) => {
+      const { fromXIn, toXIn } = faceAt(atDepthIn);
+      return [
+        { xIn: fromXIn, zIn: 0 },
+        { xIn: toXIn, zIn: 0 },
+        { xIn: toXIn, zIn: heightIn },
+        { xIn: fromXIn, zIn: heightIn },
+      ] as [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+    };
+    const near = quadAt(0);
+    const far = quadAt(depthIn);
+    return {
+      memberId: `side_ply_${side}`,
+      material: "plywood" as const,
+      speciesGrade: null,
+      plySpec: COLUMN_SIDE_PLY_SPEC,
+      nominalSize: null,
+      actualDimsIn: {
+        thicknessIn: COLUMN_SIDE_PLY_THICKNESS_IN,
+        widthIn: faceWidthIn,
+        lengthIn: heightIn,
+      },
+      orientation: "vertical" as const,
+      position: {
+        xIn: Math.min(near[0]!.xIn, far[0]!.xIn),
+        yIn: depthIn / 2,
+        zIn: 0,
+        rotationDeg: 0,
+        trapezoidCornersIn: near,
+        trapezoidFarCornersIn: far,
+        trapezoidDepthIn: depthIn,
+      },
+      role: "skin" as const,
+      qty: 1,
+      notes:
+        `${side} face, full height — this is the panel's MITRED end, so the sheet lies in the ` +
+        `${rakeDeg.toFixed(2)}deg face rather than square to the wall. It measures ` +
+        `${faceWidthIn.toFixed(2)}in across that face, not the wall's ${depthIn.toFixed(2)}in depth.`,
+    };
+  });
 }
 
 /**
@@ -271,6 +383,31 @@ export function buildColumnStyleMembers(
    * this app built before girts had styles — never to the project default,
    * so an un-taught call site draws a stale panel rather than a wrong one. */
   girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+  /**
+   * ⚠ **THE 22½° PLAN MITRE — this panel's ends cut on an angle in PLAN, so
+   * two walls meeting at an octagon corner stop sharing wood.**
+   *
+   * > *"The octagon Gable pieces need to be cut like octagon corners."* —
+   * > Tommy, 2026-11-16. The gable row was cut that day; **this is the story
+   * > below it, which had the identical defect.**
+   *
+   * Measured on the 16ft Octagon: every corner rakes **22.50deg**, a 15½in
+   * wall pulls its short face back **6.4203in**, and until it does the two
+   * walls' panel runs share **99.51 in² of plan area at each of the eight
+   * corners** — `t² x tan(22.5deg)`, the two triangles nobody was cutting,
+   * over the full height of the wall. Every octagon wall tiles
+   * `corner 25.5 | gap 0.5 | standard 28 | safety-oct-corner 25.5` starting
+   * at x = 0, so both end panels sit on the corner point.
+   *
+   * ⚠ **The 2D plan has drawn this trapezoid since 2026-09** —
+   * `computeSlotRects` recedes a corner slot's interior edge by
+   * `thickness x tan(turn/2)` — and the MEMBERS never followed. The drawing
+   * was right and the part was not.
+   *
+   * ⚠ **Defaults to nothing cut back**, which is byte-identical to every
+   * column and corner panel this app has ever built.
+   */
+  planMitreIn: PanelPlanMitre = NO_PANEL_PLAN_MITRE,
 ): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const coreWidthIn = totalWidthIn - 2 * COLUMN_SIDE_PLY_THICKNESS_IN;
@@ -280,25 +417,144 @@ export function buildColumnStyleMembers(
   // below 24in) — and it returns the faces that DO fit rather than lumber of
   // negative length, which would reach the cut list as a real part.
   if (coreWidthIn <= 0) return buildColumnSidePly(depthIn, heightIn, Math.max(0, coreWidthIn));
+
+  /**
+   * ⚠ **The mitre in CORE coordinates.** The core is built at `coreWidthIn`
+   * and then shifted right by one side-ply thickness, so a pull-back measured
+   * from the finished panel's end is that much smaller measured from the
+   * core's. Both faces of a cut end move by the same amount, which is what
+   * keeps the cut a straight line through the depth.
+   *
+   * ⚠ **Per END, via `panelPlanMitreCutsEnd`.** Subtracting blindly would
+   * turn an uncut end's honest `0` into `-0.75`, and `hasPanelPlanMitre` would
+   * then call a square panel mitred and rebuild parts that must stay
+   * byte-identical.
+   */
+  /**
+   * ⚠ **How much x the side ply eats at each end — and on a MITRED end that
+   * is NOT its 3/4in thickness.**
+   *
+   * Lying square to the wall a 3/4in sheet occupies 3/4in of x. Lying in a
+   * 22½° face it occupies `3/4 / cos(22½°)` = **0.812in**, because x is no
+   * longer perpendicular to it. Getting this wrong by that 0.062in is not
+   * cosmetic: it put the end post, both full-depth skins and every exterior
+   * blocking board INTO the side ply, which the overlap audit reported and
+   * the picture hid.
+   */
+  const sidePlyAlongXIn = (atEnd: "start" | "end") => {
+    if (!panelPlanMitreCutsEnd(planMitreIn, atEnd)) return COLUMN_SIDE_PLY_THICKNESS_IN;
+    const rakeDeg = panelPlanMitreAngleDeg(planMitreIn, depthIn, atEnd);
+    return COLUMN_SIDE_PLY_THICKNESS_IN / Math.cos((rakeDeg * Math.PI) / 180);
+  };
+  const alongStartIn = sidePlyAlongXIn("start");
+  const alongEndIn = sidePlyAlongXIn("end");
+
+  /**
+   * ⚠ **The window everything INSIDE the side ply has to live in**, in the
+   * finished panel's own coordinates: the mitre pushed inboard by whatever
+   * the sheet at that end occupies. Not the mitre line itself — the sheet is
+   * already standing on that.
+   */
+  const insetMitre: PanelPlanMitre = {
+    startExtIn: planMitreIn.startExtIn + alongStartIn,
+    startIntIn: planMitreIn.startIntIn + alongStartIn,
+    endExtIn: planMitreIn.endExtIn + alongEndIn,
+    endIntIn: planMitreIn.endIntIn + alongEndIn,
+  };
+
+  /**
+   * ⚠ **The same window in CORE coordinates.** The core is built at
+   * `coreWidthIn` and shifted right by one side-ply thickness, so every
+   * pull-back measured from the finished panel's end is that much smaller
+   * measured from the core's. Subtracting the same constant from all four
+   * keeps the cut a straight line through the depth, and on a square panel it
+   * returns exactly zero — which is what keeps those byte-identical.
+   */
+  const coreMitre: PanelPlanMitre = {
+    startExtIn: insetMitre.startExtIn - COLUMN_SIDE_PLY_THICKNESS_IN,
+    startIntIn: insetMitre.startIntIn - COLUMN_SIDE_PLY_THICKNESS_IN,
+    endExtIn: insetMitre.endExtIn - COLUMN_SIDE_PLY_THICKNESS_IN,
+    endIntIn: insetMitre.endIntIn - COLUMN_SIDE_PLY_THICKNESS_IN,
+  };
+
+  /* Each wythe's own posts, and therefore where the boards that run between
+     them end. One expression for both, so the plates, the blocking and the
+     posts cannot disagree about where a post stands. */
+  const extPosts = mitredPostsForBand(coreMitre, coreWidthIn, depthIn, 0, PLATE_2X4_WIDTH_IN, PLATE_2X4_THICKNESS_IN);
+  const intPosts = mitredPostsForBand(
+    coreMitre,
+    coreWidthIn,
+    depthIn,
+    depthIn - PLATE_2X4_WIDTH_IN,
+    depthIn,
+    PLATE_2X4_THICKNESS_IN,
+  );
+  /* ⚠ Blocking runs BETWEEN THE CORNER STUDS — its own note says so — so it
+     takes its wythe's POST run and not merely a window clear of the cut. The
+     first version read blocking's own shallower 1½in band, which let it start
+     0.70in inside the exterior post it is supposed to butt. */
+  /* A girt bar and a ring rail run the FULL depth, so the only x at which
+     they clear the cut is the one the deepest face allows. */
+  const girtSpanIn = panelPlanMitreClearXRangeIn(coreMitre, coreWidthIn, depthIn, 0, depthIn);
+
   const core: PanelMember[] = [
     ...buildSkins(coreWidthIn, depthIn, heightIn),
-    ...buildPlates(coreWidthIn, depthIn, heightIn),
-    ...buildCornerStuds(coreWidthIn, depthIn, heightIn),
-    ...buildGirtRows(COLUMN_GIRT_ROW_COUNT, coreWidthIn, depthIn, studSpanIn, undefined, girtStyle),
+    /* ⚠ Two calls, because the two wythes' plates are no longer the same
+       board — see `buildPlates`' own run parameters. `buildPlates` emits both
+       wythes, so each call's other wythe is discarded by id. */
+    ...buildPlates(coreWidthIn, depthIn, heightIn, extPosts.runFromXIn, extPosts.runToXIn).filter((m) =>
+      m.memberId.endsWith("_ext"),
+    ),
+    ...buildPlates(coreWidthIn, depthIn, heightIn, intPosts.runFromXIn, intPosts.runToXIn).filter((m) =>
+      m.memberId.endsWith("_int"),
+    ),
+    /* ⚠ The post positions, not the mitre — see `buildCornerStuds`' own note
+       on the import cycle that closed. */
+    ...buildCornerStuds(coreWidthIn, depthIn, heightIn, [extPosts, intPosts]),
+    ...buildGirtRows(
+      COLUMN_GIRT_ROW_COUNT,
+      coreWidthIn,
+      depthIn,
+      studSpanIn,
+      undefined,
+      girtStyle,
+      girtSpanIn.startIn,
+      girtSpanIn.endIn,
+    ),
   ];
   if (includeNailer) core.push(buildNailer(coreWidthIn, heightIn));
 
   /* ⚠ Cut AFTER the shift, not before: the ring and the verticals it is cut
      around both move by the side ply's thickness, and the pass reads real
      positions. See `cutRingGirtsAroundVerticals`. */
-  return cutRingGirtsAroundVerticals(
+  const inside = cutRingGirtsAroundVerticals(
     [
       ...shiftMembersX(core, COLUMN_SIDE_PLY_THICKNESS_IN),
-      ...shiftMembersX(buildColumnBlocking(depthIn, studSpanIn, coreWidthIn), COLUMN_SIDE_PLY_THICKNESS_IN),
-      ...buildColumnSidePly(depthIn, heightIn, coreWidthIn),
+      ...shiftMembersX(
+        buildColumnBlocking(depthIn, studSpanIn, coreWidthIn, {
+          exterior: { fromXIn: extPosts.runFromXIn, toXIn: extPosts.runToXIn },
+          interior: { fromXIn: intPosts.runFromXIn, toXIn: intPosts.runToXIn },
+        }),
+        COLUMN_SIDE_PLY_THICKNESS_IN,
+      ),
     ],
     depthIn,
   );
+  /**
+   * ⚠ **The cut pass runs on everything INSIDE the side ply, against the
+   * INSET window — and the side ply is added afterwards.**
+   *
+   * Two reasons it is split that way. The sheet is already standing in the
+   * cut, so passing it through a function whose job is to cut things back to
+   * the cut would clip it to nothing. And everything else has to stop at that
+   * sheet's inner face rather than at the mitre line, or it ends up inside
+   * the sheet — which is exactly what the two full-depth plywood skins did,
+   * since they are the only members here that genuinely run the whole width.
+   */
+  return [
+    ...mitrePanelMembersInPlan(inside, totalWidthIn, depthIn, insetMitre).members,
+    ...buildColumnSidePly(depthIn, heightIn, coreWidthIn, planMitreIn, totalWidthIn),
+  ];
 }
 
 /**
