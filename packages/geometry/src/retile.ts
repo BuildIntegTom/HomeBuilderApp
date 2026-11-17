@@ -1,4 +1,4 @@
-import { computeGapEnd, computeSafetyEnd } from "./gapPlacement";
+import { computeGapEnd, computeSafetyEnd, gapEndFarthestFrom } from "./gapPlacement";
 import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
 import { reconcileBracedPlacement } from "./bracedPlacement";
 import {
@@ -475,14 +475,58 @@ export function wallRunFor(wall: Wall, ownership: CornerOwnership, runStop?: Wal
  * and a window spawned into one would be a window between two people's
  * living rooms. Openings on an interior wall are something a person asks for.
  *
+ * ⚠ **IT GETS SAFETY GAPS, under the same rule and the same threshold as every
+ * other wall — his answer, 2026-11-17:**
+ *
+ * > *"Center wall should get a safety gap, not necessarily both ends but a
+ * > similar amount to the threshold we have for all other walls."*
+ *
+ * Which is what `tileWall` already does for it, measured rather than assumed:
+ * one gap one panel in from the far end, another at the nearest joint to 24ft
+ * from that (`applySafetyGapSpacing`), and every one of them exactly the width
+ * `safetyGapWidthForRunIn` gives the run — ½in at or under 144in, ¾in over. So
+ * **no gap at both ends**, and nothing here forces a count: the count is the
+ * run's own, the same way an outline wall's is. Swept and pinned in
+ * `multiplex.test.ts`.
+ *
+ * ⚠ **The earlier note that a cornerless run gets TWO gaps where the same run
+ * with corners gets ONE was wrong**, and the correction is worth keeping
+ * because it is what made this look like an open building question. At 401in —
+ * his 36ft centre wall — both get two. The two runs do diverge, but only in
+ * two narrow measured bands (48–55in and 385–400in), and for a reason that is
+ * the gap rule working as written rather than a cornerless defect: a further
+ * gap lands on **a joint the run already has**, and taking 15½in of corner out
+ * of each end moves every joint. See the sweep.
+ *
+ * ⚠ **WHICH end the first gap goes to is his site-wide rule too**, not a
+ * constant. It is the end FARTHER from the least-accessible corner
+ * (`gapEndFarthestFrom`) — you work toward the corner you cannot reach and
+ * take up the error at the end you can. This read `"end"` unconditionally
+ * until 2026-11-17, which happened to be the right answer on his 36×36 and
+ * would have stopped being one the moment he moved the marker to the far side
+ * of the building.
+ *
+ * The least-accessible rule is used here even on a MITERED shape, where the
+ * outline walls use `computeSafetyEnd` instead. That is deliberate:
+ * `computeSafetyEnd` means "the left corner seen by someone standing outside
+ * the shell", and an interior wall has no outside to stand on.
+ *
  * ⚠ **One helper, called from both slot-building loops.** `retile` and
  * `retilePreservingOpeningsWithRunStopMemory` each walk the outline
  * separately; two copies of this would be two chances for a Multiplex to
  * panelize differently depending on which path rebuilt it.
  */
-export function tileInteriorWalls(fp: Footprint, standardWidthIn: number): Record<string, PanelSlot[]> {
+export function tileInteriorWalls(
+  fp: Footprint,
+  standardWidthIn: number,
+  leastAccessible: CornerId,
+): Record<string, PanelSlot[]> {
   const out: Record<string, PanelSlot[]> = {};
   const mitered = isMiteredShape(fp);
+  /* Absent only if the marker names a corner this footprint does not have,
+     which no caller should produce — the gap then falls back to `end`, the
+     constant this used to be, rather than throwing on a drawing. */
+  const leastAccessiblePoint = fp.corners.find((c) => c.id === leastAccessible)?.point;
   for (const wall of fp.interiorWalls ?? []) {
     out[wall.id] = tileWall(
       wallFabricationLengthIn(wall),
@@ -491,7 +535,7 @@ export function tileInteriorWalls(fp: Footprint, standardWidthIn: number): Recor
          rather than 0 so a future end-with-a-corner cannot silently produce a
          zero-width corner slot. */
       standardWidthIn,
-      "end",
+      leastAccessiblePoint ? gapEndFarthestFrom(wall.start, wall.end, leastAccessiblePoint) : "end",
       false,
       false,
       !mitered,
@@ -524,7 +568,7 @@ export function retile(
 ): Record<string, PanelSlot[]> {
   /* ⚠ The walls that are not on the outline, tiled by the one helper both
      of these builders share — see `tileInteriorWalls`. */
-  const next: Record<string, PanelSlot[]> = tileInteriorWalls(fp, standardWidthIn);
+  const next: Record<string, PanelSlot[]> = tileInteriorWalls(fp, standardWidthIn, leastAccessible);
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);
   const randomFn = openingSeed?.randomFn ?? Math.random;
@@ -845,7 +889,7 @@ export function retilePreservingOpeningsWithRunStopMemory(
 ): RetileWithRunStopMemoryResult {
   /* ⚠ Same helper as `retile`'s — see its note on why this is not two
      copies. */
-  const next: Record<string, PanelSlot[]> = tileInteriorWalls(fp, standardWidthIn);
+  const next: Record<string, PanelSlot[]> = tileInteriorWalls(fp, standardWidthIn, leastAccessible);
   const unbuiltOut: Record<string, RunStopOpeningMemory> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);

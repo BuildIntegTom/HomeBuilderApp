@@ -98,7 +98,93 @@ export interface SimpleRoofOptions {
  * first and it is the structural one, and `orientationNote` says so rather
  * than letting a south-facing roof be quietly assumed.
  */
+export interface RidgeBearingWall {
+  /** The INTERIOR wall under the ridge. Never an outline wall. */
+  wallId: string;
+  /** The axis the ridge runs along, which is this wall's own axis: a wall of
+   *  constant x runs north-south, so the ridge runs along `"y"`. */
+  axis: "x" | "y";
+}
+
+/** How far off the midline, and off axis, a wall may be and still be taken as
+ *  carrying the ridge: an eighth of an inch, in feet. The whole app works on
+ *  the eighth grid (`quantizeFootprint`), so anything further out is a wall
+ *  somebody put somewhere else on purpose. */
+const RIDGE_BEARING_TOLERANCE_FT = 0.125 / 12;
+
+/**
+ * ⚠ **THE WALL THAT IS THE RIDGE BEAM — B34 stride 3, 2026-11-17.**
+ *
+ * > *"A 36x36' square with a straw wall running down the center and acting as
+ * > the ridge beam. All the loads of everything transfer down the center row
+ * > of diving wall panels."* — Tommy, 2026-11-16
+ *
+ * A peaked roof puts both planes' high ends in mid-air and a ridge beam is
+ * what catches them (`roofNeedsRidgeBeam`). When a WALL runs under the ridge
+ * there is nothing for a beam to do — the panel ends land on the wall, and
+ * the load goes straight down it to the foundation. That is the same argument
+ * his own shed answer makes from the other direction: *"No catcher beam for
+ * the shed roof, all the load goes down the walls."*
+ *
+ * **This is a third roof-bearing case beside shed and peak**, and it is the
+ * only one of the three where a peak has no beam.
+ *
+ * ## ⚠ Two conditions, and the second is the one that does real work
+ *
+ * 1. **Axis-aligned.** A diagonal wall crosses the ridge rather than running
+ *    under it.
+ * 2. **Centred on the building's own midline across that axis.**
+ *    `simpleRoofPlanes` puts the ridge at `midX`/`midY` and nowhere else, so
+ *    an off-centre wall would leave the ridge hanging beside it — the planes
+ *    would be drawn at the midline while the load path was somewhere else,
+ *    which is worse than having no wall there at all. An off-centre dividing
+ *    wall needs an ASYMMETRIC peak (two planes of different runs), which
+ *    nothing models, so this returns null and the caller says so out loud.
+ *
+ * ⚠ **More than one candidate returns null too.** A roof has one ridge; it
+ * cannot sit on two walls, and picking one of them silently would put a
+ * ridge over one dividing wall and a roof plane through the other.
+ *
+ * ⚠ **Only `interiorWalls` are candidates.** An outline wall is an eave or a
+ * gable end by construction — it is on the perimeter, so it can never be on
+ * the midline of a building with any depth at all.
+ */
+export function ridgeBearingWallFor(footprint: Footprint): RidgeBearingWall | null {
+  const interior = footprint.interiorWalls ?? [];
+  if (interior.length === 0) return null;
+  const { minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+
+  const found: RidgeBearingWall[] = [];
+  for (const wall of interior) {
+    const dx = Math.abs(wall.end.x - wall.start.x);
+    const dy = Math.abs(wall.end.y - wall.start.y);
+    /* Constant x and real length in y: runs north-south, so the ridge runs
+       along y and has to be at this wall's x. */
+    if (dx <= RIDGE_BEARING_TOLERANCE_FT && dy > RIDGE_BEARING_TOLERANCE_FT) {
+      if (Math.abs(wall.start.x - midX) <= RIDGE_BEARING_TOLERANCE_FT) found.push({ wallId: wall.id, axis: "y" });
+    } else if (dy <= RIDGE_BEARING_TOLERANCE_FT && dx > RIDGE_BEARING_TOLERANCE_FT) {
+      if (Math.abs(wall.start.y - midY) <= RIDGE_BEARING_TOLERANCE_FT) found.push({ wallId: wall.id, axis: "x" });
+    }
+  }
+  return found.length === 1 ? found[0]! : null;
+}
+
 export function roofRidgeAxis(footprint: Footprint): "x" | "y" {
+  /* ⚠ **A WALL UNDER THE RIDGE WINS OVER THE SHORT-WALL RULE**, and on his
+     36x36 that is the whole of stride 3. The rule below ties a square to X,
+     so the ridge ran EAST-WEST — square across a centre wall running
+     north-south, which carried nothing at all and had a roof plane passing
+     through it at 90 degrees. Measured before this changed: the ridge came
+     out at `y = 18`, from `(0,18)` to `(36,18)`.
+
+     His answer settles the precedence rather than leaving it to the
+     dimensions: the wall runs N-S *"and acting as the ridge beam"*, so the
+     ridge follows the wall. A roof has to land on something, and the
+     south-facing preference is a preference. See `ridgeBearingWallFor`. */
+  const carried = ridgeBearingWallFor(footprint);
+  if (carried) return carried.axis;
   const { minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
   /* Ridge along the longer dimension, so the gables land on the short walls.
      A square ties to X, which is east-west. */
@@ -167,11 +253,19 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
   const gableWallIds = gableEndWallIdsFor(footprint);
 
   const facesSouth = ridgeAxis === "x";
+  /* ⚠ The note has to say WHICH rule took the ridge off south, because the
+     two reasons have different fixes: a building that is simply tall can be
+     turned, and a building with a wall under its ridge cannot. */
+  const ridgeWall = ridgeBearingWallFor(footprint);
   const orientationNote = facesSouth
     ? null
-    : `This building is longer north-to-south, so its short walls are the east and west ones and the ridge ` +
-      `runs north-south. The roof therefore faces EAST and WEST rather than south. Gable ends follow the short ` +
-      `walls, which is the rule that wins here.`;
+    : ridgeWall
+      ? `The ridge runs along interior wall ${ridgeWall.wallId}, which is what carries it, so it runs ` +
+        `north-south and the roof faces EAST and WEST rather than south. A wall under the ridge wins over the ` +
+        `short-wall rule and over the south-facing preference: a roof has to land on something.`
+      : `This building is longer north-to-south, so its short walls are the east and west ones and the ridge ` +
+        `runs north-south. The roof therefore faces EAST and WEST rather than south. Gable ends follow the short ` +
+        `walls, which is the rule that wins here.`;
 
   const at = (x: number, y: number): Point => ({ x, y });
   const midX = (minX + maxX) / 2;
@@ -277,8 +371,29 @@ export function defaultTransparentRoofFacing(planes: readonly { facing: CompassD
  * and the columns are what wants a continuous load path to the foundation
  * and extra girts in the floor beneath. No beam means none of that follows.
  */
-export function roofNeedsRidgeBeam(form: RoofForm): boolean {
-  return form === "peaked";
+/**
+ * ⚠ **AND A PEAK CARRIED BY A WALL HAS NO BEAM EITHER — B34 stride 3.**
+ *
+ * > *"All the loads of everything transfer down the center row of diving wall
+ * > panels."* — Tommy, 2026-11-16
+ *
+ * The argument is his own shed argument: a beam exists to catch panel ends
+ * that are over nothing. A wall under the ridge already catches them, so a
+ * beam there would be a **second load path and a part nobody builds** — it
+ * would price, weigh, appear on a shop sheet and be delivered to a site with
+ * no gap for it, and the ridge posts under it would stand inside a wall that
+ * is already continuous to the foundation.
+ *
+ * ⚠ **`footprint` is REQUIRED rather than optional on purpose.** This
+ * function had no production caller at all until stride 3 — only its own
+ * tests — while `ridgeBeamForPlan` in page.tsx kept its own `form ===
+ * "peaked"` test beside it. An optional argument would have let that call
+ * site go on silently getting the old answer, which is the shape of the bug
+ * this is here to prevent. It is now the one gate, and it is read.
+ */
+export function roofNeedsRidgeBeam(form: RoofForm, footprint: Footprint): boolean {
+  if (form !== "peaked") return false;
+  return ridgeBearingWallFor(footprint) === null;
 }
 
 /**

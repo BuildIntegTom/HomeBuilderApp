@@ -9,7 +9,9 @@ import {
   buildOctagonFootprint,
   allWallPanelJoints,
   isCourtyardFootprint,
+  ridgeBearingWallFor,
   ringRoofGableBlockReason,
+  roofNeedsRidgeBeam,
   roofSpanFt,
   shedTallWallId,
   wallRoofTopsFor,
@@ -387,6 +389,8 @@ import {
   STRUCTURAL_COLUMN_WIDTH_IN,
   ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   decideRoofForm,
+  MAX_PANEL_LENGTH_IN,
+  roofPanelLengthForGroundRunIn,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
   overlappingMemberPairs,
   type RoofCatcherBeamShape,
@@ -8404,8 +8408,20 @@ export default function LayoutEditor() {
      rather than inside the canvas so 2D and 3D cannot disagree about where
      the beam is — both read the same `simpleRoofPlanes` + `ridgeBeamLayout`
      pair. Null on a shed, which has no beam at all. */
+  /* ⚠ **AND NULL WHEN A WALL CARRIES THE RIDGE — B34 stride 3,
+     2026-11-17.** *"All the loads of everything transfer down the center row
+     of diving wall panels."*
+
+     The `roofFormFromProfile !== "peaked"` test that used to be written out
+     here is now `roofNeedsRidgeBeam`, which is the function that has always
+     answered this question and which until stride 3 had **no production
+     caller at all** — only its own tests, while this line kept its own copy
+     of half the rule. Everything downstream falls out of this one gate: no
+     beam segments, no fabrication group, no weight, no price, no ridge posts,
+     and none of the continuous load path and extra floor girts the posts
+     would otherwise have asked for underneath them. */
   const ridgeBeamForPlan = useMemo(() => {
-    if (!footprint || !roofEnabled || roofFormFromProfile !== "peaked") return null;
+    if (!footprint || !roofEnabled || !roofNeedsRidgeBeam(roofFormFromProfile, footprint)) return null;
     const pitchIn12 = roofTrussLayoutContext?.pitchIn12;
     if (pitchIn12 === undefined) return null;
     const roof = simpleRoofPlanes(footprint, {
@@ -13064,6 +13080,91 @@ export default function LayoutEditor() {
     ];
   }, [footprint]);
 
+  /**
+   * ⚠ **THE ROOF OVER AN INTERIOR WALL — B34 stride 3, 2026-11-17.**
+   *
+   * > *"A straw wall running down the center and acting as the ridge beam. All
+   * > the loads of everything transfer down the center row of diving wall
+   * > panels."* — Tommy, 2026-11-16
+   *
+   * Two findings, both measured on his 36x36 and both his to decide. They
+   * share one memo because they are the same subject, and because adding to a
+   * memo you already pay for is the cheapest shape there is (`AGENTS.md`).
+   */
+  const roofBearingReviewEntries = useMemo(() => {
+    if (!footprint || !roofEnabled) return [];
+    const pitchIn12 = roofTrussLayoutContext?.pitchIn12;
+    if (pitchIn12 === undefined) return [];
+    const spanFt = roofSpanFt(footprint);
+    if (!(spanFt > 0)) return [];
+    const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
+
+    /* ⚠ **FINDING 1: THE ROOF PANELS CANNOT REACH, AND NOTHING HAS EVER SAID
+       SO.** `decideRoofForm` returns a `refusal` for a building too wide to
+       roof at its pitch — *"This roof needs a bearing line between the wall
+       and the ridge, which nothing models yet"* — and that field has
+       **never been read anywhere in this app**. It is computed inside
+       `applyRoofDefaultsForFootprint` and thrown away.
+
+       ⚠ So the app has been quietly building roofs out of panels the shop
+       cannot make, and the Multiplex is only the first TEMPLATE that does it.
+       The Cindy does it too: 34'-10" across the ridge is 17.4ft a side, past
+       the 17.1ft an 18ft panel reaches at 4:12.
+
+       Measured here against the LIVE form and the LIVE pitch rather than by
+       re-running the form decision, because a user who has dragged the peak to
+       an end has a shed, and a refusal describing a peak they do not have is
+       worse than silence. */
+    const runFt = roofFormFromProfile === "shed" ? spanFt : spanFt / 2;
+    const neededIn = roofPanelLengthForGroundRunIn(runFt * 12, pitchIn12);
+    if (neededIn > MAX_PANEL_LENGTH_IN + 1e-9) {
+      entries.push({
+        label: `Roof panels would have to be ${(neededIn / 12).toFixed(1)}ft long`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `This building spans ${spanFt.toFixed(1)}ft across the ridge, so each ` +
+          `${roofFormFromProfile === "shed" ? "panel runs clear across" : "side of the roof covers"} ` +
+          `${runFt.toFixed(1)}ft of ground, which needs ${(neededIn / 12).toFixed(1)}ft of panel at ` +
+          `${pitchIn12}:12 — past the ${(MAX_PANEL_LENGTH_IN / 12).toFixed(0)}ft maximum. The roof is drawn, ` +
+          `counted and priced anyway, out of panels that long. Three ways out, all his: narrow the building, ` +
+          `flatten the pitch, or raise the panel limit — itself his own estimate, "I have not had any ` +
+          `structural engineer look at these yet. But that's a safe bet for now". A fourth, an intermediate ` +
+          `bearing line part way up each plane, is not modelled at all.`,
+      });
+    }
+
+    /* ⚠ **FINDING 2: THE WALL CARRYING THE RIDGE STOPS AT THE CEILING.** The
+       centre wall's panels are built at the story height like any wall's, and
+       the ridge it is holding up is a full rise above the eave. So the part of
+       the wall that does the carrying is the part that is not built.
+
+       The bearing itself IS now right — the ridge runs along the wall and no
+       beam is built over it. What is missing is the row from the ceiling to
+       the ridge, which is the same shape of part as a shed's cross-tilt row:
+       uniform height along its length, with the two roof planes falling away
+       from its top. That is stride 3b, and it is named rather than implied,
+       because a wall priced to the ceiling under a roof it is meant to reach
+       is exactly the silence this log exists to break. */
+    const ridgeWall = ridgeBearingWallFor(footprint);
+    if (ridgeWall && roofFormFromProfile === "peaked") {
+      const riseIn = ((spanFt / 2) * 12 * pitchIn12) / 12;
+      entries.push({
+        label: `Interior wall ${ridgeWall.wallId} carries the ridge but stops ${formatLengthIn(riseIn, unitSystem)} below it`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `The ridge now runs along ${ridgeWall.wallId} and no ridge beam is built, because the wall carries ` +
+          `the roof directly — his "all the loads of everything transfer down the center row of diving wall ` +
+          `panels". But this wall's panels are tiled at the story height, and the ridge sits ` +
+          `${formatLengthIn(riseIn, unitSystem)} above the eave at ${pitchIn12}:12 over a ` +
+          `${spanFt.toFixed(1)}ft span. The row from the ceiling up to the ridge is NOT built, NOT drawn and ` +
+          `NOT priced. Nothing else in the building is wrong because of it: the roof planes, the gable ends and ` +
+          `the panel counts are all as they should be.`,
+      });
+    }
+
+    return entries;
+  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, unitSystem]);
+
   const wallRunStopReviewEntries = useMemo(() => {
     if (!footprint) return [];
     const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
@@ -13513,6 +13614,9 @@ export default function LayoutEditor() {
       /* ⚠ Beside the run-stop entries, because it is the same kind of fact:
          a wall that is not what a drawing shows it to be. */
       ...interiorWallNotDrawnReviewEntries,
+      /* ⚠ Beside it, because both are about what a drawing does and does not
+         show. These two are the roof over that same wall. */
+      ...roofBearingReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
       // One line, above the material assumptions because it is about THIS file

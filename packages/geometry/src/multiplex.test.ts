@@ -11,6 +11,8 @@ import { footprintLoops, isCourtyardFootprint } from "./footprintLoops";
 import { collapseNearZeroWalls, dragWall } from "./dragWall";
 import { editWallLength } from "./editWallLength";
 import { installRingWallOrder } from "./installRingOrder";
+import { tileInteriorWalls } from "./retile";
+import { safetyGapWidthForRunIn, tileWall } from "./tiling";
 import { wallCompassDirection } from "./wallCompassDirection";
 import type { Footprint } from "./types";
 
@@ -119,6 +121,101 @@ describe("⚠ the outline geometry walks straight past it", () => {
     for (const wall of fp.walls) {
       expect(order.get(wall.id)!.ringIndex, wall.id).toBeLessThan(centre.ringIndex);
     }
+  });
+});
+
+describe("⚠ the safety gap on an interior wall — his answer, 2026-11-17", () => {
+  /* > "Center wall should get a safety gap, not necessarily both ends but a
+     >  similar amount to the threshold we have for all other walls."
+
+     ⚠ **This confirms what the code already did, and the previous note about it
+     was wrong.** Stride 2 recorded an open building question on the grounds
+     that a cornerless 401in run gets TWO gaps where the same run WITH corner
+     panels gets ONE. Measured again: both get two. The claim was the defect,
+     not the tiling. */
+
+  it("⚠ gets gaps, at the SAME threshold width every other wall uses", () => {
+    const slots = tileInteriorWalls(multiplex(), 48, "A")[MULTIPLEX_CENTRE_WALL_ID]!;
+    const runIn = slots.reduce((sum, slot) => sum + slot.widthIn, 0);
+    const gaps = slots.filter((slot) => slot.type === "safety-gap");
+    expect(gaps.length).toBeGreaterThan(0);
+    /* Not a literal 0.75: the THRESHOLD is what he asked for, so the width is
+       asserted against the rule every wall in the app reads. */
+    for (const gap of gaps) expect(gap.widthIn).toBe(safetyGapWidthForRunIn(runIn));
+    expect(safetyGapWidthForRunIn(runIn)).toBe(0.75); // ...and on his 401in run that is 3/4in.
+  });
+
+  it("⚠ NOT one at each end — his \"not necessarily both ends\"", () => {
+    const slots = tileInteriorWalls(multiplex(), 48, "A")[MULTIPLEX_CENTRE_WALL_ID]!;
+    /* A gap is never the first or last slot on any wall: it is the
+       second-to-last panel of the run, so there is a standard panel outboard
+       of it. Both ends carrying one would show up here. */
+    expect(slots[0]!.type).not.toBe("safety-gap");
+    expect(slots[slots.length - 1]!.type).not.toBe("safety-gap");
+  });
+
+  it("⚠ the gap goes to the end FARTHER from the least-accessible corner", () => {
+    /* ⚠ **This was the constant `"end"` until 2026-11-17**, which was the right
+       answer on his 36x36 by coincidence: A is at (0,0) and the centre wall's
+       far end is the high-y one. Moving the marker to D is the only way anyone
+       would ever have noticed, so it is tested by moving it.
+
+       ⚠ **Measured on a 26ft building, not his 36ft one, and that is the point
+       of the fixture.** A 401in run gets TWO gaps and they land at index 1 AND
+       index length-2, so on that wall both answers look identical. A 281in run
+       gets exactly one and the end it chose is visible. */
+    const short = buildMultiplexFootprint({ widthFt: 36, depthFt: 26, wallThicknessIn: THICKNESS_IN });
+    const gapIndices = (leastAccessible: string) => {
+      const slots = tileInteriorWalls(short, 48, leastAccessible)[MULTIPLEX_CENTRE_WALL_ID]!;
+      return {
+        count: slots.length,
+        gaps: slots.flatMap((slot, i) => (slot.type === "safety-gap" ? [i] : [])),
+      };
+    };
+    /* One gap, so there is one answer to read. */
+    expect(gapIndices("A").gaps).toHaveLength(1);
+    /* His "second-to-last panel on each run", counted from the chosen end. */
+    const fromA = gapIndices("A");
+    expect(fromA.gaps[0]).toBe(fromA.count - 2);
+    expect(gapIndices("D").gaps).toEqual([1]);
+  });
+
+  it("⚠ gap COUNT and WIDTH are the run's own rule, swept 48in to 600in", () => {
+    /* The interior run against an outline run of the SAME length, every half
+       inch. Two things are asserted, and the second is the one that keeps this
+       honest rather than circular. */
+    const divergences: number[] = [];
+    for (let runIn = 48; runIn <= 600; runIn += 0.5) {
+      const interior = tileWall(runIn, 48, 48, "end", false, false, true, true).slots;
+      const outline = tileWall(runIn, 48, 15.5, "end", true, true, true, true).slots;
+      const gaps = interior.filter((slot) => slot.type === "safety-gap");
+      /* 1. EVERY interior run gets at least one gap, at exactly the threshold
+            width. No run is ever left without one. */
+      expect(gaps.length, `${runIn}in`).toBeGreaterThan(0);
+      for (const gap of gaps) expect(gap.widthIn, `${runIn}in`).toBe(safetyGapWidthForRunIn(runIn));
+      if (gaps.length !== outline.filter((slot) => slot.type === "safety-gap").length) divergences.push(runIn);
+    }
+    /* 2. The count matches the same-length outline run EVERYWHERE except two
+          measured bands — and both are the 24ft rule working as written,
+          because a further gap lands on a joint the run already has and taking
+          15.5in of corner out of each end moves every joint:
+
+          - 48in to 55in: the OUTLINE run is too short to hold two corner
+            panels and a legal middle, so `resolveCorners` merges them into one
+            slot spanning the whole wall and there is no middle to put a gap
+            in. The interior run is all middle and gets one. The interior wall
+            is the one behaving normally here.
+          - 385in to 400in: the second gap's eligible joints (20ft to 28ft from
+            the first) differ by the 31in of corner. 401in, his own centre
+            wall, is just past this band and both runs get two.
+
+          Pinned as an exact list so widening either band shows up as a
+          failure rather than as a quiet change in shop items. */
+    const expectedBands = [
+      ...Array.from({ length: 15 }, (_, i) => 48 + i * 0.5), // 48 .. 55
+      ...Array.from({ length: 31 }, (_, i) => 385 + i * 0.5), // 385 .. 400
+    ];
+    expect(divergences).toEqual(expectedBands);
   });
 });
 

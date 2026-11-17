@@ -5,6 +5,25 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }): num
 }
 
 /**
+ * Tommy's rule as pure geometry: **the gap goes at whichever end is FARTHER
+ * from the least-accessible point.** Ties go to `end`, which is what `>=`
+ * says and is the behaviour every rectangle has shipped with.
+ *
+ * ⚠ **Extracted from `computeGapEnd` on 2026-11-17 so an INTERIOR wall can
+ * obey the same rule.** `computeGapEnd` reaches its two points through corner
+ * ids, and an interior wall has no corner ids at all — it carries its own two
+ * points, for the reason `InteriorWall` gives. The rule itself never needed
+ * the ids; it needed three points. See `tileInteriorWalls`.
+ */
+export function gapEndFarthestFrom(
+  startPoint: { x: number; y: number },
+  endPoint: { x: number; y: number },
+  leastAccessiblePoint: { x: number; y: number },
+): WallEnd {
+  return distance(endPoint, leastAccessiblePoint) >= distance(startPoint, leastAccessiblePoint) ? "end" : "start";
+}
+
+/**
  * Tommy's rule: the safety/gap panel goes on the far side of each wall —
  * furthest from the least-accessible corner. Compares straight-line
  * distance from each of the wall's two endpoints to that corner and
@@ -19,10 +38,7 @@ export function computeGapEnd(
   const start = corners.find((c) => c.id === wall.startCorner)!;
   const end = corners.find((c) => c.id === wall.endCorner)!;
 
-  const distStart = distance(start.point, leastAccessible.point);
-  const distEnd = distance(end.point, leastAccessible.point);
-
-  return distEnd >= distStart ? "end" : "start";
+  return gapEndFarthestFrom(start.point, end.point, leastAccessible.point);
 }
 
 /**

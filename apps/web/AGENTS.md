@@ -228,6 +228,31 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-17, B34 stride 3 (the centre wall carries the ridge): ZERO delta.**
+  **185 problems**, every rule byte-identical to the stride-2 run
+  (`preserve-manual-memoization` 80, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **A NEW `useMemo` WITH FIVE DEPS COST NOTHING**, and one of them is
+  another memo. `roofBearingReviewEntries` is keyed on
+  `[footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext,
+  unitSystem]`, and `roofTrussLayoutContext` is itself a `useMemo` — but it is
+  not a FLAGGED one, and that is the whole rule. The 2026-11-15 note said "one
+  per already-flagged value a dep array touches"; it is easy to misread as "one
+  per memo a dep array touches", which is not the same thing and would have
+  predicted +1 here. **Check whether the dep is flagged, not whether it is a
+  memo.**
+
+  ⚠ **A CORRECTION TO THE STRIDE-2 ENTRY BELOW: its error/warning split was
+  mis-transcribed as 137 / 48.** The per-rule table in it is exactly right and
+  is the same table as this run's, and that table forces **138 errors / 47
+  warnings**: `no-unused-vars` (35) and `exhaustive-deps` (12) are the only
+  severity-1 rules in this config, and 35 + 12 = 47. Nothing moved between
+  runs. **When the per-rule table and the totals disagree, trust the table**
+  — it is the thing the gate is actually about, and it is the half that gets
+  read.
+
 - **2026-11-17, B35's install sequence, +2 (`preserve-manual-memoization`
   78 -> 80).** No correctness rule moved (`exhaustive-deps` 12, `refs` 29,
   `set-state-in-effect` 12, `purity` 1, `immutability` 1,

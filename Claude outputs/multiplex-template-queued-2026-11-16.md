@@ -116,9 +116,12 @@ load lands.
    outer long wall is the natural place — so **one door on the EAST wall for
    the east unit and one on the WEST wall for the west unit**. That is also the
    only arrangement where neither unit's door opens into the other's half.
-   Both of those walls are **gable ends** under his N–S answer, which is worth
-   knowing: a door in a gable-end wall is a ground-storey opening and does not
-   touch the gable row above it.
+   ⚠ **Corrected after stride 3:** I wrote here that both of those walls are
+   gable ends. They are the opposite — the ridge runs along the centre wall, so
+   the gable ends are the **north and south** walls and the east and west ones
+   are the **eaves**. A door in an eave wall is a plain ground-storey opening
+   with no gable row above it at all, which makes the reading simpler rather
+   than harder.
 6. **The tile's labels.** Taking the Octagon's shape — button **Multiplex**,
    sub-options **"Duplex"** and **"Four-plex"**, each with its own one-line
    description the way the Octagon's say *"16 ft across"*.
@@ -184,36 +187,141 @@ and why the new collection is honest rather than a workaround.
 four-plex ships with no way to the upper floor, which has to be **said on the
 tile** rather than discovered.
 
-## ⚠ ONE QUESTION STRIDE 2 TURNED UP — how many safety gaps does a butted wall get?
+## ⚠ THE SAFETY-GAP QUESTION IS CLOSED — and my measurement was wrong
 
-**Measured on the 36×36.** The centre wall's clear span is **401in** and it
-tiles into 11 slots that sum to exactly 401.000in — his dimensional-tightness
-rule holds. But the composition is:
+**What this section used to say:** that the centre wall's 401in cornerless run
+gets **two** 3/4in safety gaps where the same 401in run WITH corner panels gets
+**one**, and that this made "how many gaps does a butted wall get" an open
+building question.
 
-```
-standard 48 | safety-gap ¾ | standard 47¼ | standard 48 ×4 |
-standard 32⅛ ×2 | safety-gap ¾ | standard 48
-```
+**Re-measured: both get two.** The figure was wrong, and the question it raised
+was therefore not a real one. What is true is narrower and worth keeping:
 
-**Two 3/4in safety gaps, neither of them at an end.** The same 401in run WITH
-corner panels produces **one**. The difference is the cornerless path: the
-tiler was written for walls that end in corner panels, and both-ends-cornerless
-is a case it has not had to answer for before.
+- Swept at every half inch from 48in to 600in, a cornerless run and a cornered
+  run of the same length get the **same number of gaps, at the same threshold
+  width**, except in **two bands: 48-55in and 385-400in**.
+- Both bands are the 24ft rule working as written, not a cornerless defect. A
+  further gap lands on **a joint the run already has**, and taking 15.5in of
+  corner out of each end moves every joint. (In the 48-55in band the OUTLINE
+  run is the odd one: it is too short to hold two corners and a legal middle,
+  so they merge into one slot and there is nowhere to put a gap at all.)
+- **401in, his own centre wall, is just past the second band.**
 
-⚠ **Nothing is wrong with the arithmetic** — it sums, the panels are buildable,
-and each gap is a real shop item that already prices and exports correctly. The
-question is a BUILDING one, and it is his:
+**His answer, 2026-11-17:**
 
-> **Does a wall that butts another wall at both ends need a safety gap at all,
-> or one, or two?** A gap exists to absorb error where a run meets a corner. A
-> butt joint is itself a place to take up error — you scribe or shim at the
-> butt — so the honest answers range from *none* to *the two it currently
-> gets*.
+> *"Center wall should get a safety gap, not necessarily both ends but a
+> similar amount to the threshold we have for all other walls."*
 
-Two gaps costs two extra shop items per interior wall and nothing structural.
-It is **not** blocking: the wall is built, priced and fabricated either way.
-Recorded rather than quietly decided, because picking one would be inventing a
-shop rule.
+Which is what the tiler already did: one gap one panel in from the far end,
+another at the nearest joint to 24ft from it, every one of them exactly the
+width `safetyGapWidthForRunIn` gives the run (1/2in at or under 144in, 3/4in
+over). Never one at each end.
+
+### ⚠ The one real thing his answer exposed: WHICH end
+
+The first gap's end was a hard-coded `"end"`. Everywhere else in the app that
+is his **least-accessible-corner** rule — the gap goes to the end FARTHER
+from the corner you cannot reach, so you work toward it and take up the error
+at the end you can get to. An interior wall was simply not asked.
+
+It is now `gapEndFarthestFrom`, the same rule, lifted out of `computeGapEnd` so
+it can be asked with three points instead of three corner IDs (an interior wall
+has no corner IDs at all). **On his 36x36 nothing moves** — A is at `(0,0)`
+and the far end of the centre wall is the high-y one, so the constant was
+accidentally right. Move the marker to D and the gap swaps ends, which is the
+only way anyone would ever have found this.
+
+---
+
+## Stride 3 — the centre wall IS the ridge beam. BUILT 2026-11-17
+
+### ⚠ The ridge did not run over the wall, and now it does
+
+`roofRidgeAxis` puts the ridge along the building's longer dimension and ties a
+square to X. So on his 36x36 the ridge ran **east-west, `(0,18)` to `(36,18)`**
+— square across a centre wall running north-south, at 90 degrees, with a roof
+plane passing straight through it. The wall he described as *"acting as the
+ridge beam"* carried nothing at all. Measured before the change.
+
+A wall under the ridge now wins over that rule and over the south-facing
+preference, because a roof has to land on something. The **gable ends move with
+it to the north and south walls** — they are the ends of the ridge — and
+the orientation note names the WALL as the reason rather than claiming the
+building is "longer north-to-south", which on a square is a lie a user could
+act on by turning the building.
+
+### ⚠ And no ridge beam
+
+His own shed argument from the other direction: *"No catcher beam for the shed
+roof, all the load goes down the walls."* A beam catches panel ends that are
+over nothing; a wall under the ridge already catches them. A beam there is a
+**second load path and a part nobody builds** — priced, weighed, on a shop
+sheet, shipped to a site with no gap for it, with ridge posts standing inside a
+wall that already runs to the foundation.
+
+`roofNeedsRidgeBeam` is the function that has always answered this, and it had
+**no production caller at all** — only its own tests, while the plan view's
+derivation kept its own `form === "peaked"` copy of half the rule. It is now
+the one gate, so no beam segments, no fabrication group, no price, no posts and
+none of the load path or floor girts under them.
+
+Verified in the browser: the Multiplex's shop items are **safety gaps and jack
+studs only**, where The Tank's still include its beam and columns.
+
+### ⚠ It refuses rather than guessing
+
+Two conditions, and the second does the work: the wall must be **axis-aligned**
+and **centred on the building's own midline**. `simpleRoofPlanes` puts the ridge
+at the midline and nowhere else, so an off-centre wall would be drawn with the
+planes meeting where the load path is not — worse than having no wall there.
+An off-centre dividing wall needs an asymmetric peak, which nothing models.
+Two candidate walls refuse too: a roof has one ridge.
+
+A mutation survived the first pass and found a real hole: dropping the off-axis
+guard left the centred test doing the work, and the centred test reads
+`start.x`, which is only the wall's x if the wall is vertical. A diagonal
+*starting* on the midline passed everything. Pinned. Six mutations, all caught.
+
+### ⚠ It also found a defect older than the Multiplex
+
+`decideRoofForm` returns a `refusal` for a building too wide to roof at its
+pitch — *"This roof needs a bearing line between the wall and the ridge,
+which nothing models yet"* — and **that field has never been read anywhere in
+this app.** It is computed in `applyRoofDefaultsForFootprint` and thrown away.
+
+So the app has been quietly building roofs out of panels the shop cannot make:
+
+| building | span across the ridge | panel needed at 4:12 | limit |
+| --- | --- | --- | --- |
+| **Multiplex 36x36** | 36.0ft | **19.0ft** (21.6ft at his 8:12) | 18ft |
+| **The Cindy** | 34'-10" | **18.4ft** | 18ft |
+
+It is a Review Log line now, measured against the **live** form and pitch
+rather than by re-running the form decision — a user who has dragged the peak
+to an end has a shed, and a refusal describing a peak they do not have is worse
+than silence.
+
+**Four ways out, all his:** narrow the building, flatten the pitch, raise the
+18ft panel limit (itself his own estimate — *"I have not had any structural
+engineer look at these yet. But that's a safe bet for now"*), or model an
+intermediate bearing line part way up each plane, which nothing does.
+
+⚠ **This is why his 8:12 is not on the tile yet.** At 8:12 a 36ft span needs a
+21.6ft panel, and the building would have to come down to about 29.9ft to fit.
+Stride 4 is where the pitch lands, and it needs his answer first.
+
+### ⚠ Stride 3b, named rather than implied
+
+The centre wall's panels are tiled at the **story height**, and the ridge sits a
+full rise above the eave — **72in at 4:12 on his 36ft span.** So the part of
+the wall that does the carrying is the part that is not built.
+
+The bearing is right: the ridge runs along the wall and no beam is built over
+it. What is missing is the row from the ceiling to the ridge, which is the same
+shape of part as a shed's cross-tilt row — uniform height along its length,
+with both roof planes falling away from its top. It is in the Review Log,
+because a wall priced to the ceiling under a roof it is meant to reach is
+exactly the silence that log exists to break.
 
 ## Why it is worth doing beyond this one tile
 

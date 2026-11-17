@@ -18,6 +18,13 @@ import type { Footprint, InteriorWall } from "./types";
  * | Is 36 ft the OUTSIDE dimension? | **Yes.** The centre wall eats into it. |
  * | Which way does the centre wall run? | **N–S**, so the ridge does too. |
  *
+ * ⚠ **"So the ridge does too" became TRUE on 2026-11-17 and was not before.**
+ * `roofRidgeAxis` ties a square to X, so the ridge ran east–west, square
+ * across this wall at 90 degrees, and the wall he described as *"acting as the
+ * ridge beam"* carried nothing. Stride 3 makes a wall under the ridge win over
+ * that rule — see `ridgeBearingWallFor`, which is also what takes the ridge
+ * BEAM away, because a wall under the ridge already catches the panel ends.
+ *
  * ## ⚠ What 36 ft OUTSIDE actually costs the rooms
  *
  * Each studio is the half-width **less half the wall's thickness**, so on a

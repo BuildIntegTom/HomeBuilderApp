@@ -30,7 +30,7 @@ describe("the centre wall tiles", () => {
        close on it to the eighth. A row that does not sum is a wall that
        cannot be built. */
     const fp = multiplex();
-    const slots = tileInteriorWalls(fp, STANDARD_IN)[fp.interiorWalls![0]!.id]!;
+    const slots = tileInteriorWalls(fp, STANDARD_IN, "A")[fp.interiorWalls![0]!.id]!;
     const clearIn = wallFabricationLengthIn(fp.interiorWalls![0]!);
     expect(clearIn).toBeCloseTo(36 * 12 - 2 * THICKNESS_IN, 6);
     expect(slots.reduce((n, s) => n + s.widthIn, 0)).toBeCloseTo(clearIn, 6);
@@ -40,18 +40,18 @@ describe("the centre wall tiles", () => {
     /* Corner panels would have keyed into the north and south walls and
        re-tiled every panel in both of them. */
     const fp = multiplex();
-    const slots = tileInteriorWalls(fp, STANDARD_IN)[fp.interiorWalls![0]!.id]!;
+    const slots = tileInteriorWalls(fp, STANDARD_IN, "A")[fp.interiorWalls![0]!.id]!;
     expect(slots.some((s) => s.type === "corner" || s.type === "safety-oct-corner")).toBe(false);
   });
 
   it("no interior walls means no extra slots at all", () => {
-    expect(tileInteriorWalls(buildRectangleFootprint(36, 36), STANDARD_IN)).toEqual({});
+    expect(tileInteriorWalls(buildRectangleFootprint(36, 36), STANDARD_IN, "A")).toEqual({});
   });
 });
 
 describe("the centre wall's panels are named C1, C2, …", () => {
   const fp = multiplex();
-  const slots = tileInteriorWalls(fp, STANDARD_IN);
+  const slots = tileInteriorWalls(fp, STANDARD_IN, "A");
   const instances = allPanelInstances(fp, slots, STANDARD_IN, "plywood");
 
   it("⚠ C, not a compass letter — his pick", () => {

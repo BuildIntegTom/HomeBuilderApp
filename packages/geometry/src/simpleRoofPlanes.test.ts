@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultTransparentRoofFacing,
+  gableEndWallIdsFor,
+  ridgeBearingWallFor,
   roofNeedsRidgeBeam,
+  roofRidgeAxis,
   shedTallWallId,
   simpleRoofPlanes,
 } from "./simpleRoofPlanes";
+import { buildMultiplexFootprint } from "./multiplex";
 import { wallCompassDirection } from "./wallCompassDirection";
 import type { Footprint } from "./types";
 
@@ -176,8 +180,97 @@ describe("⚠ which roofs have a ridge beam", () => {
     /* "No catcher beam for the shed roof, all the load goes down the walls."
        A shed's panels reach wall to wall, so both ends are already over
        bearing; only a peak leaves panel ends in mid-air. */
-    expect(roofNeedsRidgeBeam("peaked")).toBe(true);
-    expect(roofNeedsRidgeBeam("shed")).toBe(false);
+    expect(roofNeedsRidgeBeam("peaked", rect(40, 24))).toBe(true);
+    expect(roofNeedsRidgeBeam("shed", rect(40, 24))).toBe(false);
+  });
+
+  it("\u26a0 and a peak whose ridge lands on a WALL does not \u2014 B34 stride 3", () => {
+    /* > "All the loads of everything transfer down the center row of diving
+       >  wall panels." \u2014 Tommy, 2026-11-16
+
+       His own shed argument, from the other direction: a beam catches panel
+       ends that are over nothing, and a wall under the ridge already catches
+       them. A beam there would be a second load path, a part nobody builds,
+       and ridge posts standing inside a wall that already reaches the
+       foundation. */
+    const multiplex = buildMultiplexFootprint({ widthFt: 36, depthFt: 36, wallThicknessIn: 15.5 });
+    expect(ridgeBearingWallFor(multiplex)).toEqual({ wallId: "CTR", axis: "y" });
+    expect(roofNeedsRidgeBeam("peaked", multiplex)).toBe(false);
+    /* The SAME 36x36 with no dividing wall still wants its beam \u2014 so this is
+       the wall doing the work, not the shape. */
+    expect(roofNeedsRidgeBeam("peaked", rect(36, 36))).toBe(true);
+  });
+
+  it("\u26a0 the ridge FOLLOWS the wall, overriding the short-wall rule", () => {
+    /* \u26a0 **Measured before this existed: the ridge ran EAST-WEST, from
+       `(0,18)` to `(36,18)` \u2014 square across a centre wall running
+       north-south.** `roofRidgeAxis` ties a square to X so the gables land
+       east and west, and the wall he said was *"acting as the ridge beam"*
+       carried nothing while a roof plane crossed it at 90 degrees.
+
+       His answer settles the precedence: the ridge follows the wall. */
+    const multiplex = buildMultiplexFootprint({ widthFt: 36, depthFt: 36, wallThicknessIn: 15.5 });
+    expect(roofRidgeAxis(rect(36, 36))).toBe("x"); // the square's own tie, untouched
+    expect(roofRidgeAxis(multiplex)).toBe("y");
+
+    const roof = simpleRoofPlanes(multiplex, { form: "peaked", pitchIn12: 8, eaveHeightFt: 10 });
+    const plane = roof.planes[0]!;
+    /* The ridge line sits exactly on the wall's own x, which is what "under
+       the ridge" has to mean to be worth anything. */
+    const centre = multiplex.interiorWalls![0]!;
+    expect(plane.highStart.x).toBeCloseTo(centre.start.x, 9);
+    expect(plane.highEnd.x).toBeCloseTo(centre.end.x, 9);
+    expect(plane.highStart.y).not.toBeCloseTo(plane.highEnd.y, 3);
+
+    /* And the gable ends move with it: the ridge's two ENDS are the north and
+       south walls now, not the east and west ones. */
+    const gables = gableEndWallIdsFor(multiplex).map(
+      (id) => wallCompassDirection(multiplex.walls.find((w) => w.id === id)!, multiplex),
+    );
+    expect(gables.sort()).toEqual(["N", "S"]);
+
+    /* \u26a0 The note names the WALL as the reason, not the dimensions \u2014 a
+       square is not "longer north-to-south" and saying so would be a lie the
+       user could act on by turning the building. */
+    expect(roof.orientationNote).toContain("CTR");
+    expect(roof.orientationNote).not.toContain("longer north-to-south");
+  });
+
+  it("\u26a0 refuses an OFF-CENTRE or diagonal wall rather than hanging the ridge beside it", () => {
+    /* `simpleRoofPlanes` puts the ridge at the midline and nowhere else, so an
+       off-centre wall would be drawn with the planes meeting somewhere the
+       load path is not. An asymmetric peak is a real building and nothing
+       models one yet, so this returns null and the app says so. */
+    const base = rect(36, 36);
+    const withWall = (start: { x: number; y: number }, end: { x: number; y: number }) => ({
+      ...base,
+      interiorWalls: [{ id: "CTR", start, end, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) }],
+    });
+    expect(ridgeBearingWallFor(withWall({ x: 12, y: 1 }, { x: 12, y: 35 }))).toBeNull(); // off centre
+    expect(ridgeBearingWallFor(withWall({ x: 1, y: 1 }, { x: 35, y: 35 }))).toBeNull(); // diagonal
+    /* ⚠ **A diagonal that STARTS on the midline and leans away — and this
+       case is here because a mutation survived without it.** Dropping the
+       off-axis guard left the centred test doing the work, and the centred
+       test reads `start.x`, which is only the wall's x if the wall is
+       vertical. This one starts exactly at x = 18 and ends at x = 30, so it
+       passed every surviving check and would have been given the ridge. */
+    expect(ridgeBearingWallFor(withWall({ x: 18, y: 1 }, { x: 30, y: 35 }))).toBeNull();
+    expect(ridgeBearingWallFor(withWall({ x: 1, y: 18 }, { x: 35, y: 30 }))).toBeNull();
+    /* An E-W wall on the midline carries it too, and the ridge then runs
+       east-west \u2014 the axis is the WALL's, not a constant. */
+    expect(ridgeBearingWallFor(withWall({ x: 1, y: 18 }, { x: 35, y: 18 }))).toEqual({ wallId: "CTR", axis: "x" });
+
+    /* \u26a0 TWO candidates is null as well. A roof has one ridge; picking one
+       silently would put a plane straight through the other wall. */
+    const twoWalls = {
+      ...base,
+      interiorWalls: [
+        { id: "CTR", start: { x: 18, y: 1 }, end: { x: 18, y: 35 }, lengthFt: 34 },
+        { id: "CTR2", start: { x: 1, y: 18 }, end: { x: 35, y: 18 }, lengthFt: 34 },
+      ],
+    };
+    expect(ridgeBearingWallFor(twoWalls)).toBeNull();
+    expect(roofNeedsRidgeBeam("peaked", twoWalls)).toBe(true);
   });
 
   it("⚠ and a shed has only ONE plane, which is the same fact twice", () => {
@@ -191,7 +284,7 @@ describe("⚠ which roofs have a ridge beam", () => {
        foundation and extra girts in the floor below. A shed inherits none of
        that, which is the real content of his sentence. */
     const roof = simpleRoofPlanes(rect(40, 24), shed);
-    expect(roofNeedsRidgeBeam(roof.form)).toBe(false);
+    expect(roofNeedsRidgeBeam(roof.form, rect(40, 24))).toBe(false);
   });
 });
 
