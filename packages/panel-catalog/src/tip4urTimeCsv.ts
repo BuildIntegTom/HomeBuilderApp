@@ -86,6 +86,23 @@ export interface Tip4urTimePanel {
    * advancing someone toward a career title is the thing being ruled out.
    */
   countsAsPanel: boolean;
+  /**
+   * ⚠ **WHERE IT COMES OFF THE TRUCK — B35, 2026-11-16 — and it is a
+   * POSITION, not an identity.** `"0007"`, or `""` for an item the sequence
+   * does not place.
+   *
+   * It runs from the point of least accessibility, clockwise, out to in,
+   * bottom to top (`installSequence`), which is his own order and the same one
+   * that already drives the truck load.
+   *
+   * ⚠ **It is beside `code`, never instead of it, and the two mean opposite
+   * things.** `code` is stamped once and stored so it can NEVER move — that is
+   * what a crew's pay hangs on. This renumbers the moment the design changes:
+   * insert one window and everything after it shifts. A crew app should sort
+   * by this and join on `code`. Swapping the two roles is the one mistake that
+   * would cost somebody money.
+   */
+  installNumber: string;
 }
 
 export interface Tip4urTimeExportInput {
@@ -202,6 +219,13 @@ export function tip4urTimePanelKeys(assemblies: readonly ExportableAssembly[]): 
 export function tip4urTimePanels(
   assemblies: readonly ExportableAssembly[],
   ledger: PanelCodeLedger,
+  /**
+   * B35's install positions, keyed exactly as `panelCodeKey` keys the ledger
+   * — see `installSequenceKey`, which is pinned equal to it by a test.
+   * Omitted, every row's `installNumber` is blank and the column still
+   * appears, so a reader never has to handle a missing one.
+   */
+  installSequence?: ReadonlyMap<string, string>,
 ): Tip4urTimePanel[] {
   const panels: Tip4urTimePanel[] = [];
   for (const assembly of assemblies) {
@@ -209,6 +233,9 @@ export function tip4urTimePanels(
       const key = panelCodeKey(assembly.panelType, name, i);
       panels.push({
         code: ledger.codesByKey[key] ?? "",
+        /* Blank rather than a guessed number when the sequence has not heard
+           of this key — an invented position is worse than none. */
+        installNumber: installSequence?.get(key) ?? "",
         panelType: assembly.typeName,
         label: name,
         widthIn: assembly.widthIn,
@@ -256,6 +283,10 @@ export const TIP4URTIME_HEADERS = [
   /* ⚠ Added after his first brief, so a reader that predates it sees one
      extra column rather than a changed one. A missing column means 1. */
   "Counts as panel",
+  /* ⚠ B35. LAST, for the same reason — appended so an existing reader sees
+     one more column rather than a moved one. It is a sort key, not a join
+     key: see `Tip4urTimePanel.installNumber`. */
+  "Install no",
 ] as const;
 
 export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
@@ -269,6 +300,7 @@ export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
       Number(panel.heightIn.toFixed(2)),
       tip4urTimeSqFt(panel.sqFt),
       panel.countsAsPanel ? 1 : 0,
+      panel.installNumber,
     ]),
     {
       /* See this module's own doc comment: a program reads this, and a BOM

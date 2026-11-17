@@ -208,6 +208,50 @@
   for opening the preview on any change that touches the catalogue's shared
   helpers, not only on changes you can see.
 
+- **2026-11-17, B35's install sequence, +2 (`preserve-manual-memoization`
+  78 -> 80).** No correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1,
+  `no-unescaped-entities` 15), and `no-unused-vars` came back to its baseline
+  35 after a fix, below.
+
+  Attributed by the multiset diff of flagged SOURCE-LINE TEXT, which printed
+  exactly two lines and no noise:
+
+  - `const installSequence = useMemo(() => {` — **the memo call itself**.
+  - `stories.length,` — an already-flagged value **in that memo's own dep
+    array**.
+
+  So this is the 2026-11-02 Derivation Sheet's pattern rather than the
+  2026-11-15 one: the `useMemo` call CAN flag on its own, and then it costs one
+  more per already-flagged dep it touches. Worth holding both notes together —
+  *"a memo costs one per already-flagged value its dep array touches"* is the
+  reliable half; whether the call line itself flags depends on what the memo
+  closes over.
+
+  ⚠ **Two OTHER new memos in the same change cost nothing** —
+  `installNumberByKey` (deps `[installSequence]`) and
+  `wallInstanceDirectionByName` (deps `[allInstances]`). One clean dep each.
+  And so did everything else in a large change: three new modules outside
+  `apps/web`, a new local module and its tests, a rendered chip with its CSS,
+  a new CSV column, and **six fabrication-sheet call sites** rewired.
+
+  ⚠ **`no-unused-vars` read 37 for one run, and that was a real fix rather
+  than an exception.** The two were `InstallPhase` and `InstallSequenceItem`,
+  type imports in `page.tsx` that went dead the moment the item-building logic
+  was extracted into `installSequenceItems.ts`. Removing them took `page.tsx`
+  from 16 to 14 in a single-file run, i.e. the whole-app count back to 35.
+  **An unused import is sometimes a missing feature and sometimes a leftover;
+  this one was a leftover, and the extraction is why.**
+
+  ⚠ **AND THE GATE MISSED EVERY REAL DEFECT IN THIS CHANGE, for the third time
+  in two days.** All four of B35's ordering faults — roof panels numbered with
+  the floor deck, the gable row numbered backwards, the truss plates out of
+  clockwise, the deck and tilted rows scrambled — passed `tsc`, `vitest` AND
+  lint, and were found by reading 86 numbered chips off a shop packet **in the
+  browser**. They were invisible because the logic lived inside a `useMemo`.
+  It is now its own module with its own tests. **If a `useMemo` is deciding
+  something a person could be wrong about, it is in the wrong place.**
+
 - **2026-11-16, the corner mitre's girt row and nailer: ZERO delta.**
   183 / 136 / 47, every rule byte-identical again
   (`preserve-manual-memoization` 78, `no-unused-vars` 35, `refs` 29,

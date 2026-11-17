@@ -209,7 +209,21 @@ is cut, what sets the radius) was answering the wrong question.
     `Claude outputs/multiplex-template-queued-2026-11-16.md`.
 
 
-14. **B35 — Sequential panel numbers + compass-coloured labels.** Queued
+14. ~~**B35 — Sequential panel numbers + compass-coloured labels.**~~ **BUILT
+    2026-11-16** on his *"go with your recommendations on b35 and build it"*.
+    Live: **86 items numbered 0001–0086** on the 16ft Octagon — floor deck,
+    walls clockwise from the least-accessible corner, gable row, tilted gable
+    row, truss plates clockwise, roof panels last — each printing as a
+    compass-coloured chip on its shop sheet, plus an `Install no` column on
+    the crew CSV beside the stored code. All four recommendations taken:
+    derived not stored, a tag never a group key, the number JOINS the name,
+    and the direction colour only on the chip. ⚠ **Four ordering faults found
+    in the BROWSER, three of them the same shape** — a fabrication group
+    gathers identical panels, so the export's order is shape order, not
+    building order: roof panels numbered with the floor deck (they share one
+    export family), the gable row numbered backwards (its `slotIndexInWall` is
+    negative and counts down), and the truss plates came out N/E/S/W then the
+    four diagonals. Original text: Queued
     2026-11-16 at his request (*"give me a sanity check on this change and lets
     consider it to be planned and added to the queue"*). Panels renamed to
     `0001, 0002, ...` running from the point of least accessibility, clockwise,

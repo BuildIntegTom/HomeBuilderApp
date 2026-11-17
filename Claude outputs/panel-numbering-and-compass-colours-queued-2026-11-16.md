@@ -1,5 +1,69 @@
 # B35 — Sequential panel numbers, and compass-coloured labels
 
+## ✅ BUILT 2026-11-16, on his *"go with your recommendations on b35 and build it"*
+
+Live on the 16ft Octagon: **86 items numbered 0001–0086**, every one of them
+placed, in his order and nothing else's:
+
+| | |
+| --- | --- |
+| **0001–0010** | the floor deck, `F1`–`F10` |
+| **0011–0042** | the ground walls, **clockwise from the least-accessible corner** — N1…N4, NE1…NE4, E, SE, S, SW, W, NW |
+| **0043–0066** | the gable row, `NE5`→`NE8`, `E5`→`E8`, … |
+| **0067–0070** | the tilted gable row, `T1`–`T4` |
+| **0071–0078** | the truss plates, clockwise again — N, NE, E, SE, S, SW, W, NW |
+| **0079–0086** | the roof panels, `R1`–`R8`, **last** |
+
+Each one prints as a chip on its shop sheet — the bold number, the panel's own
+name, and its wall's compass colour — and the crew CSV gained an `Install no`
+column beside the stored code.
+
+### ✅ The four recommendations, all taken
+
+1. **It is derived, not stored.** The sheet says so in as many words: *"It is a
+   position in THIS revision, not a permanent id."* No migration, nothing new
+   saved, and his derived-identity rule untouched.
+2. **It is a tag, never a group key.** The packet is still grouped — the eight
+   octagon safety-corner panels share one sheet and it lists all eight numbers.
+3. **The number JOINS the name**, it does not replace it. A chip reads
+   `0014 · N4`, and the sheet still carries the height, the distinct name and
+   the type colour B25 asked for.
+4. **Direction colour on the chip only.** The type colour keeps the panel body.
+
+### ⚠ Four ordering faults found while building it — all of them invisible to a test
+
+Every one came from the browser, and three are the same shape: **a fabrication
+group gathers physically identical panels, so the export's order is shape
+order, not building order.**
+
+- **Roof panels numbered with the FLOOR deck** — `R1`–`R8` came out 0011–0018,
+  ahead of every wall panel, because a roof panel and a floor panel share one
+  export family (`"Deck panel"`). Told apart by the pipeline's own `kind`,
+  never by the `R` on the front of the name.
+- **The gable row numbered BACKWARDS** — `NE8` first, `NE5` last. A gable
+  tile's `slotIndexInWall` is **negative and counts down** (`-(tileIndex + 1)`,
+  so a gable row's indices cannot collide with the ground slots on the same
+  wall). Unfolded back to the tile index.
+- **The truss plates came out N, E, S, W and only then NE, SE, SW, NW** — the
+  four square facets ahead of the four diagonals, because those shapes group
+  together. Fixed by giving each plate its own wall's place in the ring; the
+  `wallId` is carried as a **field** now rather than parsed back out of the
+  name.
+- **The deck and the tilted gable row scrambled the same way**, and both carry
+  `atIn` — where the piece sits along its own run. They use it.
+
+### ⚠ What is NOT done, and why
+
+**The 2D plan and the elevation still label panels `N4`, not `0014 · N4`.** That
+is deliberate rather than unfinished: those drawings already colour each panel
+by its TYPE, so a compass colour there would fight the one collision this
+design exists to avoid. The number's locator is the panel's own name, which
+appears on both the drawing and the chip — so a crew reading `0014 N4` on the
+sheet can still find it. If he wants the number on the canvas too, it is a
+small change, but it needs a decision about which colour wins there.
+
+---
+
 **Queued 2026-11-16 at his request: *"give me a sanity check on this change and
 lets consider it to be planned and added to the queue."* Nothing is built.**
 

@@ -163,3 +163,49 @@
 .cutListTable th:nth-child(5), .cutListTable td:nth-child(5) { width: 16%; }
 .cutListTable th:nth-child(6), .cutListTable td:nth-child(6) { width: 12%; }
 .cutListTable th:nth-child(7), .cutListTable td:nth-child(7) { width: 32%; }
+
+/* ── B35, 2026-11-16: the install-sequence chip ────────────────────────────
+   Tommy asked for panels numbered 0001, 0002, … from the point of least
+   accessibility, with the label coloured by its wall's compass direction.
+
+   ⚠ The colour lives on THIS chip and nowhere else. The sheet already carries
+   a TYPE colour (`accentColor` — box beam green, truss plate blue), and two
+   colour systems on one pixel would give green two meanings. So the type
+   colour keeps the band it already has and the direction colour gets the chip.
+
+   ⚠ `print-color-adjust: exact` because the packet is printed, and a browser
+   that drops the background would leave white text on white paper. The letter
+   is on the chip for the same reason the colour is not load-bearing: a
+   photocopy, or a colour-blind reader, still gets the direction. */
+.instanceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instanceChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* The number, in the tabular figures a column of them needs. */
+.instanceChipNumber {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.instanceChipName {
+  opacity: 0.85;
+}

@@ -170,6 +170,10 @@ describe("⚠ the panel code is stable — his acceptance check, as a test", () 
   });
 });
 
+/** The separator this file writes, as a constant — so no test has to spell
+ *  a CRLF escape inside a patched string literal. */
+const CRLF = String.fromCharCode(13, 10);
+
 describe("⚠ the file's own shape", () => {
   const assemblies = [assembly("Wall panel", "Standard Panel", ["N1", "N2"])];
   const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
@@ -183,7 +187,9 @@ describe("⚠ the file's own shape", () => {
   it("leads with the two header rows he specified, then the column header", () => {
     expect(lines[0]).toBe("Project,Rogers-Sehorn ADU");
     expect(lines[1]).toBe("Project ID,abc-123");
-    expect(lines[2]).toBe("Panel code,Panel type,Label,Width (in),Height (in),Sq ft,Counts as panel");
+    expect(lines[2]).toBe(
+      "Panel code,Panel type,Label,Width (in),Height (in),Sq ft,Counts as panel,Install no",
+    );
   });
 
   it("⚠ has NO column named 'Used at'", () => {
@@ -201,8 +207,43 @@ describe("⚠ the file's own shape", () => {
   });
 
   it("writes a row per panel with a plain numeric square footage", () => {
-    expect(lines[3]).toBe("P-0001,Standard Panel,N1,48,96,32,1");
-    expect(lines[4]).toBe("P-0002,Standard Panel,N2,48,96,32,1");
+    /* ⚠ The trailing empty cell is `Install no` with no sequence passed — the
+       column is always THERE, so a reader never has to handle a missing one,
+       and a blank is an honest "this export did not place it" rather than a
+       guessed position. */
+    expect(lines[3]).toBe("P-0001,Standard Panel,N1,48,96,32,1,");
+    expect(lines[4]).toBe("P-0002,Standard Panel,N2,48,96,32,1,");
+  });
+
+  it("⚠ carries the install position when one is handed in — B35", () => {
+    const sequence = new Map([
+      [panelCodeKey("Wall panel", "N1", 0), "0007"],
+      [panelCodeKey("Wall panel", "N2", 1), "0008"],
+    ]);
+    const withSequence = buildTip4urTimeCsv({
+      projectName: "P",
+      projectId: "id",
+      panels: tip4urTimePanels(assemblies, ledger, sequence),
+    })
+      .trimEnd()
+      .split(CRLF);
+    expect(withSequence[3]!.endsWith(",1,0007")).toBe(true);
+    expect(withSequence[4]!.endsWith(",1,0008")).toBe(true);
+  });
+
+  it("⚠ the two columns mean OPPOSITE things, and the file keeps them apart", () => {
+    /* `Panel code` is stamped once and stored so it can never move — that is
+       what a crew's pay hangs on. `Install no` renumbers the moment the design
+       changes. A crew app sorts by one and joins on the other; swapping the
+       roles is the one mistake that would cost somebody money. */
+    const sequence = new Map([[panelCodeKey("Wall panel", "N1", 0), "0007"]]);
+    const rows = tip4urTimePanels(assemblies, ledger, sequence);
+    expect(rows[0]!.code).toBe("P-0001");
+    expect(rows[0]!.installNumber).toBe("0007");
+    /* And a panel the sequence has not placed keeps its code and gets no
+       invented position. */
+    expect(rows[1]!.code).toBe("P-0002");
+    expect(rows[1]!.installNumber).toBe("");
   });
 
   it("quotes a project name containing a comma rather than shifting a column", () => {
@@ -212,7 +253,7 @@ describe("⚠ the file's own shape", () => {
 });
 
 describe("tip4urTimeExportProblems — his acceptance check, enforced before the file leaves", () => {
-  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, sqFt: (48 * 96) / 144, countsAsPanel: true };
+  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, sqFt: (48 * 96) / 144, countsAsPanel: true, installNumber: "0001" };
 
   it("passes a sound export", () => {
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [ok] })).toEqual([]);
@@ -272,15 +313,21 @@ describe("⚠ a Safety Gap is claimable, earns its square footage, and is NOT a 
   it("writes 0 in the last column for the gap and the beam, 1 for the panel", () => {
     const csv = buildTip4urTimeCsv({ projectName: "P", projectId: "id", panels });
     const lines = csv.trimEnd().split("\r\n");
-    expect(lines[3]!.endsWith(",1")).toBe(true);
+    /* ⚠ `Counts as panel` is no longer the LAST column — `Install no`
+       follows it — so these read the counts column by position rather than
+       by being last. A test that asserts "ends with" is a test that breaks
+       every time a column is appended, and appending is how this file stays
+       readable by a crew app that predates the column. */
+    const countsCell = (line: string) => line.split(",").at(-2);
+    expect(countsCell(lines[3]!)).toBe("1");
     /* \u26a0 **12.92, AND IT USED TO SAY 0.63 \u2014 his 2026-11-15 answer, in one
        row.** This line is the acceptance check for the whole change: *"Its
        row should show about 12.9 in Sq ft (not 0.63) and 0 in Counts as
        panel."* The two dimensions beside it are unchanged and deliberately
        do not multiply out to it \u2014 the missing factor is the 15.5in through
        the wall, which is not a column. */
-    expect(lines[4]).toBe("P-0002,Safety Gap,N2,0.75,120,12.92,0");
-    expect(lines[5]!.endsWith(",0")).toBe(true);
+    expect(lines[4]).toBe("P-0002,Safety Gap,N2,0.75,120,12.92,0,");
+    expect(countsCell(lines[5]!)).toBe("0");
   });
 
   it("still carries a real square footage, because a crew earns it \u2014 now the SHEET's", () => {

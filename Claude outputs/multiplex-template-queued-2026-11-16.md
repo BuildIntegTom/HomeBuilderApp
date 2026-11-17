@@ -141,6 +141,49 @@ load lands.
 
 ---
 
+## The build, as strides — scoped 2026-11-17
+
+⚠ **Measured first, because it decides the shape of everything else:**
+`footprint.walls` is read **82 times in geometry and 72 times in apps/web**,
+and **nothing in the codebase models a wall that is not on the outline** (one
+comment in `floorRoofPanelMembers` mentions the idea; no code).
+
+### ⚠ So the centre wall is a SEPARATE COLLECTION, not another entry in `walls`
+
+Putting it in `walls` means auditing all 154 of those reads, every one of which
+assumes a closed ring. A separate `interiorWalls` list means **none of them
+changes**, and each consumer opts in deliberately. The split falls out cleanly:
+
+| must EXCLUDE it (outline geometry) | must INCLUDE it (per-wall work) |
+| --- | --- |
+| `footprintLoops`, `offsetFootprint`, `perimeterRing`, `bumpOut`, `ringRoof`, `wallRoofPlane`, `wallCompassDirection`, the deck cut, the plan mitre | the tiler and `retile`, `wallJoints`, `panelSlotBoxes3D`, `panelWidthEdit`, `upperRowWidths`, the elevation view, the fabrication groups, the price, every export |
+
+The first column is *"what shape is this building"*. The second is *"what
+panels does this wall need"*. An interior wall is a real wall to the second and
+no part of the first — which is exactly what *"a wall can be interior"* means,
+and why the new collection is honest rather than a workaround.
+
+### Strides
+
+1. **`interiorWalls` on `Footprint`** — the type, the quantizer, and a
+   `MULTIPLEX` template that builds a 36×36 with one N–S centre wall. Every
+   existing building byte-identical (an empty list), pinned by a test.
+2. **Panelize it** — it tiles like any wall, on his 48in module. ⚠ Its ends
+   **butt square** against the N and S walls (his call), so those walls take no
+   new cut and do not re-tile. It has no compass direction, so it needs a label
+   (`C`, his pick) and its own colour on the B35 chip.
+3. **Carry the roof** — *the centre wall acts as the ridge beam*. A third
+   roof-bearing case beside shed and peak: the ridge lands on the wall rather
+   than on a beam over a column. This is the stride that needs the most care,
+   because `ridgeBeamForPlan` and the gable rows both assume a beam.
+4. **The Home tile** — Multiplex, with Duplex and Four-plex, at **8:12**.
+5. **The rest of the app** — price, takeoff, elevation tab, 3D, exports, and
+   B35's own sequence (the centre wall is a ring of its own for *"out to in"*).
+
+⚠ **Not in scope, and he deferred both himself:** stairs and the loft. The
+four-plex ships with no way to the upper floor, which has to be **said on the
+tile** rather than discovered.
+
 ## Why it is worth doing beyond this one tile
 
 An interior load-bearing wall is the missing piece for every building that is

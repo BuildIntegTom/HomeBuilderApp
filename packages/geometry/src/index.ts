@@ -10,6 +10,7 @@ export * from "./splitFootprint";
 export * from "./wallJoints";
 export * from "./offsetFootprint";
 export * from "./footprintLoops";
+export * from "./installRingOrder";
 export * from "./ringRoof";
 export * from "./bumpOut";
 export * from "./editWallLength";

@@ -4,6 +4,8 @@ import type { PanelWeightBreakdown } from "@building-integrity/calc-engine";
 import SheetTitleBlock from "./SheetTitleBlock";
 import { tintTowardsWhite } from "./panelSheetIdentity";
 import PanelElevationDiagram from "./PanelElevationDiagram";
+import type { CompassDirection } from "@building-integrity/geometry";
+import { compassLabelColor } from "./compassLabelColor";
 import type { ViewerRole } from "./viewerRole";
 import styles from "./PanelFabricationPage.module.css";
 
@@ -19,6 +21,32 @@ export interface PanelFabricationInstanceRef {
    * panel's own sheet too ("Header above: H1"), because a shop reading one
    * sheet cannot see the other. */
   note?: string;
+  /**
+   * ⚠ **WHERE THIS COPY COMES OFF THE TRUCK — `"0007"` — B35, 2026-11-16.**
+   *
+   * > *"Renaming all of the panels to go from point of least accessability,
+   * > clockwise, from out to in, from bottom to top by label of 0000, 0001,
+   * > 0002, etc."* — Tommy, 2026-11-16
+   *
+   * ⚠ **It is a TAG on a shared sheet, never a group key, and that is the
+   * decision this field represents.** A Shop Fabrication page covers every
+   * panel that is physically the same — which is what keeps a Tiny House at
+   * roughly a dozen sheets instead of 74, and what makes B25's pusher-head
+   * order mean anything. Making a unique number the identity of a SHEET would
+   * un-group the whole packet. So the sheet goes on saying what to build, and
+   * lists the positions it covers.
+   *
+   * ⚠ **And it is a position, not an identity.** It renumbers when the
+   * design changes. The stored Tip4urTime code is the thing that never moves.
+   */
+  installNumber?: string;
+  /**
+   * The compass direction of this copy's own wall, for the chip's colour.
+   * Undefined for anything that does not face a compass point — a deck
+   * panel, a beam — which gets a plainly non-compass chip rather than a
+   * wrong one.
+   */
+  direction?: CompassDirection;
 }
 
 export interface PanelFabricationPageProps {
@@ -152,15 +180,60 @@ export default function PanelFabricationPage({
 
       <div>
         <h4 className={styles.sectionHeading}>Also used at ({instances.length})</h4>
-        <p className={styles.note}>
-          {instances.map((inst, i) => (
-            <span key={inst.name}>
-              {i > 0 && ", "}
-              {inst.name}
-              {inst.isSafetyOctCorner && " (safety-oct-corner)"}
-            </span>
-          ))}
-        </p>
+        {/* ⚠ **B35 — one chip per placed copy: its install position and its
+            wall, coloured by direction.** Sorted by the NUMBER, not by the
+            group's own order, because a crew reads this against a sequence.
+            Copies with no number yet keep their plain name rather than being
+            dropped — a missing panel reads as a panel nobody has to build.
+
+            ⚠ The number is a POSITION in this revision's install order and
+            renumbers when the design changes; the line below says so, on the
+            sheet, because a printed number with no such note is read as an
+            identity. */}
+        {instances.some((inst) => inst.installNumber !== undefined) ? (
+          <>
+            <ul className={styles.instanceChips}>
+              {[...instances]
+                .sort((a, b) => (a.installNumber ?? "~").localeCompare(b.installNumber ?? "~"))
+                .map((inst) => {
+                  const color = compassLabelColor(inst.direction);
+                  return (
+                    <li
+                      key={inst.name}
+                      className={styles.instanceChip}
+                      style={{ background: color.background, color: color.foreground }}
+                      title={`${inst.name}${inst.direction ? ` · ${inst.direction} wall — ${color.note}` : ""}`}
+                    >
+                      {inst.installNumber !== undefined && (
+                        <span className={styles.instanceChipNumber}>{inst.installNumber}</span>
+                      )}
+                      <span className={styles.instanceChipName}>
+                        {inst.name}
+                        {inst.isSafetyOctCorner && " (safety-oct-corner)"}
+                      </span>
+                    </li>
+                  );
+                })}
+            </ul>
+            <p className={styles.note}>
+              The bold number is where that copy comes off the truck — counted from the point of least
+              accessibility, clockwise, out to in, bottom to top. <strong>It is a position in THIS revision</strong>,
+              not a permanent id: change the design and the numbers after the change move. The chip&apos;s colour is
+              its wall&apos;s compass direction, and the letters beside it say the same thing for a black-and-white
+              print.
+            </p>
+          </>
+        ) : (
+          <p className={styles.note}>
+            {instances.map((inst, i) => (
+              <span key={inst.name}>
+                {i > 0 && ", "}
+                {inst.name}
+                {inst.isSafetyOctCorner && " (safety-oct-corner)"}
+              </span>
+            ))}
+          </p>
+        )}
         {/* One line per instance that carries a note — a spanning header's
             own wall and span in words, or a spanned panel's header above it.
             Printed, because it is the only place on a stack of one-dimensional

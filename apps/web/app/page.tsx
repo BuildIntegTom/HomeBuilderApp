@@ -89,6 +89,8 @@ import {
   runStopOpeningFit,
   movePanelWithinWall,
   retileWithOpenings,
+  type CompassDirection,
+  installRingWallOrder,
   wallCompassDirection,
   wallDisplayLabelWithId,
   wallDisplayLabelsByWallId,
@@ -187,6 +189,9 @@ import {
   tip4urTimeExportProblems,
   tip4urTimePanelKeys,
   tip4urTimePanels,
+  computeInstallSequence,
+  installSequenceKey,
+  formatInstallSequenceNumber,
   type PanelCodeLedger,
   CSV_MIME_TYPE,
   DXF_MIME_TYPE,
@@ -390,6 +395,11 @@ import {
   type StudConfig,
   type WallAssemblyLayer,
 } from "@building-integrity/panel-catalog";
+import {
+  buildInstallSequenceItems,
+  installSlotIndex,
+  type WallSlotPosition,
+} from "./installSequenceItems";
 import { SCALE_PX_PER_FT, formatFeetInches } from "./canvasGeometry";
 import {
   boxAxisForWall,
@@ -10728,7 +10738,11 @@ export default function LayoutEditor() {
         heightIn,
         members,
         weightBreakdown,
-        instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
+        /* ⚠ `wallId` is carried as a FIELD so B35's install sequence can put
+           this plate in its wall's place in the ring without parsing it back
+           out of `name` — the same reason `PanelInstance` carries `direction`
+           beside the name it is built from. */
+        instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})`, wallId: w.id })),
       };
     });
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, builtWallLengthInByWallId]);
@@ -11471,6 +11485,190 @@ export default function LayoutEditor() {
   };
 
   /**
+   * ⚠ **WHERE EVERY PANEL SITS IN THE INSTALL SEQUENCE — `0001`, `0002`, …
+   * B35, 2026-11-16.**
+   *
+   * > *"Renaming all of the panels to go from point of least accessability,
+   * > clockwise, from out to in, from bottom to top by label of 0000, 0001,
+   * > 0002, etc."* — Tommy, 2026-11-16
+   *
+   * ⚠ **It is a POSITION, not an identity, and that is the whole design.**
+   * It renumbers the moment the design changes — insert one window and
+   * everything after it shifts — which is exactly why the Tip4urTime panel
+   * CODE is stamped once and stored instead. The two travel side by side and
+   * mean opposite things: a crew app sorts by this and joins on that.
+   *
+   * ⚠ **Nothing is stored and no migration runs**, so his rule that panel
+   * identity is DERIVED (*"not from a memory file"*) is untouched — this is
+   * not an identity.
+   *
+   * ⚠ **The ORDER was already here.** `leastAccessibleCorner` is his own
+   * field, already driving the truck load order; the wall ring is already a
+   * clockwise perimeter walk (screen-up is North); and `footprintLoops` already
+   * knows the rings. All this adds is the walk across stories and the bands
+   * within a slot, and `installSequence` does the sorting.
+   */
+  const installSequence = useMemo(() => {
+    if (!footprint) return new Map<string, number>();
+
+    /* ⚠ **"From point of least accessability, clockwise, from out to in"**
+       lives in `installRingWallOrder`, in geometry, with its own tests — the
+       PLA rotation cannot be exercised in the browser without clicking a
+       canvas corner, and it is the clause the whole feature turns on. One
+       copy, so the numbering and the truck's load order cannot drift. */
+    const ringAndWallIndexByWallId = installRingWallOrder(footprint, leastAccessibleCorner);
+
+    /* ⚠ **BOTTOM TO TOP within one slot.** A window's sill and the header
+       above it share a slot index and are stacked in elevation; a Mid-Wall
+       Bond Beam's lower piece comes before its upper. Everything else is a
+       single panel filling its slot. */
+    const bandIndexFor = (inst: PanelInstance): number => {
+      if (inst.midWallBandIndex !== undefined) return inst.midWallBandIndex;
+      if (inst.panelType === "sill") return 0;
+      if (inst.panelType === "header") return 1;
+      return 0;
+    };
+
+    const positionByInstanceName = new Map<string, WallSlotPosition>();
+    for (const inst of allInstances) {
+      const ring = ringAndWallIndexByWallId.get(inst.wallId);
+      positionByInstanceName.set(inst.name, {
+        /* ⚠ A gable tile sits ABOVE the top story's wall panels, so bottom-to
+           -top puts the whole row after them — which is also the order it is
+           built in. */
+        storyIndex: inst.panelType === "gable" ? stories.length : 0,
+        ringIndex: ring?.ringIndex ?? 0,
+        wallIndex: ring?.wallIndex ?? 0,
+        /* ⚠ A gable tile's index is NEGATIVE and counts down — see
+           `installSlotIndex`, which has the measurement and the reason. */
+        slotIndex: installSlotIndex(inst.slotIndexInWall),
+        bandIndex: bandIndexFor(inst),
+      });
+    }
+
+    /* ⚠ **A ROOF PANEL AND A FLOOR PANEL SHARE ONE EXPORT FAMILY
+       ("Deck panel"), AND THEY INSTALL AT OPPOSITE ENDS OF THE JOB** — told
+       apart by the pipeline's own `kind`, never by the `R` on the front of a
+       name. See `buildInstallSequenceItems`, which has the measurement. */
+    const roofPanelNames = new Set(
+      floorRoofPanelFabricationGroups
+        .filter((group) => group.kind === "roof")
+        .flatMap((group) => group.instances.map((i) => i.name)),
+    );
+
+    /* ⚠ A roof-bearing sheet DOES know its wall, so it takes that wall's
+       place in the ring rather than the fabrication groups' shape order. */
+    const roofBearingWallIdByName = new Map<string, string>();
+    for (const group of roofBearingFabricationGroups) {
+      for (const inst of group.instances) roofBearingWallIdByName.set(inst.name, inst.wallId);
+    }
+
+    /**
+     * ⚠ **The deck and tilted-gable rows carry `atIn`** — where the piece
+     * sits along its own run — and ranking their planes by the CLOCKWISE
+     * compass order is what makes this his order rather than an arbitrary one.
+     */
+    const CLOCKWISE_COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    const clockwiseRank = (facing: string | undefined) => {
+      const i = facing === undefined ? -1 : CLOCKWISE_COMPASS.indexOf(facing);
+      /* A floor deck has no facing at all and is one run, so it ranks first —
+         which is also the thing that installs first. */
+      return i < 0 ? 0 : i + 1;
+    };
+    const runPositionByFamilyAndName = new Map<string, { wallIndex: number; slotIndex: number }>();
+    for (const group of floorRoofPanelFabricationGroups) {
+      for (const inst of group.instances) {
+        runPositionByFamilyAndName.set(`Deck panel|${inst.name}`, {
+          wallIndex: clockwiseRank(inst.facing),
+          slotIndex: inst.atIn,
+        });
+      }
+    }
+    for (const group of crossTiltFabricationGroups) {
+      for (const inst of group.instances) {
+        runPositionByFamilyAndName.set(`Tilted gable|${inst.name}`, {
+          wallIndex: clockwiseRank(inst.direction),
+          slotIndex: inst.atIn,
+        });
+      }
+    }
+
+    return computeInstallSequence(
+      /* ⚠ **The join between the eight pipelines and the sort lives in
+         `installSequenceItems.ts`, with its own tests.** Every ordering fault
+         in B35 was in this logic, and none of them was visible to a test while
+         it sat inside this memo — all four were found by reading 86 chips off
+         a shop packet in the browser. */
+      buildInstallSequenceItems({
+        assemblies: exportableAssemblies,
+        wallPositionByName: positionByInstanceName,
+        roofPanelNames,
+        roofBearingPositionByName: new Map(
+          [...roofBearingWallIdByName].flatMap(([name, wallId]) => {
+            const ring = ringAndWallIndexByWallId.get(wallId);
+            return ring ? [[name, ring] as const] : [];
+          }),
+        ),
+        runPositionByFamilyAndName,
+      }),
+    );
+  }, [
+    footprint,
+    leastAccessibleCorner,
+    allInstances,
+    stories.length,
+    exportableAssemblies,
+    floorRoofPanelFabricationGroups,
+    roofBearingFabricationGroups,
+    crossTiltFabricationGroups,
+  ]);
+
+  /** The same thing as printable strings, which is what every consumer wants. */
+  const installNumberByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [key, n] of installSequence) map.set(key, formatInstallSequenceNumber(n));
+    return map;
+  }, [installSequence]);
+
+  /** Each wall-panel instance's own compass direction, for the chip colour.
+   *  Read as a FIELD rather than parsed back out of the name — `PanelInstance`
+   *  carries `direction` precisely so nothing has to split `N3` apart. */
+  const wallInstanceDirectionByName = useMemo(() => {
+    const map = new Map<string, CompassDirection>();
+    for (const inst of allInstances) map.set(inst.name, inst.direction);
+    return map;
+  }, [allInstances]);
+
+  /**
+   * ⚠ **B35 — the install number and compass colour, added to a sheet's own
+   * instance list at RENDER time.**
+   *
+   * It is not folded into `panelFabricationGroups` for a hard reason:
+   * `installSequence` reads `exportableAssemblies`, which reads those groups.
+   * Writing the number back into them would be a cycle. Here both are in
+   * scope and neither has to know about the other.
+   *
+   * ⚠ **`family` has to match the string `exportableAssemblies` uses for that
+   * pipeline**, because that is half the key (a stencil name is only unique
+   * WITHIN a pipeline — a wall panel and a deck panel can both be the first of
+   * their run). A wrong family silently yields no numbers rather than wrong
+   * ones, which is the safe direction but is worth knowing when a sheet comes
+   * out bare.
+   */
+  const withInstallTags = <T extends { name: string }>(family: string, refs: readonly T[]) =>
+    refs.map((ref) => ({
+      ...ref,
+      /* ⚠ Named refs only. `installSequenceKey` falls back to the pipeline
+         index for an unnamed item, and the index a RENDERER has is its position
+         on this one sheet, not in the building — so an unnamed ref would look
+         up a number belonging to some other panel. No number is correct; a
+         confidently wrong one is not. */
+      installNumber:
+        ref.name.length > 0 ? installNumberByKey.get(installSequenceKey(family, ref.name, 0)) : undefined,
+      direction: family === "Wall panel" ? wallInstanceDirectionByName.get(ref.name) : undefined,
+    }));
+
+  /**
    * ⚠ **THE PANEL LIST TIP4URTIME READS — one row per PHYSICAL panel, and
    * the one export in this app that is not per drawing.**
    *
@@ -11501,7 +11699,10 @@ export default function LayoutEditor() {
     const input = {
       projectName: projectName || "Untitled Project",
       projectId,
-      panels: tip4urTimePanels(exportableAssemblies, ledger),
+      /* ⚠ B35's install positions ride along beside the stored codes — see
+         `Tip4urTimePanel.installNumber`. The crew app sorts by one and joins
+         on the other. */
+      panels: tip4urTimePanels(exportableAssemblies, ledger, installNumberByKey),
     };
     const problems = tip4urTimeExportProblems(input);
     if (problems.length > 0) {
@@ -16412,16 +16613,19 @@ export default function LayoutEditor() {
           widthIn={group.widthIn}
           heightIn={group.spanIn}
           members={group.members}
-          instances={group.instances.map((i) => ({
-            name: i.name,
+          instances={withInstallTags(
+            "Deck panel",
+            group.instances.map((i) => ({
+              name: i.name,
             /* A floor panel has no compass direction, so it gets the
                simplest line that still finds it. A roof panel is on
                a named plane, and that IS its location. */
             note:
               i.facing === undefined
                 ? `${formatLengthIn(i.atIn, unitSystem)} from the start of the run`
-                : `${formatLengthIn(i.atIn, unitSystem)} along the ${i.facing}-facing eave`,
-          }))}
+                  : `${formatLengthIn(i.atIn, unitSystem)} along the ${i.facing}-facing eave`,
+            })),
+          )}
           weightBreakdown={group.weightBreakdown}
           loadBearingCapacity={{
             status: "pending-BI-confirmation",
@@ -19351,7 +19555,7 @@ export default function LayoutEditor() {
                     widthIn={group.widthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={group.instances}
+                    instances={withInstallTags("Wall panel", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={group.panelType.loadBearingCapacity}
                     shearValue={group.panelType.shearValue}
@@ -19405,7 +19609,7 @@ export default function LayoutEditor() {
                     widthIn={group.widthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={group.instances}
+                    instances={withInstallTags("Spanning header", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
@@ -19464,7 +19668,7 @@ export default function LayoutEditor() {
                     widthIn={group.lengthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={group.instances}
+                    instances={withInstallTags("Mid-wall beam", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
@@ -19529,10 +19733,13 @@ export default function LayoutEditor() {
                     widthIn={group.widthIn}
                     heightIn={group.highHeightIn}
                     members={group.members}
-                    instances={group.instances.map((i) => ({
-                      name: i.name,
-                      note: `${formatLengthIn(i.atIn, unitSystem)} along the ${i.direction} wall`,
-                    }))}
+                    instances={withInstallTags(
+                      "Tilted gable",
+                      group.instances.map((i) => ({
+                        name: i.name,
+                        note: `${formatLengthIn(i.atIn, unitSystem)} along the ${i.direction} wall`,
+                      })),
+                    )}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={{
                       status: "pending-BI-confirmation",
@@ -19616,7 +19823,7 @@ export default function LayoutEditor() {
                     widthIn={group.lengthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={group.instances}
+                    instances={withInstallTags("Roof bearing", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
