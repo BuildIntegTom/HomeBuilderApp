@@ -34,6 +34,17 @@ export const PROPOSAL_ALREADY_ADOPTED_MESSAGE =
   "That proposal has already been adopted. Only one company can take it up.";
 export const PROPOSAL_REFUSED_MESSAGE =
   "That design could not be sent as a proposal. It may be too large, or saved in a format this app no longer writes.";
+/**
+ * ⚠ **The migration is not applied on this deployment.**
+ *
+ * `0014` is applied by hand, so there is a real window in which this code is
+ * deployed and the four functions do not exist yet. Without this the sender
+ * gets a generic 500 and the page says "Couldn't make a proposal link", which
+ * sends whoever is debugging it looking at the route rather than at the
+ * database. It is a deployment state, not a fault, and it says so.
+ */
+export const PROPOSAL_NOT_MIGRATED_MESSAGE =
+  "Proposals aren't switched on for this site yet. Nothing is wrong with your design — the feature is waiting on a database update.";
 
 interface DbError {
   code?: string;
@@ -53,6 +64,12 @@ export type ProposalOperation = "submit" | "preview" | "read" | "adopt";
  */
 export function mapProposalDbError(error: DbError, operation: ProposalOperation): ProjectRouteError | null {
   switch (error.code) {
+    /* `42883` is Postgres' own "function does not exist"; `PGRST202` is
+       PostgREST failing to find it in the schema cache, which is what a
+       Supabase client actually sees. Both mean the same thing here. */
+    case "42883":
+    case "PGRST202":
+      return new ProjectRouteError(503, PROPOSAL_NOT_MIGRATED_MESSAGE);
     case "28000":
     case "42501":
       return new ProjectRouteError(
