@@ -86,9 +86,44 @@ arrangement beside the shed and the peak.
 
 ---
 
-## Questions for him, before anything is drawn
+## ✅ ANSWERED 2026-11-16 — four of six, including both that move the geometry
 
-None of these are guessable, and the first two change the geometry:
+| asked | his answer | what it fixes |
+| --- | --- | --- |
+| Is 36 ft the OUTSIDE dimension? | **Yes, 36 ft outside.** | Each studio is **17'-4¼" clear**, not 18 ft. The tile says 36 ft, like every other template's stated size. |
+| Which way does the centre wall run? | **N–S.** | The ridge runs N–S, so the **EAST and WEST walls are the gable ends** and the long roof faces look north and south. |
+| Roof pitch? | **8:12**, not the 4:12 default. | ~12 ft of rise over the 17'-4¼" half-span — real loft headroom, which is what his loft remark was reaching for. The loft itself stays deferred, but the pitch no longer blocks it. |
+| Four-plex: centre wall full height? | **Upper bears on the lower.** | Two storeys of centre-wall panels, the upper stacking on the lower — the way the app already stacks every wall, and what the 48in module with its centre nailer is designed for (load straight down). No panel taller than anything the app builds, and per-story editing survives. |
+
+⚠ **8:12 is a departure from every other template and is HIS number, not a
+default carried over.** Worth saying on the tile, because it changes the price:
+a steeper roof is more roof area at the one flat rate.
+
+⚠ **And a fifth, asked and answered the same day: how the centre wall's two
+ENDS meet the north and south walls — he chose BUTTS, SQUARE.** The end panels
+are square-cut against the inside face of the N and S walls: no corner panel,
+no mitre, and **the exterior walls take no new cut and do not re-tile**. That
+matters more than it looks — the alternative (corner panels at both ends) would
+have made every panel in the N and S walls re-tile around the junction, and a
+safety gap at each end would have put a framed void exactly where the ridge
+load lands.
+
+## Still open — neither moves the geometry
+
+5. **Does each studio get its own front door, and on which wall?** ⚠ My reading,
+   to be corrected rather than asked again: two separate apartments each need
+   their own entrance, and with the centre wall running N–S each unit's own
+   outer long wall is the natural place — so **one door on the EAST wall for
+   the east unit and one on the WEST wall for the west unit**. That is also the
+   only arrangement where neither unit's door opens into the other's half.
+   Both of those walls are **gable ends** under his N–S answer, which is worth
+   knowing: a door in a gable-end wall is a ground-storey opening and does not
+   touch the gable row above it.
+6. **The tile's labels.** Taking the Octagon's shape — button **Multiplex**,
+   sub-options **"Duplex"** and **"Four-plex"**, each with its own one-line
+   description the way the Octagon's say *"16 ft across"*.
+
+## The original questions, for the record
 
 1. **Is the 36 ft the OUTSIDE dimension, with the centre wall eating into it?**
    At 15½in that gives two studios of **17'-4¼"** clear, not 18 ft. Or is each

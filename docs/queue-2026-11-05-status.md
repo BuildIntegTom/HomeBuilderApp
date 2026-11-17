@@ -209,6 +209,28 @@ is cut, what sets the radius) was answering the wrong question.
     `Claude outputs/multiplex-template-queued-2026-11-16.md`.
 
 
+14. **B35 — Sequential panel numbers + compass-coloured labels.** Queued
+    2026-11-16 at his request (*"give me a sanity check on this change and lets
+    consider it to be planned and added to the queue"*). Panels renamed to
+    `0001, 0002, ...` running from the point of least accessibility, clockwise,
+    out to in, bottom to top, with each label coloured by its wall's compass
+    direction using Feng Shui element colours.
+    ✅ **The ordering half is already built**: `leastAccessibleCorner` is a
+    real, user-set, persisted field that already drives the truck load order,
+    `computePanelLoadOrder` already walks the perimeter from it, and the wall
+    ring already runs clockwise as drawn (screen-up is North). So this is a
+    LABEL on a sequence the app already computes.
+    ⚠ **One serious problem and three collisions**, all in
+    `Claude outputs/panel-numbering-and-compass-colours-queued-2026-11-16.md`:
+    a sequential number RENUMBERS when the design changes (and stability is
+    what he liked about the T4T code, which is stored precisely so it cannot);
+    unique names would un-group the shop packet from ~12 sheets to 74; a number
+    does not say what to build, which is what B25 was for; and the sheets
+    already carry TYPE colours that green and blue would collide with. Plus
+    three of the eight Feng Shui colours (white, grey, black) cannot be printed
+    on a white sheet. Recommendations for all of it in that doc; **his call**.
+
+
 ## D. Open questions that are not blocking anything
 
 - **Shipping bundles**: *"full panel height x 3 panel depths tall"* — on the
