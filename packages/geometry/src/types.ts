@@ -25,9 +25,68 @@ export interface Wall {
   lengthFt: number;
 }
 
+/**
+ * A wall that is not an edge of the outline — see `Footprint.interiorWalls`.
+ *
+ * ⚠ **A different TYPE from `Wall`, on purpose.** A `Wall` names two corners
+ * of the ring; this names two points. Nothing that walks the outline can take
+ * one by accident, and nothing here can end up in a ring walk.
+ */
+export interface InteriorWall {
+  id: WallId;
+  /** Where it starts, in feet, in the footprint's own coordinates. */
+  start: Point;
+  end: Point;
+  /** Measured, like every other wall's. */
+  lengthFt: number;
+}
+
 export interface Footprint {
   corners: Corner[];
   walls: Wall[];
+  /**
+   * ⚠ **WALLS THAT ARE NOT PART OF THE OUTLINE — B34, 2026-11-17.**
+   *
+   * > *"A 36x36' square with a straw wall running down the center and acting
+   * > as the ridge beam … this dividing straw wall would make for two
+   * > rectngle studio apartments."* — Tommy, 2026-11-16
+   *
+   * ⚠ **A SEPARATE LIST, and that is the whole design decision.** Every wall
+   * in `walls` is an edge of a CLOSED LOOP — the courtyard, the only
+   * multi-loop shape, is a second ring wound the other way — and
+   * `footprint.walls` is read **82 times in geometry and 72 times in
+   * apps/web**, almost all of it asking *"what shape is this building."* A
+   * dividing wall ends in T-junctions and is an edge of nothing.
+   *
+   * Putting it in `walls` would mean auditing all 154 of those reads. Putting
+   * it here means **none of them changes**, and each consumer opts in
+   * deliberately. The split is real, not a workaround:
+   *
+   * - **Outline geometry ignores it**: the loops, the winding, the inward
+   *   offset, the perimeter ring, the roof planes, the deck cut, the compass
+   *   direction and the 22.5deg plan mitre. An interior wall is no part of
+   *   *"what shape is this building"*.
+   * - **Per-wall work includes it**: the tiler, the joints, the elevation,
+   *   the 3D boxes, the fabrication groups, the price and every export. It is
+   *   a real wall that real panels are built for.
+   *
+   * ⚠ **IT CARRIES ITS OWN ENDPOINTS, and does NOT use `corners`.** The
+   * first version put the centre wall's two ends in the corner list and that
+   * was wrong in a way worth recording: **`corners` is the RING**, not a bag
+   * of points. Four modules rebuild the walls by walking it in order
+   * (`wallsFromCorners`, and `corners[(i + 1) % corners.length]`), so two
+   * extra entries in it produce an outline that runs
+   * `D -> CTR0 -> CTR1 -> A`. `collapseNearZeroWalls` would then delete and
+   * renumber real corners off that nonsense. It only failed to in testing
+   * because none of the bogus walls happened to be short.
+   *
+   * Explicit points cannot leak into a ring walk, and an `InteriorWall` can
+   * never be mistaken for an outline `Wall` by a function that takes one.
+   *
+   * ⚠ **Optional, so every project file ever saved still means what it
+   * meant** and no migration runs. Absent and empty are the same thing.
+   */
+  interiorWalls?: InteriorWall[];
 }
 
 export type PanelSlotType =

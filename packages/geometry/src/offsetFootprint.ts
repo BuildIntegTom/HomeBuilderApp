@@ -208,7 +208,8 @@ export function offsetFootprintInward(footprint: Footprint, insetFt: number): Fo
     const b = byId.get(w.endCorner)!;
     return { ...w, lengthFt: Math.hypot(b.x - a.x, b.y - a.y) };
   });
-  return quantizeFootprint({ corners, walls });
+  /* ⚠ Spread so `interiorWalls` survives — see `quantizeFootprint`. */
+  return quantizeFootprint({ ...footprint, corners, walls });
 }
 
 /** What to tell someone whose inset was refused. */

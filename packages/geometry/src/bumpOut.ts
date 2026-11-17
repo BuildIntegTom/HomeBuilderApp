@@ -189,5 +189,9 @@ export function insertBumpOut(
   // Every new corner the jog introduces lands on the 1/8in grid, so the
   // bump-out's own walls (and the two remainder segments it leaves behind on
   // the original wall) all have exact-eighth lengths to tile against.
-  return { footprint: quantizeFootprint({ corners, walls }), primaryCornerIds: nextPrimaryCornerIds };
+  /* ⚠ Spread so `interiorWalls` survives — see `quantizeFootprint`. */
+  return {
+    footprint: quantizeFootprint({ ...footprint, corners, walls }),
+    primaryCornerIds: nextPrimaryCornerIds,
+  };
 }

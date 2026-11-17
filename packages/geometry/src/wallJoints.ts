@@ -183,5 +183,7 @@ export function insertCornerAtWallOffset(
           { id: afterWallId, startCorner: cornerId, endCorner: w.endCorner, lengthFt: lengthFt - offsetFt },
         ],
   );
-  return { footprint: { corners, walls }, cornerId, beforeWallId, afterWallId };
+  /* ⚠ Spread so `interiorWalls` survives — see `quantizeFootprint`. This one
+     does NOT go through the quantizer, so it carries the field by hand. */
+  return { footprint: { ...footprint, corners, walls }, cornerId, beforeWallId, afterWallId };
 }

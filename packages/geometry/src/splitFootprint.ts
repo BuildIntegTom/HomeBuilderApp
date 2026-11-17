@@ -121,6 +121,21 @@ function footprintFromPoints(points: Point[], sourceWallIds: (string | null)[]):
       lengthFt: Math.hypot(next.point.x - corner.point.x, next.point.y - corner.point.y),
     };
   });
+  /**
+   * ⚠ **A SPLIT DELIBERATELY DROPS `interiorWalls`, and that is a decision
+   * rather than an oversight.**
+   *
+   * This builds a brand-new closed outline from a list of points — there is
+   * no source footprint here to carry anything from, because a split produces
+   * TWO buildings and an interior wall belongs to neither until somebody says
+   * which. Cutting a Multiplex in half through its centre wall has no
+   * obviously right answer: the wall might belong to one half, be duplicated,
+   * or become part of the new outline.
+   *
+   * So the pieces come out with no interior walls and the user re-draws, which
+   * is visible, rather than inheriting a wall that now ends in mid-air, which
+   * is not. Revisit when somebody actually splits a Multiplex.
+   */
   return { footprint: quantizeFootprint({ corners, walls }), wallIdMap };
 }
 

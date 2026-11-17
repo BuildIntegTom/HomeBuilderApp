@@ -109,7 +109,8 @@ export function dragWall(footprint: Footprint, wallId: string, offsetFt: number)
     return { ...w, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
   });
 
-  return quantizeFootprint({ corners, walls });
+  /* ⚠ Spread so `interiorWalls` survives — see `quantizeFootprint`. */
+  return quantizeFootprint({ ...footprint, corners, walls });
 }
 
 const SAFETY_SCAN_STEPS = 40;
@@ -241,7 +242,11 @@ export function collapseNearZeroWalls(footprint: Footprint, primaryCornerIds: Se
     if (primary.has(c.id)) nextPrimary.add(String(i));
   });
 
-  return { footprint: quantizeFootprint({ corners: renumbered, walls: wallsFromCorners(renumbered) }), primaryCornerIds: nextPrimary };
+  /* ⚠ Spread so `interiorWalls` survives — see `quantizeFootprint`. */
+  return {
+    footprint: quantizeFootprint({ ...footprint, corners: renumbered, walls: wallsFromCorners(renumbered) }),
+    primaryCornerIds: nextPrimary,
+  };
 }
 
 function wallsFromCorners(corners: Corner[]): Wall[] {

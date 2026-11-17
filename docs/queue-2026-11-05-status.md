@@ -190,7 +190,14 @@ is cut, what sets the radius) was answering the wrong question.
     and the one width a corner panel never has. *Sweep the size the app emits,
     not the size the constant is named after.*
 
-13. **B34 — Multiplex: a pre-draw with a LOAD-BEARING CENTRE WALL.** Queued
+13. **B34 — Multiplex.** ✅ **STRIDE 1 BUILT 2026-11-17: a wall can be
+    interior.** `Footprint.interiorWalls` (optional, so every saved project
+    is untouched), `buildMultiplexFootprint` for his 36x36, and the eight
+    places that rebuild a footprint now carry it instead of silently
+    dropping it. ⚠ Two traps caught: `corners` is the RING, not a bag of
+    points, so an interior wall holds its own endpoints; and a surviving
+    mutation showed the difference between carried and quantized.
+    Strides 2-5 in the multiplex doc. Original text: Queued
     2026-11-16, not started. *"a home page option that says multiplex … a
     36x36' square with a straw wall running down the center and acting as the
     ridge beam … two rectngle studio apartments … at least the two options

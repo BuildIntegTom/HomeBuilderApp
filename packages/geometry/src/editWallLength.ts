@@ -67,5 +67,6 @@ export function editWallLength(footprint: Footprint, wallId: string, newLengthFt
     return { ...w, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
   });
 
-  return quantizeFootprint({ corners, walls });
+  /* ⚠ Spread so `interiorWalls` survives — see `quantizeFootprint`. */
+  return quantizeFootprint({ ...footprint, corners, walls });
 }

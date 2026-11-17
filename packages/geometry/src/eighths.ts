@@ -1,4 +1,4 @@
-import type { Corner, Footprint, PanelSlot, Wall } from "./types";
+import type { Corner, Footprint, InteriorWall, PanelSlot, Wall } from "./types";
 
 /**
  * The 1/8in shop grid (Tommy: "make the movement of drawing tools, bump
@@ -156,21 +156,52 @@ function snapFtToEighthIn(valueFt: number): number {
  * 1/16in, which slightly breaks the exact equality of its eight sides; that
  * is the accepted cost of putting the corners themselves on the grid.
  */
+/**
+ * ⚠ **It SPREADS the input, so a field added to `Footprint` is carried
+ * through rather than silently dropped.**
+ *
+ * Eight places in this codebase rebuild a footprint from `{ corners, walls }`
+ * — a drag, a wall-length edit, a bump-out, a split, an inward offset, the
+ * octagon builder, a joint insertion and this. Before B34 that was harmless,
+ * because those two fields were the whole type. With `interiorWalls` it is
+ * not: dragging a wall would have deleted the Multiplex's centre wall, and
+ * with it two studio apartments, and nothing would have said so.
+ *
+ * So the default is CARRY and dropping takes deliberate effort, rather than
+ * the reverse. The interior walls are re-measured here like any other wall.
+ */
 export function quantizeFootprint(footprint: Footprint): Footprint {
   const corners: Corner[] = footprint.corners.map((c) => ({
     ...c,
     point: { x: snapFtToEighthIn(c.point.x), y: snapFtToEighthIn(c.point.y) },
   }));
   const byId = new Map(corners.map((c) => [c.id, c.point]));
-  const walls = footprint.walls.map((w) => {
+  const remeasure = (w: Wall) => {
     const start = byId.get(w.startCorner);
     const end = byId.get(w.endCorner);
     // A wall referencing a corner that isn't in the list is malformed input
     // — left exactly as it was rather than silently zeroed.
     if (!start || !end) return w;
     return { ...w, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
-  });
-  return { corners, walls };
+  };
+  const walls = footprint.walls.map(remeasure);
+  /* ⚠ An interior wall carries its own two POINTS rather than corner ids —
+     see `InteriorWall` for why that matters — so it snaps and re-measures
+     from them instead of from the corner map. */
+  const snapInterior = (w: InteriorWall): InteriorWall => {
+    const start = { x: snapFtToEighthIn(w.start.x), y: snapFtToEighthIn(w.start.y) };
+    const end = { x: snapFtToEighthIn(w.end.x), y: snapFtToEighthIn(w.end.y) };
+    return { ...w, start, end, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
+  };
+  /* ⚠ Spread first: see this function's own note. A building with no
+     interior walls comes back without the key at all, so every existing
+     footprint is byte-identical. */
+  return {
+    ...footprint,
+    corners,
+    walls,
+    ...(footprint.interiorWalls ? { interiorWalls: footprint.interiorWalls.map(snapInterior) } : {}),
+  };
 }
 
 /** Slot types whose width the tiling engine is free to move — the plain
