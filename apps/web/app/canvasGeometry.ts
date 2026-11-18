@@ -7,6 +7,7 @@ import {
   roundToEighthIn,
   toEighths,
   type Footprint,
+  type InteriorWall,
   type PanelSlot,
   type Wall,
 } from "@building-integrity/geometry";
@@ -410,6 +411,96 @@ export function computeSlotRects(
     offsetFt += slot.widthIn / 12;
   }
   return rects;
+}
+
+/**
+ * ⚠ **THE SAME SLOT RECTANGLES, FOR A WALL THAT IS NOT ON THE OUTLINE — B34
+ * stride 5, 2026-11-18.**
+ *
+ * The Multiplex's centre and purlin walls have been counted, weighed, priced,
+ * numbered and given shop sheets since stride 2, and drawn **nowhere** — a
+ * state the Review Log has been saying out loud because the Summary, the
+ * packet and the crew export all include a wall no drawing shows.
+ *
+ * ⚠ **It is a separate function rather than a branch in `computeSlotRects`,
+ * and the reason is that almost every line of that one is about the outline.**
+ * It finds the wall's two CORNERS (an interior wall has none), it decides
+ * which way is "inward" from the footprint's centroid (an interior wall has no
+ * outside), it mitres against the previous and next wall in the ring (an
+ * interior wall is in no ring), and it insets a butting wall by its
+ * neighbour's thickness (an interior wall's stored endpoints are already its
+ * built run). A branch would have been a conditional on every one of those,
+ * and the first one missed would put a dividing wall somewhere it is not.
+ *
+ * ⚠ **THE BAND STRADDLES THE CENTRELINE**, where an outline wall's thickness
+ * hangs INWARD off the footprint polygon. That is not a drawing choice, it is
+ * what the stored geometry already means: `ridgeBearingWallFor` recognises the
+ * ridge wall by testing its endpoints against the building's midline, and
+ * `multiplexStudioWidthFt` subtracts THREE wall thicknesses across a Multiplex
+ * — two exterior and one centre — which only adds up if the centre wall's
+ * thickness is split either side of the line its points describe. Drawing it
+ * hanging off one side would put it half a wall out of place and make the two
+ * studios different sizes.
+ */
+export function computeInteriorSlotRects(
+  wall: InteriorWall,
+  slots: PanelSlot[],
+  offsetPx: DragPoint,
+  wallThicknessPx: number,
+): SlotRect[] {
+  const startPx = { x: wall.start.x * SCALE_PX_PER_FT + offsetPx.x, y: wall.start.y * SCALE_PX_PER_FT + offsetPx.y };
+  const endPx = { x: wall.end.x * SCALE_PX_PER_FT + offsetPx.x, y: wall.end.y * SCALE_PX_PER_FT + offsetPx.y };
+  /* A degenerate wall would divide by zero; `|| 1` keeps it drawable at a
+     point rather than throwing on a canvas, the same guard the outline
+     version uses. */
+  const lengthPx = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y) || 1;
+  const dir = { x: (endPx.x - startPx.x) / lengthPx, y: (endPx.y - startPx.y) / lengthPx };
+  const rotationDeg = (Math.atan2(dir.y, dir.x) * 180) / Math.PI;
+  const perp = { x: -dir.y, y: dir.x };
+
+  /* Half a thickness back along the perpendicular, so the band is centred on
+     the stored line — see this function's own doc comment for why that is the
+     geometry's meaning rather than a preference. */
+  const anchorStart = {
+    x: startPx.x - (perp.x * wallThicknessPx) / 2,
+    y: startPx.y - (perp.y * wallThicknessPx) / 2,
+  };
+
+  let offsetFt = 0;
+  const rects: SlotRect[] = [];
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]!;
+    const widthPx = (slot.widthIn / 12) * SCALE_PX_PER_FT;
+    const alongPx = offsetFt * SCALE_PX_PER_FT;
+    rects.push({
+      x: anchorStart.x + dir.x * alongPx,
+      y: anchorStart.y + dir.y * alongPx,
+      width: widthPx,
+      /* Always positive: there is no outside to flip toward, and the two
+         renderers both read a negative height as "the band hangs the other
+         way off its anchor". */
+      height: wallThicknessPx,
+      rotationDeg,
+      slot,
+      wallId: wall.id,
+      slotIndex: i,
+    });
+    offsetFt += slot.widthIn / 12;
+  }
+  return rects;
+}
+
+/** Every interior wall's rectangles at once — the shape both plan renderers
+ *  want, and one place for the `?? []` so neither has to spell it. */
+export function allInteriorSlotRects(
+  footprint: Footprint,
+  wallSlots: Record<string, PanelSlot[]>,
+  offsetPx: DragPoint,
+  wallThicknessPx: number,
+): SlotRect[] {
+  return (footprint.interiorWalls ?? []).flatMap((wall) =>
+    computeInteriorSlotRects(wall, wallSlots[wall.id] ?? [], offsetPx, wallThicknessPx),
+  );
 }
 
 export interface LineSegment {

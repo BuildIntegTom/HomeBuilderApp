@@ -263,7 +263,23 @@ is cut, what sets the radius) was answering the wrong question.
     in the plan, with reasons: `I` reads as `1` on a shop label, and a name
     that says what a wall DOES goes stale when the roof changes.
 
-13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3, 3c AND 4 BUILT 2026-11-17.**
+13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3, 3c, 4 AND 5 BUILT.**
+    **Stride 5: the interior walls are DRAWN — 2026-11-18.** They had been
+    tiled, counted, priced, numbered and given shop sheets since stride 2 and
+    drawn nowhere. Now on the 2D plan, the Plan View sheet and the 3D views,
+    through the outline's own renderers rather than second ones. ⚠ The
+    thickness STRADDLES the stored line where an outline wall's hangs inward,
+    which is what `ridgeBearingWallFor` and `multiplexStudioWidthFt` already
+    assume — get it wrong and the two studios come out different sizes.
+    Measured in the browser: 11 panels summing to exactly 401in per wall,
+    flush between the exterior walls' inner faces, centre wall centred on the
+    18ft midline; and a test pins 2D and 3D equal panel for panel.
+    ⚠ **The ELEVATION tab is still not built and the Review Log entry was
+    corrected rather than deleted**: `elevationWall` resolves through
+    `footprint.walls`, and a wall elevation is built from two CORNERS plus the
+    gable row, box-beam coverage and run stops an interior wall has none of.
+    It belongs with stride 3b.
+
     **Stride 4: the tile, at his 8:12, with a Four-plex.** The tile states
     its own pitch (12'-0" rise over an 18ft half-span, measured live) and
     its own storey count; the four-plex draws 126 wall panels, exactly twice

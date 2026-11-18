@@ -6,6 +6,7 @@ import {
 } from "@building-integrity/geometry";
 import {
   SCALE_PX_PER_FT,
+  allInteriorSlotRects,
   computeSlotRects,
   cornerMarkerPosition,
   formatFeetInches,
@@ -106,8 +107,19 @@ export default function PlanViewDiagram({
       role="img"
       aria-label="To-scale plan view of the drawn footprint and panel layout"
     >
-      {footprint.walls.flatMap((wall) =>
-        computeSlotRects(wall, wallSlots[wall.id] ?? [], footprint, offsetPx, wallStartOffsetIn[wall.id] ?? 0, wallThicknessPx).map((r) => {
+      {/* ⚠ **THE INTERIOR WALLS ARE DRAWN HERE TOO — B34 stride 5,
+          2026-11-18.** They have been counted, priced and given shop sheets
+          since stride 2 and drawn nowhere, which the Review Log has been
+          saying out loud. One concatenated list rather than a second pass, so
+          a dividing wall's panels get the identical rectangle, colour, hatch,
+          label and safety-gap callout the outline's do — two renderers is how
+          they come to disagree. */}
+      {[
+        ...footprint.walls.flatMap((wall) =>
+          computeSlotRects(wall, wallSlots[wall.id] ?? [], footprint, offsetPx, wallStartOffsetIn[wall.id] ?? 0, wallThicknessPx),
+        ),
+        ...allInteriorSlotRects(footprint, wallSlots, offsetPx, wallThicknessPx),
+      ].map((r) => {
           const key = `${r.wallId}-${r.slotIndex}`;
           const panelName = panelNameByKey.get(key);
           const baseColor = PANEL_TYPE_COLORS[r.slot.secondaryType ?? r.slot.type];
@@ -154,8 +166,7 @@ export default function PlanViewDiagram({
               )}
             </g>
           );
-        }),
-      )}
+      })}
 
       {/* Stage 3 — the spans of each wall that are deliberately NOT built.
           A DASHED BOUNDARY LINE, never a hatched wall: this is where the

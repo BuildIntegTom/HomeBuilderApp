@@ -228,6 +228,31 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, B34 stride 5 (the interior walls are drawn): ZERO delta.**
+  **186 problems**, every rule byte-identical (`preserve-manual-memoization`
+  81, `no-unused-vars` 35, `refs` 29, `no-unescaped-entities` 15,
+  `set-state-in-effect` 12, `exhaustive-deps` 12, `immutability` 1,
+  `purity` 1).
+
+  ⚠ **A new renderer that runs on EVERY RENDER cost nothing, and that is the
+  reusable half.** `allInteriorSlotRects` is called inline in two components'
+  JSX, not from a memo — so there is no dep array to touch an already-flagged
+  value, and the rule from the 2026-11-15 entries holds from the other side
+  again: **the budget is spent by `useMemo`s and by what their dep arrays
+  touch, not by how much work a render does.** A second loop in
+  `panelSlotBoxes3D` (outside `apps/web` entirely) and a new test file likewise
+  measured zero.
+
+  ⚠ **The one thing to be careful of here was the opposite of a lint
+  question.** Both plan renderers now map over a CONCATENATED list — the
+  outline's rects plus the interior ones — which meant un-nesting an existing
+  `.flatMap(...).map(...)` into one `.map(...)`. `tsc` catches a bracket
+  mistake there instantly, but nothing would have caught the alternative
+  design: a SECOND pass that draws interior walls with its own colours,
+  labels and handlers. One list is what keeps a dividing wall's panels
+  behaving like every other panel, and it is worth preferring even though it
+  is the fiddlier edit.
+
 - **2026-11-18, B36 strides 2 and 3 (one panel number, and the label IS the
   number): ZERO delta.** **186 problems**, every rule byte-identical
   (`preserve-manual-memoization` 81, `no-unused-vars` 35, `refs` 29,

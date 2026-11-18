@@ -13407,17 +13407,19 @@ export default function LayoutEditor() {
     if (interior.length === 0) return [];
     return [
       {
-        label: `${interior.length} interior wall${interior.length === 1 ? " is" : "s are"} built and priced but NOT drawn`,
+        label: `${interior.length} interior wall${interior.length === 1 ? " has" : "s have"} no elevation view`,
         status: "pending-BI-confirmation" as const,
         note:
           `${interior.map((w) => w.id).join(", ")}. A dividing wall is a real wall: its panels are tiled on the ` +
           "project's own module, named in their own series (C1, C2, … on the first such wall, CB1, CB2, … on the " +
           "next — a series is all letters so a name parses one way only), counted, weighed, priced, numbered in the " +
-          "install sequence and given shop fabrication sheets like any other. It is NOT on the 2D plan, in the 3D " +
-          "view, or in the elevation tabs, because all three are built from the building's outline and this wall " +
-          "is an edge of nothing. So the Summary, the packet and the crew export all include it and the drawings " +
-          "do not — which is the wrong way round for anybody checking a price against a picture, and is why this " +
-          "line exists rather than a silence.",
+          "install sequence and given shop fabrication sheets like any other. ✅ Since 2026-11-18 it is also DRAWN: " +
+          "on the 2D plan, on the Plan View sheet and in the 3D views, in the same colours and with the same panel " +
+          "numbers as every other wall. ⚠ What it still has no view of its own is an ELEVATION. The Edit menu " +
+          "offers one per outline wall and none for these, because a wall elevation is built from the wall’s two " +
+          "CORNERS and from the gable row, box-beam coverage and run stops that belong to the outline — and an " +
+          "interior wall has none of those. So a dividing wall can be seen in plan and in the model but cannot be " +
+          "read off a drawing panel by panel, which is the one way a shop would check it.",
       },
     ];
   }, [footprint]);

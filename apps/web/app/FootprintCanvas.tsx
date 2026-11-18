@@ -36,6 +36,7 @@ import {
   SCALE_PX_PER_FT,
   WALL_PICK_TOLERANCE_PX,
   clientPointFromEvent,
+  allInteriorSlotRects,
   computeSlotRects,
   cornerMarkerPosition,
   findNearestWall,
@@ -1023,16 +1024,26 @@ export default function FootprintCanvas({
               fill="rgba(74,144,217,0.08)"
             />
           )}
+          {/* ⚠ **THE INTERIOR WALLS ARE DRAWN HERE TOO — B34 stride 5,
+              2026-11-18.** Concatenated into the one list rather than drawn by
+              a second pass, so a dividing wall's panels are selectable,
+              right-clickable, hoverable, labelled and coloured by exactly the
+              same code the outline's are. A second renderer is how the two
+              come to disagree about what a panel is. */}
           {footprint &&
-            footprint.walls.flatMap((wall) =>
-              computeSlotRects(
-                wall,
-                wallSlots[wall.id] ?? [],
-                footprint,
-                offsetPx,
-                wallStartOffsetIn[wall.id] ?? 0,
-                wallThicknessPx,
-              ).map((r) => {
+            [
+              ...footprint.walls.flatMap((wall) =>
+                computeSlotRects(
+                  wall,
+                  wallSlots[wall.id] ?? [],
+                  footprint,
+                  offsetPx,
+                  wallStartOffsetIn[wall.id] ?? 0,
+                  wallThicknessPx,
+                ),
+              ),
+              ...allInteriorSlotRects(footprint, wallSlots, offsetPx, wallThicknessPx),
+            ].map((r) => {
                 const panelName = panelNameByKey.get(`${r.wallId}-${r.slotIndex}`);
                 const slotKey = `${r.wallId}-${r.slotIndex}`;
                 const typeLabel = r.slot.secondaryType ? `${r.slot.secondaryType} + ${r.slot.type}` : r.slot.type;
@@ -1175,8 +1186,7 @@ export default function FootprintCanvas({
                     )}
                   </Group>
                 );
-              }),
-            )}
+            })}
           {hoveredSlot &&
             (() => {
               const info = structuralByKey.get(hoveredSlot.key);

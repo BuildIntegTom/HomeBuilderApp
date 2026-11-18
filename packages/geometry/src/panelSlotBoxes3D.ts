@@ -133,5 +133,67 @@ export function panelSlotBoxes3D(
       offsetFt += widthFt;
     }
   }
+
+  /**
+   * ⚠ **THE WALLS THAT ARE NOT ON THE OUTLINE — B34 stride 5, 2026-11-18.**
+   *
+   * A second loop for the same reason `allPanelInstances` has one: every line
+   * of the loop above is about the outline. Corner ownership, the inset for a
+   * wall that loses its corner, the reflex extension, the run stops and the
+   * defensive rescale against a tiled length all describe a wall that is an
+   * edge of a closed ring, and an interior wall is an edge of nothing.
+   *
+   * ⚠ **The box STRADDLES the stored line**, where an outline wall's box hangs
+   * inward off it. Same reason as the 2D version (`computeInteriorSlotRects`):
+   * `ridgeBearingWallFor` recognises the ridge wall by testing its endpoints
+   * against the building's midline, and `multiplexStudioWidthFt` subtracts
+   * three wall thicknesses across a Multiplex — both of which only add up if
+   * the thickness is split either side of the line. Hanging it off one side
+   * would draw the wall half a thickness out of place and make the two studios
+   * different sizes, in 3D only, while the plan had it right.
+   *
+   * ⚠ **No rescale, because there is nothing to rescale against.** An interior
+   * wall's slots are tiled to `wallFabricationLengthIn(wall)` and nothing
+   * insets or extends it, so the sum IS the length. The outline's rescale
+   * exists to absorb float slop between two different derivations of one
+   * wall's length; here there is only one.
+   */
+  for (const wall of footprint.interiorWalls ?? []) {
+    const dx = wall.end.x - wall.start.x;
+    const dz = wall.end.y - wall.start.y;
+    const length = Math.hypot(dx, dz) || 1;
+    const dir = { x: dx / length, z: dz / length };
+    const rotationRad = Math.atan2(dz, dx);
+    /* The same perpendicular the outline loop calls `inward`, which is the
+       direction a box's `depthFt` runs from its anchor. Half of it, backwards,
+       puts the anchor on the near face so the box straddles the line. */
+    const across = { x: -dir.z, z: dir.x };
+    const startX = wall.start.x - (across.x * thicknessFt) / 2;
+    const startZ = wall.start.y - (across.z * thicknessFt) / 2;
+
+    const slots = wallSlots[wall.id] ?? [];
+    let offsetFt = 0;
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+      const slot = slots[slotIndex]!;
+      /* Same rule as above: a framed void owns its length and draws nothing. */
+      if (slot.type === "open") {
+        offsetFt += slot.widthIn / 12;
+        continue;
+      }
+      const widthFt = slot.widthIn / 12;
+      result.push({
+        wallId: wall.id,
+        slotIndex,
+        slot,
+        anchorX: startX + dir.x * offsetFt,
+        anchorZ: startZ + dir.z * offsetFt,
+        widthFt,
+        depthFt: thicknessFt,
+        heightFt,
+        rotationRad,
+      });
+      offsetFt += widthFt;
+    }
+  }
   return result;
 }
