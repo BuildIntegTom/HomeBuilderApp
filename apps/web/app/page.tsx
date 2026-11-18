@@ -11,6 +11,7 @@ import {
   isCourtyardFootprint,
   longestBandRunFt,
   ridgeBearingWallFor,
+  tileInteriorWalls,
   ringRoofGableBlockReason,
   roofBearingBands,
   roofNeedsRidgeBeam,
@@ -3907,7 +3908,20 @@ export default function LayoutEditor() {
     const cornerXY = (fp: Footprint) => new Map(fp.corners.map((c) => [c.id, { x: c.point.x, y: c.point.y }]));
     const oldCorners = cornerXY(oldFp);
     const newCorners = cornerXY(newFp);
-    const next: Record<string, PanelSlot[]> = {};
+    /* ⚠ **THE INTERIOR WALLS, RE-TILED FOR THEIR NEW LENGTH — found
+       2026-11-18.** The loop below walks `newFp.walls`, which is the OUTLINE
+       and nothing else, so every interior wall's panels were dropped on the
+       spot. The footprint still carried the walls (the roof bands and the
+       Review Log both read it), which is what made this hard to see: the
+       building still said *"3 interior walls are built and priced"* while 33
+       of its panels had quietly left the cut list.
+
+       Re-tiled rather than carried, because a resize changes their length and
+       a row of panels has to sum exactly to its wall. They have no openings to
+       preserve — the seeder deliberately skips an interior wall — so a plain
+       tile is the whole job. Same helper `retile` uses, so a resized Multiplex
+       and a freshly drawn one of the same size panelize identically. */
+    const next: Record<string, PanelSlot[]> = tileInteriorWalls(newFp, standardWidthIn, leastAccessibleCorner);
     let collapsedOpenings = 0;
     let tidiedParts = 0;
     let cornersMoved = 0;
@@ -4183,7 +4197,45 @@ export default function LayoutEditor() {
     const verdict = roofShapeChangeVerdict(oldFp, newFp, { roofEnabled, pitchIn12: currentPitchIn12 });
     if (verdict.rederive) return applyRoofDefaultsForFootprint(newFp, slotsByWallId, currentPitchIn12);
     /* Same roof, new lengths — see `remapEndAnchoredPositions`. */
-    setGableProfilePositionsInByWallId((was) => remapEndAnchoredPositions(oldFp, newFp, was));
+    const remapped = remapEndAnchoredPositions(oldFp, newFp, gableProfilePositionsInByWallId);
+    setGableProfilePositionsInByWallId(remapped);
+
+    /* ⚠ **HOLD THE PITCH, NOT THE RISE — his decision, 2026-11-17.**
+       *"hold the pitch on resize"*.
+
+       This branch is the one that does NOT re-derive: the roof is the same
+       roof, on a building of new lengths. It used to carry the stored RISE
+       through untouched, which quietly changed the PITCH every time the span
+       moved — measured on The Tank, a 24ft to 22ft depth change left the rise
+       at 4'-0" and turned a 4:12 roof into a **4.36:12** one. Nothing said so,
+       and every gable tile, roof panel and slope label followed it.
+
+       So each stored height is re-measured: read the pitch it represented over
+       the OLD run, then rebuild it over the NEW one. Every point is carried,
+       not just the first, so a multi-point roofline keeps its whole shape
+       rather than only its peak.
+
+       ⚠ **Nothing happens when the span did not move.** A wall drag that
+       leaves the roof's span alone must not re-round the rise —
+       `computeRiseFtForPitch` rounds to the inch, so recomputing on every
+       unrelated edit would walk the roof a fraction at a time. */
+    const oldSpanFt = roofSpanFt(oldFp);
+    const newSpanFt = roofSpanFt(newFp);
+    if (Math.abs(newSpanFt - oldSpanFt) > 1e-9 && roofProfilePointHeightsFt.length > 0) {
+      /* The form AFTER the remap, because that is the roof these heights now
+         describe — and a shed measures the whole span where a peak measures
+         half, so getting it wrong would halve or double the rise. */
+      const newForm = roofFormFromProfilePositions(newFp.walls, gableEndWallIds, remapped);
+      const nextHeightsFt = roofProfilePointHeightsFt.map((riseFt) => {
+        const pitchIn12 = pitchFromStoredRiseFt(oldSpanFt, oldForm === "shed", riseFt, roofPitchSeatContext);
+        /* A height with no readable pitch (zero or negative) is left exactly
+           as it was rather than guessed at. */
+        return pitchIn12 === null
+          ? riseFt
+          : riseFtForPitch(newSpanFt, newForm === "shed", pitchIn12, roofPitchSeatContext);
+      });
+      setRoofProfilePointHeightsFt(nextHeightsFt);
+    }
     return slotsByWallId;
   };
 
@@ -6783,7 +6835,10 @@ export default function LayoutEditor() {
     const snapped = { widthFt: snapToEighthFt(next.widthFt), depthFt: snapToEighthFt(next.depthFt) };
     /* Not a failure: the caller asked for the size it already is. */
     if (!boxChanged(current, snapped)) return false;
-    const fp = footprintForBox(kind, snapped);
+    /* ⚠ **The CURRENT building goes in, so its interior walls come out the
+       other side** — scaled with the box rather than copied. Without it a
+       Multiplex lost all three on the first click of a dimension dial. */
+    const fp = footprintForBox(kind, snapped, footprint);
     if (!fp) return false;
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     if (!applyShapeChange(footprint, fp, nextPrimary)) {
@@ -13143,44 +13198,14 @@ export default function LayoutEditor() {
         status: "pending-BI-confirmation" as const,
         note:
           `${interior.map((w) => w.id).join(", ")}. A dividing wall is a real wall: its panels are tiled on the ` +
-          "project's own module, named in their own series (C1, C2, …), counted, weighed, priced, numbered in the " +
+          "project's own module, named in their own series (C1, C2, … on the first such wall, CB1, CB2, … on the " +
+          "next — a series is all letters so a name parses one way only), counted, weighed, priced, numbered in the " +
           "install sequence and given shop fabrication sheets like any other. It is NOT on the 2D plan, in the 3D " +
           "view, or in the elevation tabs, because all three are built from the building's outline and this wall " +
           "is an edge of nothing. So the Summary, the packet and the crew export all include it and the drawings " +
           "do not — which is the wrong way round for anybody checking a price against a picture, and is why this " +
           "line exists rather than a silence.",
       },
-      /* ⚠ **A SECOND, SEPARATE FACT ABOUT THE SAME WALLS: their panel names
-         are ambiguous once there is more than one of them.** The convention
-         is his own — *"just letter plus number"* — and a second wall in a
-         series takes a suffix exactly as a second north wall does, so three
-         interior walls give `C1`-`C11`, `C21`-`C211` and `C31`-`C311`.
-
-         ⚠ **`C21` cannot be read.** It is wall `C2` panel 1, but it is
-         equally `C` panel 21, and `C211` is worse. On the compass series this
-         has always been true and has never mattered, because a second north
-         wall is rare and rarely has twenty panels. A Multiplex ships with
-         THREE interior walls by default, so the edge case is now the normal
-         case. Said here rather than fixed, because the fix is a naming
-         decision and the naming is his. */
-      ...(interior.length > 1
-        ? [
-            {
-              label: `Panel names on ${interior.length} interior walls are ambiguous (C21 is wall C2 panel 1, or wall C panel 21)`,
-              status: "pending-BI-confirmation" as const,
-              note:
-                `The second and later walls in a series take a number suffix, the same convention a second ` +
-                `north-facing wall uses, so this building has ${interior
-                  .map((w, i) => (i === 0 ? "C1…" : `C${i + 1}1…`))
-                  .join(", ")}. Nothing is wrong in the model — every panel is distinct, correctly placed and ` +
-                `correctly numbered in the install sequence — but a crew reading a name off a sheet has no way ` +
-                `to split the wall from the panel. It has always been true of a second N or E wall and has ` +
-                `never bitten, because those are rare; three interior walls by default make it the normal ` +
-                `case. The fix is a naming decision, not a defect: a separator, a letter per wall, or names ` +
-                `that say what the wall does.`,
-            },
-          ]
-        : []),
     ];
   }, [footprint]);
 

@@ -110,14 +110,56 @@ export function areWallsOppositePair(wallA: Wall, wallB: Wall, footprint: Footpr
 export const INTERIOR_WALL_SERIES = "C";
 
 /**
- * The second and later interior walls take a suffix, exactly as a second
- * north-facing wall does (`N`, `N2`) — one convention, so nobody has to learn
- * a second one. A building with one dividing wall reads plainly `C`.
+ * ⚠ **A SERIES IS ALL LETTERS AND A PANEL NUMBER IS ALL DIGITS — B36 stride 1,
+ * 2026-11-17. That is what makes a name readable, and it is not a style
+ * choice: the old rule produced a KEY COLLISION.**
+ *
+ * The second and later interior walls used to take a NUMERIC suffix — `C`,
+ * `C2`, `C3` — on the stated grounds that it matched *"a second north-facing
+ * wall (`N`, `N2`)"*. **That premise was false.** `panelInstances` counts per
+ * SERIES, not per wall, so two north-facing walls share one `N1`…`N12` run and
+ * no `N2` series is ever generated. The numeric suffix existed nowhere else.
+ *
+ * And it collided, because the panel name is `` `${series}${panelNumber}` ``:
+ *
+ * ```
+ * wall "C2", panel 1   ->  C21
+ * wall "C",  panel 21  ->  C21
+ * ```
+ *
+ * ⚠ **That string is the KEY both numbering systems are stored against**
+ * (`panelCodeKey` and `installSequenceKey` are byte-identical formulas), so
+ * two different panels took ONE crew code — measured through the real ledger,
+ * and the exact failure `tip4urTimeCsv.ts` warns about in its own comment:
+ * *"a crew would be paid once for two panels."*
+ *
+ * So later walls take a LETTER: `C`, `CB`, `CC`, `CD`, … A name is then
+ * letters-then-digits and parses one way only. `CB11` is wall `CB` panel 11,
+ * and `C21` can only be wall `C` panel 21.
+ *
+ * ⚠ **A separator was the obvious fix and it is RULED OUT by the shop.**
+ * Tommy, 2026-09-24: *"I have spray paint stencils in the shop, and there is
+ * no huphen stencil. So let's drop the hyphen."* Letters and digits are what
+ * he can stencil, so the fix has to live inside that alphabet.
+ *
+ * ⚠ **No generated series can ever be a compass direction**, because every
+ * one of these starts with `C` and no compass label does (`N`, `NE`, `E`,
+ * `SE`, `S`, `SW`, `W`, `NW`). Pinned by a test rather than left to luck.
  */
-export type InteriorWallSeries = "C" | `C${number}`;
+export type InteriorWallSeries = "C" | `C${string}`;
 
 export function interiorWallSeries(indexInBuilding: number): InteriorWallSeries {
-  return indexInBuilding === 0 ? INTERIOR_WALL_SERIES : (`${INTERIOR_WALL_SERIES}${indexInBuilding + 1}` as const);
+  if (indexInBuilding <= 0) return INTERIOR_WALL_SERIES;
+  /* B, C, D, … for the 2nd, 3rd, 4th wall. Past the 26th it doubles up
+     (`CAA`), which keeps the letters-only rule rather than falling back to a
+     digit the moment a building gets unusual. */
+  let suffix = "";
+  let n = indexInBuilding + 1; // index 1 -> "B", 2 -> "C", … as if `C` itself were `CA`
+  while (n > 0) {
+    suffix = String.fromCharCode(65 + ((n - 1) % 26)) + suffix;
+    n = Math.floor((n - 1) / 26);
+  }
+  return `${INTERIOR_WALL_SERIES}${suffix}` as InteriorWallSeries;
 }
 
 /**
@@ -135,5 +177,9 @@ export type WallSeriesLabel = CompassDirection | InteriorWallSeries;
  *  this to decide on a colour: an interior wall gets the plainly
  *  non-compass one rather than a borrowed direction's. */
 export function isCompassDirection(label: WallSeriesLabel): label is CompassDirection {
-  return label !== INTERIOR_WALL_SERIES && !/^C\d+$/.test(label);
+  /* ⚠ Every interior series starts with `C` and no compass direction does, so
+     this is the whole test. It read `/^C\d+$/` while later walls took a
+     numeric suffix; a letter suffix would have slipped straight through it and
+     been coloured as a compass direction. */
+  return !label.startsWith(INTERIOR_WALL_SERIES);
 }

@@ -31,6 +31,8 @@
 import {
   buildOctagonFootprint,
   buildRectangleFootprint,
+  quantizeFootprint,
+  type InteriorWall,
   octagonBoxOf,
   type Footprint,
 } from "@building-integrity/geometry";
@@ -124,10 +126,74 @@ export function boxAxisForWall(kind: BuildingShapeKind, wallId: string): "width"
  * included. That identity is what lets `applyShapeChange` carry every wall's
  * panels across by key instead of re-tiling them.
  */
-export function footprintForBox(kind: BuildingShapeKind, box: BuildingBoxFt): Footprint | null {
-  if (kind === "rectangle") return buildRectangleFootprint(box.widthFt, box.depthFt);
-  if (kind === "octagon") return buildOctagonFootprint(box.widthFt, box.depthFt);
-  return null;
+export function footprintForBox(
+  kind: BuildingShapeKind,
+  box: BuildingBoxFt,
+  /**
+   * ⚠ **THE BUILDING BEING RESIZED, so its INTERIOR WALLS come with it —
+   * B34, found 2026-11-18.**
+   *
+   * Omitted, this builds a bare outline, which is what it always did and what
+   * every shape without interior walls still gets.
+   *
+   * ⚠ **Leaving it out DELETED them, and that is how this was found.** Stride
+   * 1 audited the eight places that rebuild a footprint from `{ corners,
+   * walls }` and made them all spread their source. This is a NINTH place and
+   * it is the one with a dial on it: it does not edit a footprint, it builds a
+   * fresh one from two numbers, so there was nothing to spread. Measured on
+   * the Multiplex: two clicks of **Decrease Width** took it from 63 wall
+   * panels to 34, collapsed the roof from 72 panels back to 36, and removed
+   * every interior-wall line from the Review Log. **Two apartments and the
+   * roof's bearing, gone, with nothing saying so** — which is the exact
+   * outcome stride 1 set out to make impossible.
+   */
+  source?: Footprint | null,
+): Footprint | null {
+  const outline =
+    kind === "rectangle"
+      ? buildRectangleFootprint(box.widthFt, box.depthFt)
+      : kind === "octagon"
+        ? buildOctagonFootprint(box.widthFt, box.depthFt)
+        : null;
+  if (!outline) return null;
+  const carried = scaleInteriorWallsToBox(source, box);
+  return carried.length === 0 ? outline : quantizeFootprint({ ...outline, interiorWalls: carried });
+}
+
+/**
+ * ⚠ **An interior wall is carried PROPORTIONALLY, not copied.**
+ *
+ * Copying the points would leave a centre wall at x = 18 in a building that is
+ * now 34 ft wide — off the midline, so `ridgeBearingWallFor` would stop
+ * recognising it and the roof would quietly lose its bearing. Scaling each
+ * endpoint with the box keeps a centred wall centred and a wall a quarter of
+ * the way across a quarter of the way across, which is what "the same
+ * building, resized" has to mean.
+ *
+ * The result is snapped by `quantizeFootprint` at the call above, so every
+ * carried wall lands back on the eighth grid — his dimensional-tightness
+ * rule, which a scale factor would otherwise walk straight off.
+ */
+function scaleInteriorWallsToBox(source: Footprint | null | undefined, box: BuildingBoxFt): InteriorWall[] {
+  const interior = source?.interiorWalls ?? [];
+  if (interior.length === 0) return [];
+  const xs = source!.corners.map((c) => c.point.x);
+  const ys = source!.corners.map((c) => c.point.y);
+  const oldWidthFt = Math.max(...xs) - Math.min(...xs);
+  const oldDepthFt = Math.max(...ys) - Math.min(...ys);
+  /* A degenerate old box has no ratio to scale by. Carrying the walls
+     unscaled is still better than dropping them, and the quantizer will
+     place them somewhere legal. */
+  const sx = oldWidthFt > 0 ? box.widthFt / oldWidthFt : 1;
+  const sy = oldDepthFt > 0 ? box.depthFt / oldDepthFt : 1;
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const at = (p: { x: number; y: number }) => ({ x: (p.x - minX) * sx, y: (p.y - minY) * sy });
+  return interior.map((wall) => {
+    const start = at(wall.start);
+    const end = at(wall.end);
+    return { ...wall, start, end, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
+  });
 }
 
 /** The box with one axis replaced — the shape of every edit a handle or a

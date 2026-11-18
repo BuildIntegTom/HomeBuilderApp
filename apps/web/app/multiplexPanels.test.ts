@@ -63,8 +63,23 @@ describe("the centre wall's panels are named C1, C2, …", () => {
     expect(centre.map((i) => i.name)).toEqual(centre.map((_, n) => `C${n + 1}`));
   });
 
-  it("a second interior wall takes the same suffix convention a second N wall does", () => {
-    expect(interiorWallSeries(1)).toBe("C2");
+  it("⚠ a second interior wall takes a LETTER suffix, not a number — B36 stride 1", () => {
+    /* ⚠ **This asserted `C2` until 2026-11-17, and the reason it had to change
+       is a KEY COLLISION rather than taste.** A panel's name is
+       `${series}${panelNumber}`, so `C2` + `1` and `C` + `21` were both `C21`
+       — and that string is the key `panelCodeKey` and `installSequenceKey`
+       both store against. Measured through the real ledger, two different
+       panels took ONE crew code.
+
+       ⚠ **The rationale this test used to carry was also false.** It said the
+       numeric suffix matched "a second N wall", but `panelInstances` counts
+       per SERIES, not per wall: two north-facing walls share one `N1`…`N12`
+       run and no `N2` series is ever generated.
+
+       ⚠ A separator would have fixed it and is ruled out by the shop — *"there
+       is no huphen stencil"* — so the fix lives inside letters and digits. */
+    expect(interiorWallSeries(1)).toBe("CB");
+    expect(`${interiorWallSeries(1)}1`).not.toBe(`${interiorWallSeries(0)}21`);
   });
 
   it("⚠ its series is NOT a compass direction, so B35 gives it the non-compass chip", () => {

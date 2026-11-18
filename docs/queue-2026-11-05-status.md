@@ -190,7 +190,30 @@ is cut, what sets the radius) was answering the wrong question.
     and the one width a corner panel never has. *Sweep the size the app emits,
     not the size the constant is named after.*
 
-14. **B36 — the panel's name is its number.** 📋 **QUEUED 2026-11-17**,
+14. **B36 — the panel's name is its number.** ✅ **STRIDE 1 BUILT 2026-11-18**;
+    strides 2–3 still queued. **Stride 1 closed the key collision.** A series
+    is now all LETTERS and a panel number all digits — `C`, `CB`, `CC`, … — so
+    `C21` can only be wall `C` panel 21. ⚠ A separator was the obvious fix and
+    the SHOP rules it out: *"there is no huphen stencil"*. ⚠ The rationale the
+    old numeric suffix carried was FALSE — it claimed to match a second N wall,
+    but panels count per SERIES not per wall, so no `N2` ever existed and the
+    collision lived only in the interior series. ⚠ Not migrated, and the reason
+    is the defect itself: **the old format cannot be parsed back.** One day of
+    exposure, nothing in fabrication. Plan for strides 2–3 (one stamped number,
+    the label is the number) in
+    `Claude outputs/panel-naming-plan-2026-11-17.md`, whose separator option is
+    now struck out.
+
+15. **Hold the pitch on resize + a ninth footprint rebuild.** ✅ **BUILT
+    2026-11-18.** His *"hold the pitch on resize"*. ⚠ Verifying it found that
+    `footprintForBox` **deleted a Multiplex's interior walls** — two clicks of
+    Decrease Width took it from 63 wall panels to 34 and the roof from 72 to
+    36, silently. A ninth place rebuilds a footprint, and it is the one with a
+    dial on it. ⚠ And a second half: with the walls carried, the SLOTS were
+    still dropped, because `resizeSlotsForShapeChange` walks the outline only.
+    The footprint and the slots are two paths and only one had been fixed.
+
+16. **B36 — the panel's name is its number (strides 2–3).** 📋 **QUEUED 2026-11-17**,
     planned in `Claude outputs/panel-naming-plan-2026-11-17.md`. He likes the
     `0001` scheme and asked for a foolproof version: *"who cares if at the
     begining of the design the panels jump around drastically."* He can have

@@ -228,6 +228,29 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, hold-the-pitch + B36 stride 1: ZERO delta.** **186 problems**,
+  every rule byte-identical (`preserve-manual-memoization` 81,
+  `no-unused-vars` 35, `refs` 29, `no-unescaped-entities` 15,
+  `set-state-in-effect` 12, `exhaustive-deps` 12, `immutability` 1,
+  `purity` 1).
+
+  ⚠ Worth recording for the size of it: a rewritten resize seam
+  (`footprintForBox` now carries and scales interior walls), two rewritten slot
+  paths, a changed series generator in geometry, a changed guard, two new test
+  files and a deleted Review Log entry — and **not one flag moved, because the
+  change added no memo at all.** The rule from the 2026-11-15 entries holding
+  again from the other side: the budget is spent by `useMemo`s and by what
+  their dep arrays touch, not by how much code there is.
+
+  ⚠ **And the real defect was again invisible to all three gates.** A resize
+  deleted a Multiplex's interior walls — 63 wall panels to 34, roof 72 to 36 —
+  and `tsc`, `vitest` and lint all passed. **The browser found it, and only
+  because the verification happened to look at a panel COUNT.** The narrower
+  lesson is the one worth keeping: the footprint and the SLOTS are two separate
+  paths, so fixing the first made the building report *"3 interior walls are
+  built and priced"* while 33 of its panels were missing from the cut list.
+  **A wall existing is not a wall having panels.**
+
 - **2026-11-17, B34 stride 4 (the Multiplex tile at 8:12): ZERO delta, after a
   +3 that was diagnosed and fixed rather than recorded.** Final: **186
   problems**, every rule byte-identical to the stride-3c run

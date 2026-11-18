@@ -135,7 +135,31 @@ against a digit.
 
 ## The plan — three strides
 
-### Stride 1 — close the collision (correctness, small)
+### ✅ Stride 1 — close the collision. BUILT 2026-11-18, and smaller than planned
+
+⚠ **Two things measured after this plan was written changed the fix.**
+
+1. **A separator is ruled out by the shop.** *"I have spray paint stencils in
+   the shop, and there is no huphen stencil. So let's drop the hyphen."*
+   (2026-09-24). `C2-1` was my first option above; strike it.
+2. **The compass series can never collide.** `panelInstances` counts per
+   SERIES, not per wall, so two north-facing walls share one `N1`…`N12` run and
+   no `N2` series is ever generated. The doc comment claiming the numeric
+   suffix "matched a second N wall" was describing something that does not
+   exist. **The whole collision lived in `interiorWallSeries` alone.**
+
+So the fix is one function: later walls take a **letter** — `C`, `CB`, `CC`, …
+doubling to `CAA` past the 26th rather than reaching for a digit. A name is
+then letters-then-digits and parses one way only. `isCompassDirection` moved
+with it (`/^C\d+$/` would have let a letter suffix through and painted an
+interior wall with a compass colour).
+
+⚠ **Not migrated, and the reason is the defect itself: the old key format
+cannot be parsed back.** A code stamped against an old `C2`-series key is
+orphaned and reissued on the next export. One day of exposure, nothing in
+fabrication.
+
+### ~~Stride 1 — close the collision (correctness, small)~~ — as originally planned
 
 Make the key carry the wall and the index as **separate fields** rather than one
 concatenated token:
