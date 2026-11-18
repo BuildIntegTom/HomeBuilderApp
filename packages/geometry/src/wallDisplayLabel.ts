@@ -1,4 +1,4 @@
-import { wallCompassDirection, type CompassDirection } from "./wallCompassDirection";
+import { interiorWallSeries, wallCompassDirection, type CompassDirection } from "./wallCompassDirection";
 import type { Footprint } from "./types";
 
 /**
@@ -53,10 +53,24 @@ function suffixed(direction: CompassDirection, ordinal: number): string {
  * Computed for the whole footprint at once because the numbering is only
  * decidable from the complete set — a wall cannot know whether it is the only
  * north-facing one.
+ *
+ * ⚠ **INTERIOR WALLS ARE IN HERE TOO, labelled by their SERIES — B34, 2026-11-18.**
+ * A dividing wall has no compass direction and must never be given one (see
+ * `WallSeriesLabel`): it has no outside to face. What it does have is the
+ * series its panels are already named in — `C1`, `C2`, … — so its label is
+ * that series letter, `C`, and a person reading *"Elevation: C"* is reading
+ * the same vocabulary the shop has on the panels.
+ *
+ * One map rather than two, because every consumer is a LOOKUP by wall id and a
+ * second map is a second chance for a wall to have two names. Nothing iterates
+ * this record's keys to mean "the outline".
  */
 export function wallDisplayLabelsByWallId(footprint: Footprint): Record<string, string> {
   const seen = new Map<CompassDirection, number>();
   const out: Record<string, string> = {};
+  for (const [index, wall] of (footprint.interiorWalls ?? []).entries()) {
+    out[wall.id] = interiorWallSeries(index);
+  }
   for (const wall of footprint.walls) {
     const direction = wallCompassDirection(wall, footprint);
     const ordinal = seen.get(direction) ?? 0;

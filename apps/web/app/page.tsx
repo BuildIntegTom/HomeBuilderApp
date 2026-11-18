@@ -626,10 +626,10 @@ import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
 import AppFooter from "./AppFooter";
-import type { ViewerStop } from "./viewerMenus";
+import { viewerStopsForFootprint, type ViewerStop } from "./viewerMenus";
 import WindowSizeDiagram from "./WindowSizeDiagram";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
-import WallElevationDiagram from "./WallElevationDiagram";
+import WallElevationDiagram, { type ElevationWall } from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
@@ -2506,7 +2506,12 @@ export default function LayoutEditor() {
   // shed shortcut this replaces, including a flat-top's own point 0);
   // Centered Peak only makes sense for a real single peak (pointIndex 0 of
   // a "peaked" 1-point profile) — a flat-top point isn't a peak.
-  const handleSetShedPitch = (wall: Wall, pointIndex: number, pitchIn12: number) => {
+  /* ⚠ `ElevationWall`, not `Wall` — these two read an id and a length and
+     nothing else, and the one caller is now typed that way (an elevation can
+     be open on a dividing wall since B34). Both are gable-roofline controls
+     that a dividing wall never shows, so this is a type narrowing rather than
+     a behaviour change. */
+  const handleSetShedPitch = (wall: ElevationWall, pointIndex: number, pitchIn12: number) => {
     handleChangeGableProfilePositionIn(wall.id, pointIndex, 0);
     const wallWidthIn = wall.lengthFt * 12;
     const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, effectiveHeelHeightIn, 1, roofBearingAnchorMode, trussPlateInsetIn);
@@ -2515,7 +2520,7 @@ export default function LayoutEditor() {
       computeRiseFtForPitch(pitchIn12, wallWidthIn - seat.runOffsetIn, seat.heelOffsetIn),
     );
   };
-  const handleSetCenteredPeakPitch = (wall: Wall, pitchIn12: number) => {
+  const handleSetCenteredPeakPitch = (wall: ElevationWall, pitchIn12: number) => {
     handleChangeGableProfilePositionIn(wall.id, 0, undefined);
     const wallWidthIn = wall.lengthFt * 12;
     const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, effectiveHeelHeightIn, 2, roofBearingAnchorMode, trussPlateInsetIn);
@@ -3296,7 +3301,32 @@ export default function LayoutEditor() {
     };
   }, [cloud.menuModel]);
 
-  const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
+  /**
+   * ⚠ **THE WALL THE ELEVATION IS OPEN ON, OUTLINE *OR* DIVIDING — B34,
+   * 2026-11-18.**
+   *
+   * It resolved through `footprint.walls` alone, so a Multiplex's three
+   * dividing walls were the only walls in the building that could be seen in
+   * plan and in 3D but never read off a drawing panel by panel — which is the
+   * one way a shop checks a wall. The Review Log had been saying so since
+   * stride 2.
+   *
+   * ⚠ **Nothing is invented to make this work.** `WallElevationDiagram` reads
+   * exactly two fields off this object (`id`, `lengthFt`) and takes every
+   * corner-dependent fact as a NUMBER from here — see `ElevationWall`. An
+   * `InteriorWall` satisfies that as it stands, and its insets and stops come
+   * through as zero, which is true of a wall that is an edge of nothing.
+   */
+  const elevationWall: ElevationWall | null =
+    footprint && elevationViewWallId
+      ? (footprint.walls.find((w) => w.id === elevationViewWallId) ??
+        footprint.interiorWalls?.find((w) => w.id === elevationViewWallId) ??
+        null)
+      : null;
+  /** Is that wall a dividing wall? Several controls in the elevation panel are
+   *  about the outline and have no meaning here — see `elevationControls`. */
+  const elevationWallIsInterior =
+    elevationWall !== null && (footprint?.interiorWalls ?? []).some((w) => w.id === elevationWall.id);
 
   /** Is the viewer actually drawing the 3D model right now?
    *
@@ -3352,18 +3382,10 @@ export default function LayoutEditor() {
      AGENTS.md. It is computed where it is used instead. */
   const wallLabels = footprint ? wallDisplayLabelsByWallId(footprint) : {};
   // See viewerMenus.ts.
+  /* ⚠ The list itself is `viewerStopsForFootprint` — see its own note for why
+     it is not an array literal here any more. */
   const viewerStops = useMemo<ViewerStop[]>(
-    () => [
-      { kind: "plan" },
-      ...(footprint?.walls.map((w) => ({
-        kind: "elevation" as const,
-        wallId: w.id,
-        label: wallDisplayLabelsByWallId(footprint)[w.id] ?? w.id,
-      })) ?? []),
-      { kind: "3d-framed" },
-      { kind: "3d-boxes" },
-      { kind: "3d-wraps" },
-    ],
+    () => viewerStopsForFootprint(footprint, footprint ? wallDisplayLabelsByWallId(footprint) : {}),
     [footprint],
   );
   const currentViewerStop: ViewerStop = elevationViewWallId
@@ -13626,27 +13648,14 @@ export default function LayoutEditor() {
     ];
   }, [panelNumbers, panelNumbersIssuedAt, installSequence.size]);
 
-  const interiorWallNotDrawnReviewEntries = useMemo(() => {
-    const interior = footprint?.interiorWalls ?? [];
-    if (interior.length === 0) return [];
-    return [
-      {
-        label: `${interior.length} interior wall${interior.length === 1 ? " has" : "s have"} no elevation view`,
-        status: "pending-BI-confirmation" as const,
-        note:
-          `${interior.map((w) => w.id).join(", ")}. A dividing wall is a real wall: its panels are tiled on the ` +
-          "project's own module, named in their own series (C1, C2, … on the first such wall, CB1, CB2, … on the " +
-          "next — a series is all letters so a name parses one way only), counted, weighed, priced, numbered in the " +
-          "install sequence and given shop fabrication sheets like any other. ✅ Since 2026-11-18 it is also DRAWN: " +
-          "on the 2D plan, on the Plan View sheet and in the 3D views, in the same colours and with the same panel " +
-          "numbers as every other wall. ⚠ What it still has no view of its own is an ELEVATION. The Edit menu " +
-          "offers one per outline wall and none for these, because a wall elevation is built from the wall’s two " +
-          "CORNERS and from the gable row, box-beam coverage and run stops that belong to the outline — and an " +
-          "interior wall has none of those. So a dividing wall can be seen in plan and in the model but cannot be " +
-          "read off a drawing panel by panel, which is the one way a shop would check it.",
-      },
-    ];
-  }, [footprint]);
+  /* ⚠ **`interiorWallNotDrawnReviewEntries` WAS HERE AND IS DELETED, 2026-11-18.**
+     It said a dividing wall could be seen in plan and in the model but not
+     read off a drawing panel by panel — which was true from B34 stride 2 until
+     the elevation arrived. The Edit menu now offers one stop per interior wall
+     beside the compass ones, so there is nothing left to report and a Review
+     Log line that merely describes a working feature is noise a reader has to
+     re-check. Deleted rather than reworded: the log is for what is NOT right.
+     Its history is in the spec and in `docs/queue-2026-11-05-status.md`. */
 
   /**
    * ⚠ **THE ROOF OVER AN INTERIOR WALL — B34 stride 3, 2026-11-17.**
@@ -14196,7 +14205,6 @@ export default function LayoutEditor() {
       ...panelNumberReviewEntries,
       /* ⚠ Beside the run-stop entries, because it is the same kind of fact:
          a wall that is not what a drawing shows it to be. */
-      ...interiorWallNotDrawnReviewEntries,
       /* ⚠ Beside it, because both are about what a drawing does and does not
          show. These two are the roof over that same wall. */
       ...roofBearingReviewEntries,
@@ -14390,7 +14398,6 @@ export default function LayoutEditor() {
     seismicZone,
     unitSystem,
     panelNumberReviewEntries,
-    interiorWallNotDrawnReviewEntries,
     wallRunStopReviewEntries,
     spanningHeaderReviewEntries,
     zeroBracingReviewEntries,
@@ -15580,20 +15587,39 @@ export default function LayoutEditor() {
           </button>
         </div>
       )}
+      {/* ⚠ **THREE CONTROLS ARE ABOUT THE OUTLINE AND ARE ABSENT ON A
+          DIVIDING WALL — B34, 2026-11-18**, and the absence is stated rather
+          than left to be noticed. A gable end is the END OF A RIDGE, which is
+          a wall of the ring; a Box Beam is a per-wall choice of what the
+          ROOFLINE bears on, and a dividing wall that carries the roof gets a
+          truss plate by his own answer of 2026-11-18; and a Stop Wall takes a
+          CORNER PANEL with it, which an interior wall has none of. Offering
+          any of the three here would be a control that reads back a value and
+          changes nothing — the quietest kind of wrong. */}
+      {elevationWallIsInterior && (
+        <p className={elevationStyles.helpText}>
+          This is a dividing wall, so it has no <strong>Gable End</strong>, no <strong>Box Beam</strong> and no{" "}
+          <strong>Stop Wall</strong>: a gable end is the end of a ridge, a Box Beam is a choice about what the roofline
+          bears on, and a stop takes a corner panel with it. Where this wall carries the roof it is built to the truss
+          plate under it and drawn here at that height.
+        </p>
+      )}
       <div className={elevationStyles.toggleRow}>
-        <label
-          className={elevationStyles.checkboxLabel}
-          title={!gableEndWallIds.has(elevationWall.id) && gableEndToggleBlockReason(elevationWall.id) ? gableEndToggleBlockReason(elevationWall.id)! : undefined}
-        >
-          <input
-            type="checkbox"
-            checked={gableEndWallIds.has(elevationWall.id)}
-            disabled={!gableEndWallIds.has(elevationWall.id) && !!gableEndToggleBlockReason(elevationWall.id)}
-            onChange={(e) => handleToggleGableEnd(elevationWall.id, e.target.checked)}
-          />
-          Add Gable End (tiles Gable End Panels up to the Roof tab&apos;s own profile height)
-        </label>
-        {stories.length > 1 && (
+        {!elevationWallIsInterior && (
+          <label
+            className={elevationStyles.checkboxLabel}
+            title={!gableEndWallIds.has(elevationWall.id) && gableEndToggleBlockReason(elevationWall.id) ? gableEndToggleBlockReason(elevationWall.id)! : undefined}
+          >
+            <input
+              type="checkbox"
+              checked={gableEndWallIds.has(elevationWall.id)}
+              disabled={!gableEndWallIds.has(elevationWall.id) && !!gableEndToggleBlockReason(elevationWall.id)}
+              onChange={(e) => handleToggleGableEnd(elevationWall.id, e.target.checked)}
+            />
+            Add Gable End (tiles Gable End Panels up to the Roof tab&apos;s own profile height)
+          </label>
+        )}
+        {!elevationWallIsInterior && stories.length > 1 && (
           <label className={elevationStyles.checkboxLabel}>
             <input
               type="checkbox"
@@ -15655,7 +15681,13 @@ export default function LayoutEditor() {
           same note every other wall-level decision already lives in. Not a
           checkbox and not a mode: a stop is a LENGTH, and zero is the
           normal state, so the field's own value says everything there is to
-          say about whether the wall is complete. */}
+          say about whether the wall is complete.
+
+          ⚠ **Absent on a dividing wall — B34, 2026-11-18.** A stop takes the
+          corner panel at that end with it, and an interior wall has no
+          corners; `tileInteriorWalls` does not read run stops at all, so the
+          field would take a number and change nothing. */}
+      {!elevationWallIsInterior && (
       <div className={elevationStyles.beamSection}>
         <span className={elevationStyles.sectionLabel}>Stop Wall — Wall {elevationWall.id}</span>
         <p className={elevationStyles.helpText}>
@@ -15747,6 +15779,7 @@ export default function LayoutEditor() {
           </p>
         )}
       </div>
+      )}
       {renderMidWallBeamSection(elevationWall.id, "ground", midWallBeamsByStoryAndWallId.ground[elevationWall.id] ?? [], wallHeightFt * 12)}
       {stories.length > 1 &&
         renderMidWallBeamSection(
@@ -18148,7 +18181,18 @@ export default function LayoutEditor() {
                   wall={elevationWall}
                   wallLabel={wallLabels[elevationWall.id]}
                   slots={overlayWallSlots[elevationWall.id] ?? []}
-                  wallHeightFt={wallHeightFt}
+                  /* ⚠ **A DIVIDING WALL THAT CARRIES THE ROOF IS TALLER THAN
+                     ITS STOREY — B34 stride 3b.** Its panels run to the truss
+                     plate under the roof, and this drawing has to show the
+                     courses the cut list has, not a wall stopped at the
+                     ceiling. `roofBearingModel.story` says which storey the
+                     bearing belongs to, so the other row keeps its own
+                     height. */
+                  wallHeightFt={
+                    roofBearingModel.story === "ground"
+                      ? (roofBearingModel.byWallId[elevationWall.id]?.panelTopIn ?? wallHeightFt * 12) / 12
+                      : wallHeightFt
+                  }
                   allInstances={allInstances}
                   secondStoryAllInstances={secondStoryAllInstances}
                   // The ADJUSTED insets, deliberately not raw ownership: where
@@ -18168,7 +18212,11 @@ export default function LayoutEditor() {
                   gableBuiltStartIn={gableRunStopByWallId[elevationWall.id]?.builtStartIn}
                   gableBuiltEndIn={gableRunStopByWallId[elevationWall.id]?.builtEndIn}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
-                  secondStoryWallHeightFt={secondStory?.wallHeightFt}
+                  secondStoryWallHeightFt={
+                    roofBearingModel.story === "second" && roofBearingModel.byWallId[elevationWall.id]
+                      ? roofBearingModel.byWallId[elevationWall.id]!.panelTopIn / 12
+                      : secondStory?.wallHeightFt
+                  }
                   onPanelContextMenu={(wallId, slotIndex, x, y) =>
                     handlePanelContextMenu(effectiveViewedStoryId, wallId, slotIndex, x, y)
                   }
@@ -18183,7 +18231,22 @@ export default function LayoutEditor() {
                   onReplacePanel={handleReplacePanel}
                   onInsertPanel={handleInsertPanel}
                   onDeletePanel={handleDeletePanel}
-                  maxPanelHeightIn={maxPanelHeightIn}
+                  /* ⚠ **His 16ft exemption, where it applies.** A bearing
+                     wall under a 16ft peak is deliberately out of the
+                     project's max panel height, so handing this drawing the
+                     project's figure would break a 14ft wall into 10ft + 4ft
+                     here while the cut list named one panel — a joint on a
+                     drawing that nothing is cut for. */
+                  maxPanelHeightIn={
+                    roofBearingModel.story === "ground"
+                      ? (roofBearingModel.byWallId[elevationWall.id]?.courseMaxHeightIn ?? maxPanelHeightIn)
+                      : maxPanelHeightIn
+                  }
+                  secondStoryMaxPanelHeightIn={
+                    roofBearingModel.story === "second"
+                      ? (roofBearingModel.byWallId[elevationWall.id]?.courseMaxHeightIn ?? maxPanelHeightIn)
+                      : maxPanelHeightIn
+                  }
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   roofProfileType={roofProfileType}
                   roofProfilePointHeightsFt={roofProfilePointHeightsFt}

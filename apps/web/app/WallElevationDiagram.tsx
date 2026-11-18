@@ -21,7 +21,6 @@ import {
   type PanelSlotZone,
   type RoofBearingAnchorMode,
   type RoofProfilePoint,
-  type Wall,
   type WallVerticalBand,
 } from "@building-integrity/geometry";
 import {
@@ -39,6 +38,12 @@ import {
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { formatFeetInches } from "./canvasGeometry";
+
+/** An inch figure for a dimension string: whole where it is whole, and at
+ *  most three decimals otherwise, which is the eighth grid plus slop. */
+function formatEighthsIn(valueIn: number): string {
+  return Number.isInteger(valueIn) ? String(valueIn) : String(Math.round(valueIn * 1000) / 1000);
+}
 import { MemberElevationShapes } from "./MemberElevationShapes";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { combinedPanelLabel, type PanelInstance } from "./panelInstances";
@@ -173,8 +178,27 @@ const PANEL_DRAG_HANDLE_HALF_WIDTH_PX = 4;
 const DRAG_GOLD = "#d4a017";
 const DRAG_GOLD_WASH = "rgba(212, 160, 23, 0.3)";
 
+/**
+ * ⚠ **THE TWO THINGS THIS DRAWING ACTUALLY NEEDS FROM A WALL — B34, 2026-11-18.**
+ *
+ * Its id and how long it is. Nothing in 2,400 lines reads a corner, a winding,
+ * a neighbour or a compass direction: `wall.id` keys every edit callback and
+ * every per-wall record the caller hands in, and `wall.lengthFt` sets the
+ * drawing's width. The corner-dependent facts — which end this wall owns, how
+ * far the neighbour's panel insets it, where its built run stops — all arrive
+ * as NUMBERS the caller derived (`startInsetIn`, `endInsetIn`, `startStopIn`,
+ * `endStopIn`), because only the caller knows the ring.
+ *
+ * ⚠ **So an INTERIOR wall can be drawn here with nothing invented**, which is
+ * the whole of this change. A dividing wall is an edge of nothing and has no
+ * corners at all; handing one in as a synthetic `Wall` with made-up corner ids
+ * would have been a lie, and narrowing the type instead makes `InteriorWall`
+ * fit as it stands. Its insets and stops come in as zero, which is true.
+ */
+export type ElevationWall = { id: string; lengthFt: number };
+
 export interface WallElevationDiagramProps {
-  wall: Wall;
+  wall: ElevationWall;
   /**
    * What to call this wall on screen — its compass label, e.g. `N` or `N2`
    * (`wallDisplayLabelsByWallId`). Tommy, 2026-10-18: the wall ids made it
@@ -329,6 +353,16 @@ export interface WallElevationDiagramProps {
    * allPanelInstances' own maxPanelHeightIn param already has (Stride 1;
    * unifying with beam-affected slots is a later, separately-scoped pass). */
   maxPanelHeightIn: number;
+  /**
+   * ⚠ **The same limit for the SECOND story's row, when it differs — B34,
+   * 2026-11-18.** It differs in exactly one case: a dividing wall carrying the
+   * roof is exempt from the project's max panel height under a 16ft peak
+   * (`courseMaxHeightIn`, which is then `Infinity`), and on a two-storey
+   * building that exemption belongs to the TOP row only — the row below it is
+   * carrying a floor, not the roof. Omitted, both rows use `maxPanelHeightIn`,
+   * which is every caller's behaviour before this.
+   */
+  secondStoryMaxPanelHeightIn?: number;
   hasGableEnd: boolean;
   /** "peaked" = 1 real profile point (a ridge); "flat-top" = 2
    * independently-placed points. Global (Roof tab) — same type/height
@@ -561,6 +595,7 @@ export default function WallElevationDiagram({
   onInsertPanel,
   onDeletePanel,
   maxPanelHeightIn,
+  secondStoryMaxPanelHeightIn,
   hasGableEnd,
   roofProfileType,
   roofProfilePointHeightsFt,
@@ -997,6 +1032,8 @@ export default function WallElevationDiagram({
   const bandsAndZonesPerSlot = (
     rowSlots: PanelSlot[],
     storyHeightIn: number,
+    /** This row's own limit — see `secondStoryMaxPanelHeightIn`. */
+    rowMaxPanelHeightIn: number,
     beams: MidWallBeam[],
     // Stage 2b: a spanning header splits a column exactly as a beam does, so
     // it goes into the SAME list. Passing only the beams here would draw the
@@ -1006,13 +1043,19 @@ export default function WallElevationDiagram({
   ): { bands: WallVerticalBand[]; zones: PanelSlotZone[] }[] => {
     const geom = wallBandGeometry(beams.length > 0 ? midWallBeamsToGeometry(beams) : [], spanningHeadersToGeometry(headers));
     return rowSlots.map((slot, i) => {
-      const bands = computeWallVerticalBandsForSlotWithMaxHeight(i, storyHeightIn, geom, maxPanelHeightIn, panelHeightInRange.minIn);
+      const bands = computeWallVerticalBandsForSlotWithMaxHeight(i, storyHeightIn, geom, rowMaxPanelHeightIn, panelHeightInRange.minIn);
       return { bands, zones: effectiveZonesForSlot(slot, bands.length) };
     });
   };
-  const groundBandsAndZones = bandsAndZonesPerSlot(slots, eaveHeightIn, midWallBeams, spanningHeaders);
+  const groundBandsAndZones = bandsAndZonesPerSlot(slots, eaveHeightIn, maxPanelHeightIn, midWallBeams, spanningHeaders);
   const secondBandsAndZones = secondStorySlots
-    ? bandsAndZonesPerSlot(secondStorySlots, secondStoryHeightIn, secondStoryMidWallBeams, secondStorySpanningHeaders)
+    ? bandsAndZonesPerSlot(
+        secondStorySlots,
+        secondStoryHeightIn,
+        secondStoryMaxPanelHeightIn ?? maxPanelHeightIn,
+        secondStoryMidWallBeams,
+        secondStorySpanningHeaders,
+      )
     : [];
 
   const groundInstancesBySlot = groupInstancesBySlot(allInstances);
@@ -2307,7 +2350,11 @@ export default function WallElevationDiagram({
             regardless of whether a second story exists above it. */}
         <line x1={xPx(startOffsetIn)} y1={yPx(eaveHeightIn)} x2={xPx(startOffsetIn + groundRunWidthIn)} y2={yPx(eaveHeightIn)} stroke="#999" strokeDasharray="4 3" />
         <text x={4} y={yPx(eaveHeightIn) + 4} fontSize={10} fill="#666">
-          {eaveHeightIn}&quot;
+          {/* ⚠ FORMATTED, not raw — 2026-11-18. It printed the number
+              straight, which was fine while a wall height was always a whole
+              number of inches and read `194.58333333333331"` the day a
+              roof-bearing dividing wall arrived. */}
+          {formatEighthsIn(eaveHeightIn)}&quot;
         </text>
         {/* F.F.L (Finish Floor Line) — the ground row's own y=0 baseline is
             already the real reference every wall height in the app
@@ -2434,7 +2481,7 @@ export default function WallElevationDiagram({
               );
             })}
             <text x={4} y={yPx(eaveHeightIn + secondStoryHeightIn) + 4} fontSize={10} fill="#666">
-              {eaveHeightIn + secondStoryHeightIn}&quot;
+              {formatEighthsIn(eaveHeightIn + secondStoryHeightIn)}&quot;
               {boxBeamCoverage ? ` (Box Beam sections ${boxBeamHeightDeltaIn.toFixed(2)}in shorter)` : ""}
             </text>
             {renderRow(secondStorySlots, secondBandsAndZones, eaveHeightIn, "second", secondStoryHeightIn, (slotIndex, band, isTopmostForSlot) => {

@@ -86,6 +86,50 @@ export type ViewerStop =
   | { kind: "3d-boxes" }
   | { kind: "3d-wraps" };
 
+/**
+ * ⚠ **EVERY STOP A BUILDING HAS, and the only place the list is built —
+ * B34, 2026-11-18.**
+ *
+ * It was an inline array in `page.tsx`, with a comment on it that is the
+ * reason this function now exists: *"a stop missing from here is a stop nobody
+ * can reach at all"*, because the two bar menus are the only presentation of
+ * the list and `viewerStopsForMenu` merely filters it. That claim was
+ * untestable while the array lived inside a component.
+ *
+ * The order is Tommy's own, from when this was a dial: *"cycle the wall view
+ * options… starting at the top and going clockwise, and the wheel moves onto
+ * 3D views"* — the plan, then one elevation per wall, then the three 3D modes.
+ *
+ * ⚠ **The DIVIDING walls come after the ring, not interleaved with it**, which
+ * is the same place B35 puts their panels in the install sequence: an interior
+ * wall is inside every ring, so it comes after the walls that enclose it.
+ */
+export function viewerStopsForFootprint(
+  footprint: Footprint | null,
+  /** `wallDisplayLabelsByWallId` — passed in rather than imported so this
+   *  module stays free of geometry beyond the `Footprint` type it already
+   *  takes, and so a caller that has already built the map does not build it
+   *  twice. A wall missing from it falls back to its own id. */
+  labelsByWallId: Record<string, string>,
+): ViewerStop[] {
+  return [
+    { kind: "plan" },
+    ...(footprint?.walls ?? []).map((w) => ({
+      kind: "elevation" as const,
+      wallId: w.id,
+      label: labelsByWallId[w.id] ?? w.id,
+    })),
+    ...(footprint?.interiorWalls ?? []).map((w) => ({
+      kind: "elevation" as const,
+      wallId: w.id,
+      label: labelsByWallId[w.id] ?? w.id,
+    })),
+    { kind: "3d-framed" },
+    { kind: "3d-boxes" },
+    { kind: "3d-wraps" },
+  ];
+}
+
 export type ViewerMenuId = "design" | "view";
 
 /** Left to right on the bar, matching Tommy's own list: "Design, View, …". */

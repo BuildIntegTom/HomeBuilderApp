@@ -4,6 +4,7 @@ import {
   buildRectangleFootprint,
   computeWallVerticalBandsForSlotWithMaxHeight,
   interiorBearingWallBuilds,
+  isWholeEighthIn,
   interiorRoofBearingWalls,
   panelSlotBoxes3D,
   retile,
@@ -128,12 +129,29 @@ describe("⚠ his 16ft rule decides whether it is one panel or courses", () => {
 
   it("⚠ a purlin wall is under 16ft, so it is ONE panel — exempt from the max panel height", () => {
     const brg = byWallId["BRG-W"]!;
-    expect(brg.panelTopIn).toBeCloseTo(170.5833333, 6);
+    /* ⚠ **170⅝in, not 170.58333…** A purlin wall's rise is the plane's over a
+       fraction of its run, so it lands wherever it lands — and this is a CUT
+       HEIGHT. Snapped to the eighth grid the rest of the app works on, or the
+       sheet rounds to an eighth while the model holds a figure 1/24in away.
+       Found in the browser, where the elevation printed the raw float. */
+    expect(brg.panelTopIn).toBeCloseTo(170.625, 9);
     expect(brg.peakIn).toBeLessThanOrEqual(interiorBearingWallOnePanelPeakLimitIn.value);
     /* The exemption, which is the new part of his rule: 170.58in is well past
        the 120in max panel height and it is still one panel. */
     expect(brg.courseMaxHeightIn).toBe(Number.POSITIVE_INFINITY);
     expect(brg.panelTopIn).toBeGreaterThan(MAX_PANEL_HEIGHT_IN);
+  });
+
+  it("⚠ every bearing wall's height sits ON the eighth grid", () => {
+    /* The assertion the browser asked for: a cut height off the grid is a
+       drawing and a part that disagree. The ridge wall's is whole either way;
+       the purlin walls' are the ones that needed snapping. */
+    for (const build of Object.values(byWallId)) {
+      expect({ wall: build.wallId, onGrid: isWholeEighthIn(build.panelTopIn) }).toEqual({
+        wall: build.wallId,
+        onGrid: true,
+      });
+    }
   });
 
   it("⚠ and that one panel is past the CATALOG's own panel height maximum, which the Review Log reports", () => {

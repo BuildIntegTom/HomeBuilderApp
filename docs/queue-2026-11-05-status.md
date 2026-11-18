@@ -277,11 +277,15 @@ is cut, what sets the radius) was answering the wrong question.
     for 99 built), the plan canvas labelled from its own instance list
     rather than the building's, and a banded safety gap's sheet carried
     the wrong height. All three fixed.
-    ⚠ **Still open: the ELEVATION tab for an interior wall.**
-    `elevationWall` resolves through `footprint.walls`, and a wall
-    elevation is built from two CORNERS plus the gable row, box-beam
-    coverage and run stops an interior wall has none of. It is now the
-    only thing on this item.
+    ✅ **The ELEVATION tab — 2026-11-18, and B34 is COMPLETE.** The Edit
+    menu reads *2D Floor Plan, Elevation: N, E, S, W, C, CB, CC*. It
+    turned out small because `WallElevationDiagram` reads exactly two
+    fields off a wall in 2,400 lines, `id` and `lengthFt`, so the prop
+    narrowed to `ElevationWall` and an `InteriorWall` fits with nothing
+    invented. ⚠ Gable End, Box Beam and Stop Wall are ABSENT and the
+    panel says why; everything else is live, the right-click menu
+    included. ⚠ The browser then found a cut height off the eighth
+    grid — `194.58333333333331"` on a purlin wall — now snapped.
     **Stride 5: the interior walls are DRAWN — 2026-11-18.** They had been
     tiled, counted, priced, numbered and given shop sheets since stride 2 and
     drawn nowhere. Now on the 2D plan, the Plan View sheet and the 3D views,

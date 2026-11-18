@@ -1,3 +1,4 @@
+import { roundToEighthIn } from "./eighths";
 import type { Footprint, InteriorWall, Point } from "./types";
 import { ridgeBearingWallFor, type SimpleRoofPlane, type SimpleRoofResult } from "./simpleRoofPlanes";
 
@@ -288,7 +289,18 @@ export function interiorBearingWallBuilds(
        cancels, exactly as it does on an eave wall, where `gableEaveHeightIn`
        is `roofBaseHeightIn` PLUS the same assembly. Subtracting it here as
        well would build every bearing wall 2¼in short. */
-    const panelTopIn = options.storyHeightIn + Math.max(0, wall.aboveEaveIn);
+    /* ⚠ **ON THE 1/8in GRID, like every other dimension in this app — found
+       in the browser, 2026-11-18.** A purlin wall's rise is the plane's over a
+       fraction of its run, which lands wherever it lands: 74.58333…in on his
+       36x36, so the wall came out **194.58333333333331in** and the elevation
+       printed exactly that. Worse than ugly — it is a CUT HEIGHT, and a shop
+       cuts to an eighth, so the sheet was already rounding it to 74⅝ while the
+       model held a figure 1/24in away. [[dimensional-tightness-principle]]
+       says the number the drawing shows and the number the part is cut to have
+       to be the same number. The plate's top then meets the roof plane within
+       a sixteenth, which is the grid the whole building is quantized on
+       (`quantizeFootprint`). */
+    const panelTopIn = roundToEighthIn(options.storyHeightIn + Math.max(0, wall.aboveEaveIn));
     const peakIn = panelTopIn + options.bearingAssemblyHeightIn;
     return {
       wallId: wall.wallId,

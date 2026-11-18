@@ -228,6 +228,42 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, the interior-wall elevation: ZERO delta.** **188 problems**,
+  every rule byte-identical to the stride-3b run
+  (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **A new exported function, a narrowed prop type, a new optional prop,
+  three JSX conditionals and a DELETED `useMemo` all measured zero together.**
+  The deleted one (`interiorWallNotDrawnReviewEntries`, keyed on `[footprint]`)
+  cost nothing to begin with — the 2026-11-17 note's rule from the other side:
+  a memo over raw state is free, so removing one refunds nothing. And
+  `viewerStops` kept its single `[footprint]` dep while its body became one
+  function call, which is why extracting it was free.
+
+  ⚠ **DO NOT RUN `npx prettier --write` ON A FILE IN THIS REPO.** Measured
+  the hard way: `prettier --write app/page.tsx` rewrote **10,883 lines and
+  deleted 5,317** in one command. This repo is NOT prettier-formatted — its
+  line width and wrapping are its own — so prettier does not tidy a file here,
+  it reformats the whole thing and buries a 100-line change inside a 16,000-line
+  diff. Recovered by `git checkout HEAD -- app/page.tsx` and replaying the
+  edits, which only worked because every edit had been made by a saved script.
+  **Keep patch scripts; they are the undo for a mistake like this.** If a file
+  genuinely needs formatting, match the surrounding style by hand.
+
+  ⚠ **AND THE BROWSER FOUND A NUMBER OFF THE 1/8in GRID.** The new
+  elevation printed `194.58333333333331"` as a dividing wall's height. Two
+  separate faults behind one symptom: the label was rendered raw (`{eaveHeightIn}"`,
+  fine for as long as a wall height was always whole), and the HEIGHT ITSELF
+  was unquantized, because a purlin wall's rise is a roof plane's over a
+  fraction of its run. The second is the one that mattered: it is a CUT
+  height, the shop sheet was already rounding it to an eighth, and the model
+  was holding a figure 1/24in away from the sheet. Both fixed, and the grid is
+  now asserted. **A number that only a drawing ever shows is still a number
+  somebody cuts to** — and no test was looking at it, because no test renders
+  a label.
+
 - **2026-11-18, B34 stride 3b (a wall that carries the roof is built up to
   it), +2.** `preserve-manual-memoization` 81 -> 83, **188 problems** against a
   freshly re-measured 186. Every other rule byte-identical and no correctness
