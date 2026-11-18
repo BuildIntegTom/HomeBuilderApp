@@ -9366,14 +9366,32 @@ export default function LayoutEditor() {
     let gablePanelStrawWeightKg = 0;
     const strawDensityKgM3 = densityLbFt3 * LB_FT3_TO_KG_M3;
     for (const inst of allInstances) {
+      /**
+       * ⚠ **THIS PANEL'S OWN HEIGHT, not the storey's — 2026-11-18.**
+       *
+       * This loop built every full-height type at `heightIn`, the ground
+       * floor's wall height, which was the same number as the panel's for as
+       * long as a column of wall was one panel. A Mid-Wall Bond Beam, the
+       * max-panel-height split and (since B34 stride 3b) a roof-bearing
+       * dividing wall all stack two or three real panels in one column, each
+       * with its own height on `heightOverrideIn`.
+       *
+       * It is not a weight bug — `totalWoodWeightKg` carries standard and
+       * braced and is per wall now — it is a MATERIALS bug: the plywood area
+       * and board-foot tallies below are built from these members, so a
+       * Multiplex's centre wall bought three 10ft panels' worth of sheet and
+       * lumber per column for a wall whose courses are 10ft, 10ft and 2ft.
+       * Every type here that takes a wall height takes this one.
+       */
+      const instHeightIn = inst.heightOverrideIn ?? heightIn;
       const instMembers =
         inst.panelType === "standard"
           ? isSquareBalePanelization
-            ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
-            : standardPanelMembersFor(inst, inst.widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
+            ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, instHeightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
+            : standardPanelMembersFor(inst, inst.widthIn, thicknessIn, instHeightIn, includeNailer, girtStyle)
           : inst.panelType === "braced"
             ? (({ pattern, mirrored }) =>
-                buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored, false, girtStyle))(
+                buildBracedPanelMembers(inst.widthIn, thicknessIn, instHeightIn, includeNailer, pattern, mirrored, false, girtStyle))(
                 resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored),
               )
             : inst.panelType === "column"
@@ -9386,7 +9404,7 @@ export default function LayoutEditor() {
                    rest of its slot open in the 3D view. Tommy, 2026-11-01:
                    *"extra spaces left open from column panels being a fixed
                    width trying to fill a bigger slot."* */
-                buildColumnStyleMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
+                buildColumnStyleMembers(inst.widthIn, thicknessIn, instHeightIn, includeNailer, girtStyle)
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
                 ? // This instance's real width, like every other type here: the
                   // plywood-area and board-feet tallies below are material
@@ -9397,7 +9415,7 @@ export default function LayoutEditor() {
                   ? cornerPanelMembers3D
                   : buildCornerPanelMembers(
                       thicknessIn,
-                      heightIn,
+                      instHeightIn,
                       includeNailer,
                       inst.widthIn,
                       girtStyle,
@@ -9412,7 +9430,7 @@ export default function LayoutEditor() {
                   ? // This instance's own sheet, picked off the width the tiler
                     // reserved — a 1/2in gap must contribute 1/2in plywood to
                     // Material Totals, not 3/4in.
-                    buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(inst.widthIn))
+                    buildSafetyGapMembers(thicknessIn, instHeightIn, safetyGapSheetThicknessIn(inst.widthIn))
                   : inst.panelType === "sill"
                     ? buildSillPanelMembers(inst.widthIn, thicknessIn, inst.sillHeightIn ?? sillDefaultHeightIn.value, includeNailer, girtStyle)
                     : inst.panelType === "big-header"
@@ -9435,7 +9453,7 @@ export default function LayoutEditor() {
                               inst.widthIn,
                               thicknessIn,
                               computeHeaderHeightIn(
-                                heightIn,
+                                instHeightIn,
                                 (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value),
                               ),
                             )

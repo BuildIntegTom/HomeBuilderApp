@@ -296,11 +296,8 @@ is cut, what sets the radius) was answering the wrong question.
     Measured in the browser: 11 panels summing to exactly 401in per wall,
     flush between the exterior walls' inner faces, centre wall centred on the
     18ft midline; and a test pins 2D and 3D equal panel for panel.
-    ⚠ **The ELEVATION tab is still not built and the Review Log entry was
-    corrected rather than deleted**: `elevationWall` resolves through
-    `footprint.walls`, and a wall elevation is built from two CORNERS plus the
-    gable row, box-beam coverage and run stops an interior wall has none of.
-    It belongs with stride 3b.
+    ✅ **The elevation tab it said was missing arrived the same week** — see
+    the top of this item. The Review Log entry is deleted with it.
 
     **Stride 4: the tile, at his 8:12, with a Four-plex.** The tile states
     its own pitch (12'-0" rise over an 18ft half-span, measured live) and

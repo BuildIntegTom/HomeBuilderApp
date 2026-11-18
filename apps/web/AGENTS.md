@@ -228,6 +228,21 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, a stacked panel buys its own height's materials: ZERO delta.**
+  **188 problems**, every rule byte-identical again. The change is six
+  arguments inside one existing `useMemo` plus a `const` at the top of its
+  loop; no memo was added, removed or re-keyed, and its dep array did not move.
+
+  ⚠ **A BROWSER A/B ON A TEMPLATE IS NOT A CONTROLLED COMPARISON, and that
+  is worth knowing before quoting one.** The window seeder places one window
+  per 12ft of wall AT RANDOM, so drawing the same Home tile twice gives two
+  buildings that differ by a panel or two — here 101 wall + 23 safety gaps on
+  one draw and 100 + 26 on the other. Every total downstream (weight, price,
+  sheets, board feet) moves with that. A delta far larger than one panel is
+  still evidence, and this one was (90 sticks of 2x4); a delta of the same
+  order as one panel is not. For an exact figure, save the project and load
+  the same file on both sides.
+
 - **2026-11-18, the interior-wall elevation: ZERO delta.** **188 problems**,
   every rule byte-identical to the stride-3b run
   (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
