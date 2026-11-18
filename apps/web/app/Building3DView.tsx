@@ -12,6 +12,7 @@ import {
   computeInsetPerimeterRing,
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlotWithMaxHeight,
+  wallFabricationLengthIn,
   effectiveZonesForSlot,
   isSlotBoxBeamCovered,
   builtWallSpan,
@@ -147,6 +148,9 @@ const EMPTY_MID_WALL_BEAMS_BY_WALL_ID: Record<string, MidWallBeam[]> = {};
 // object literal in a default parameter is a new identity every render and
 // would defeat every memo that lists it.
 const EMPTY_SPANNING_HEADERS_BY_WALL_ID: Record<string, SpanningHeader[]> = {};
+/** B34 stride 3b. Stable for the same reason as the two above: these records
+ *  are in slot-box memo dependency arrays. */
+const EMPTY_INTERIOR_BEARING_WALLS: InteriorBearingWallsByWallId = {};
 const EMPTY_SPANNING_HEADER_NAMES: Map<string, string> = new Map();
 // Standard click-vs-drag screen-space threshold (px) before the Orbit
 // tool's click-and-swipe re-centering commits — a plain click stays a
@@ -359,6 +363,23 @@ function membersForSlot(
  * height reduction (see secondStorySlotBoxes below) only ever applies
  * there, since that shortening always comes from the very top of the row
  * regardless of how many bond beams also split it lower down. */
+/**
+ * ⚠ **How tall each roof-bearing INTERIOR wall is built, and where it breaks —
+ * B34 stride 3b, 2026-11-18.** Exactly page.tsx's `roofBearingModel.byWallId`,
+ * narrowed to the two fields this view needs.
+ */
+export type InteriorBearingWallsByWallId = Record<
+  string,
+  { panelTopIn: number; courseMaxHeightIn: number; aboveStoryIn: number }
+>;
+
+/** The same record in FEET, which is what `panelSlotBoxes3D` speaks. */
+function interiorBearingHeightFt(byWallId: InteriorBearingWallsByWallId): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [wallId, build] of Object.entries(byWallId)) out[wallId] = build.panelTopIn / IN_PER_FT;
+  return out;
+}
+
 interface SplitPanelSlotBox3D extends PanelSlotBox3D {
   yOffsetFt: number;
   midWallBandIndex?: number;
@@ -397,6 +418,20 @@ function splitForMidWallBeam(
    * draw a full-height panel through a header the elevation and the named
    * instance list have both already made room for. */
   headersByWallId: Record<string, SpanningHeader[]> = {},
+  /**
+   * ⚠ **B34 stride 3b — the dividing walls that carry the roof, which are
+   * TALLER than this story and band by his own rule rather than the
+   * project's.** Keyed by wall id. A wall with no entry (every outline wall,
+   * which can never be one) uses `storyHeightIn` and `maxPanelHeightIn`
+   * exactly as before.
+   *
+   * ⚠ It has to override BOTH, and the second is the one easily missed:
+   * `courseMaxHeightIn` is `Infinity` under a 16ft peak, so such a wall is
+   * deliberately exempt from the max-height setting. Passing only the height
+   * would break a 14ft wall into 10ft + 4ft here while `allPanelInstances`
+   * named one panel — the model drawn with a joint the cut list has not got.
+   */
+  interiorBearingWalls: InteriorBearingWallsByWallId = {},
 ): SplitPanelSlotBox3D[] {
   const result: SplitPanelSlotBox3D[] = [];
   const wallIds = new Set([...Object.keys(beamsByWallId), ...Object.keys(headersByWallId)]);
@@ -408,8 +443,11 @@ function splitForMidWallBeam(
   );
   for (const box of boxes) {
     const geom = geomByWallId.get(box.wallId) ?? [];
-    const bands = computeWallVerticalBandsForSlotWithMaxHeight(box.slotIndex, storyHeightIn, geom, maxPanelHeightIn, panelHeightInRange.minIn);
-    const isGenuinelyUnaffected = bands.length === 1 && bands[0]!.bottomIn === 0 && bands[0]!.topIn === storyHeightIn;
+    const bearing = interiorBearingWalls[box.wallId];
+    const wallHeightIn = bearing?.panelTopIn ?? storyHeightIn;
+    const wallMaxHeightIn = bearing?.courseMaxHeightIn ?? maxPanelHeightIn;
+    const bands = computeWallVerticalBandsForSlotWithMaxHeight(box.slotIndex, wallHeightIn, geom, wallMaxHeightIn, panelHeightInRange.minIn);
+    const isGenuinelyUnaffected = bands.length === 1 && bands[0]!.bottomIn === 0 && bands[0]!.topIn === wallHeightIn;
     if (isGenuinelyUnaffected) {
       result.push({ ...box, yOffsetFt: 0, isTopmostBand: true });
       continue;
@@ -986,6 +1024,15 @@ interface Building3DViewProps {
   roofDeckSolid?: boolean;
   /** Walls whose top panels tilt front to back to receive a shed roof. */
   crossTiltWallIds?: Set<string>;
+  /**
+   * ⚠ **The INTERIOR walls that carry the roof, and how tall they are built —
+   * B34 stride 3b.** One record per story, because the roof bears on the TOP
+   * story's copy of these walls and only that one grows. From page.tsx's own
+   * `roofBearingModel`, so the model, the cut list and the Review Log cannot
+   * disagree about where a bearing wall's joints are.
+   */
+  groundInteriorBearingWalls?: InteriorBearingWallsByWallId;
+  secondStoryInteriorBearingWalls?: InteriorBearingWallsByWallId;
   baleFoundationTopDepthIn?: number;
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
@@ -1510,6 +1557,8 @@ export default function Building3DView({
   roofTallSideNorth,
   roofDeckSolid = false,
   crossTiltWallIds,
+  groundInteriorBearingWalls = EMPTY_INTERIOR_BEARING_WALLS,
+  secondStoryInteriorBearingWalls = EMPTY_INTERIOR_BEARING_WALLS,
   baleFoundationTopDepthIn = BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
   baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
@@ -1676,13 +1725,21 @@ export default function Building3DView({
     };
   }, []);
 
-  const rawSlotBoxes = useMemo(
-    () =>
-      footprint
-        ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId)
-        : [],
-    [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId],
-  );
+  const rawSlotBoxes = useMemo(() => {
+    if (!footprint) return [];
+    /* ⚠ Stride 3b — a bearing dividing wall's boxes are taller than every
+       other box in the model. Built here rather than threaded as a fifth
+       record of its own, so the feet-vs-inches conversion happens once. */
+    return panelSlotBoxes3D(
+      footprint,
+      wallSlots,
+      thicknessIn,
+      wallHeightFt,
+      primaryCornerIds,
+      wallRunStopsByWallId,
+      interiorBearingHeightFt(groundInteriorBearingWalls),
+    );
+  }, [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId, groundInteriorBearingWalls]);
   // Built flat (nominal height for every slot) above, then split into 1-2
   // real boxes for any wall with a Mid-Wall Bond Beam — mirrors
   // secondStorySlotBoxes' own "build flat, then post-process" pattern
@@ -1690,8 +1747,16 @@ export default function Building3DView({
   // splitting it into two (a beam-covered slot now needs its own Y offset
   // too, not just its own height).
   const slotBoxes = useMemo(
-    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn, spanningHeadersByWallId),
-    [rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn, spanningHeadersByWallId],
+    () =>
+      splitForMidWallBeam(
+        rawSlotBoxes,
+        midWallBeamsByWallId,
+        heightIn,
+        maxPanelHeightIn,
+        spanningHeadersByWallId,
+        groundInteriorBearingWalls,
+      ),
+    [rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn, spanningHeadersByWallId, groundInteriorBearingWalls],
   );
 
   const slotRenderData = useMemo(
@@ -1768,9 +1833,10 @@ export default function Building3DView({
             secondStory.wallHeightFt,
             primaryCornerIds,
             wallRunStopsByWallId,
+            interiorBearingHeightFt(secondStoryInteriorBearingWalls),
           )
         : [],
-    [footprint, secondStory, thicknessIn, primaryCornerIds, wallRunStopsByWallId],
+    [footprint, secondStory, thicknessIn, primaryCornerIds, wallRunStopsByWallId, secondStoryInteriorBearingWalls],
   );
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
@@ -1781,6 +1847,7 @@ export default function Building3DView({
       secondStory.wallHeightFt * IN_PER_FT,
       maxPanelHeightIn,
       secondStorySpanningHeadersByWallId,
+      secondStoryInteriorBearingWalls,
     );
     if (Object.keys(boxBeamCoverageByWallId).length === 0) return splitBoxes;
     const heightDeltaFt = computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
@@ -1798,6 +1865,7 @@ export default function Building3DView({
     rawSecondStorySlotBoxes,
     secondStoryMidWallBeamsByWallId,
     secondStorySpanningHeadersByWallId,
+    secondStoryInteriorBearingWalls,
     boxBeamCoverageByWallId,
     boxBeamSizeId,
     maxPanelHeightIn,
@@ -2252,11 +2320,62 @@ export default function Building3DView({
         });
       });
     }
+
+    /**
+     * ⚠ **AND THE PLATE ON EVERY DIVIDING WALL THAT CARRIES THE ROOF — B34
+     * stride 3b, 2026-11-18.** His answer: *"A truss plate, like an exterior
+     * wall"*.
+     *
+     * A second loop rather than a branch, for the same reason the slot boxes
+     * have one: everything above is about the outline — the wall axis walked
+     * off two corners, the built run, the run stop, the box-beam choice. An
+     * interior wall has its own two points and one segment.
+     *
+     * ⚠ **It anchors at `roofBaseHeightIn + aboveStoryIn`, not at
+     * `roofBaseHeightIn`.** That is the whole difference between this plate
+     * and an eave wall's: the roof over a ridge or purlin wall is higher than
+     * the eave by exactly the rise its panels were built taller by, so the
+     * plate rides up with them. Anchored at the shared roofline instead, it
+     * would be drawn buried in the middle of the wall it is meant to cap.
+     */
+    /* Which story's record applies is settled the same way page.tsx settles
+       it: the roof bears on the TOP story, so a two-story building's plates
+       ride on the second story's copy of these walls. Exactly one of the two
+       records is ever non-empty. */
+    const plateByWallId = secondStory ? secondStoryInteriorBearingWalls : groundInteriorBearingWalls;
+    for (const wall of footprint.interiorWalls ?? []) {
+      const build = plateByWallId[wall.id];
+      if (!build) continue;
+      const lengthIn = wallFabricationLengthIn(wall);
+      if (!(lengthIn > 0)) continue;
+      const dx = wall.end.x - wall.start.x;
+      const dz = wall.end.y - wall.start.y;
+      const length = Math.hypot(dx, dz) || 1;
+      const dir = { x: dx / length, z: dz / length };
+      /* Straddling the stored line, exactly as the wall's own boxes do — see
+         `panelSlotBoxes3D`'s interior loop. */
+      const across = { x: -dir.z, z: dir.x };
+      const depthFt = thicknessIn / IN_PER_FT;
+      result.push({
+        wallId: wall.id,
+        segmentIndex: 0,
+        anchorX: wall.start.x - (across.x * depthFt) / 2,
+        anchorZ: wall.start.y - (across.z * depthFt) / 2,
+        anchorYIn: roofBaseHeightIn + build.aboveStoryIn,
+        rotationRad: Math.atan2(dz, dx),
+        members: buildTrussPlateMembers(lengthIn, thicknessIn),
+        widthFt: lengthIn / IN_PER_FT,
+        heightFt: sharedRoofBearingHeightIn / IN_PER_FT,
+        depthFt,
+      });
+    }
     return result;
   }, [
     footprint,
     roofEnabled,
     secondStory,
+    groundInteriorBearingWalls,
+    secondStoryInteriorBearingWalls,
     boxBeamCoverageByWallId,
     boxBeamSizeId,
     thicknessIn,

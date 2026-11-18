@@ -228,6 +228,59 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, B34 stride 3b (a wall that carries the roof is built up to
+  it), +2.** `preserve-manual-memoization` 81 -> 83, **188 problems** against a
+  freshly re-measured 186. Every other rule byte-identical and no correctness
+  rule moved (`exhaustive-deps` 12, `refs` 29, `set-state-in-effect` 12,
+  `purity` 1, `immutability` 1, `no-unused-vars` 35,
+  `no-unescaped-entities` 15).
+
+  Attributed by the flagged-SOURCE-LINE-TEXT multiset diff against a real lint
+  run of the base commit (`git stash` the change, lint, pop). It printed three
+  additions and one removal, and the removal is the useful half:
+
+  - `+1  const roofBearingModel = useMemo(() => {` — the memo CALL itself.
+  - `+2  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, stories, maxPanelHeightIn]);`
+    — that memo's own dep array, which touches **two** already-flagged values
+    (`roofFormFromProfile` and `gableEaveHeightIn`).
+  - `-1  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, unitSystem]);`
+    — the OLD `roofBearingReviewEntries` array, which **stopped being flagged**
+    once its derivation moved into the new memo and its deps became
+    `[roofBearingModel, maxPanelHeightIn, unitSystem]`.
+
+  So the net is 3 - 1. Both halves of the 2026-11-15 rule holding at once: a
+  dep array costs one per already-flagged value it touches, and **it stops
+  costing when those values leave it**. Moving a derivation up into one memo
+  that several readers share is close to free: you pay for the new array and
+  you get the old ones back.
+
+  ⚠ **Five dep arrays in this change gained `roofBearingModel` and cost
+  NOTHING** — `strawWeight`, `totalWoodWeightKg`, `secondStoryAllInstances`,
+  `trussPlateWallLengthTotalIn` and `roofBearingFabricationGroups`. They show
+  in the diff as a removed line and an added line with the SAME count, because
+  the array's TEXT changed while its flag count did not. Read the multiset
+  diff, not the raw line list, or five unchanged arrays look like ten events.
+
+  ⚠ **And three things that are not memos measured zero**: a plain
+  `const wallPanelInstances = [...]` rebuilt every render over two instance
+  lists, a new prop threaded through two components, and a module-level helper
+  function in `Building3DView`.
+
+  ⚠ **THE GATE MISSED THREE REAL DEFECTS AGAIN, and all three were
+  pre-existing.** `tsc`, `vitest` and lint passed on a build where (1) the
+  Project Summary counted 62 wall panels for a building whose shop drawings
+  are 99, because `panelCounts.wall` counted SLOTS and a banded column is two
+  or three panels; (2) `FootprintCanvas` labelled the plan from an instance
+  list **it built itself** out of four arguments, so its own counter named the
+  centre wall C1-C11 where the building names it C1-C33 and the `0109` on
+  screen was a different panel from the `0109` on the sheet; (3) a banded
+  safety gap's fabrication sheet was headed with the first instance's height,
+  because `groupKeyFor` returns early for `safety-gap` on the thickness alone.
+  All three had been true since Mid-Wall Bond Beams and only became visible
+  when a flagship template started banding its walls. The reusable lesson:
+  **when a change makes an existing shape COMMON, re-read everything that
+  shape passes through** — a defect nobody has met is still a defect.
+
 - **2026-11-18, B34 stride 5 (the interior walls are drawn): ZERO delta.**
   **186 problems**, every rule byte-identical (`preserve-manual-memoization`
   81, `no-unused-vars` 35, `refs` 29, `no-unescaped-entities` 15,

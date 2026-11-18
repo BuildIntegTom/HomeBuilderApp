@@ -1,5 +1,5 @@
 import type { Footprint, InteriorWall, Point } from "./types";
-import type { SimpleRoofPlane, SimpleRoofResult } from "./simpleRoofPlanes";
+import { ridgeBearingWallFor, type SimpleRoofPlane, type SimpleRoofResult } from "./simpleRoofPlanes";
 
 /**
  * ⚠ **AN INTERIOR WALL PART WAY UP A ROOF PLANE — B34 stride 3c, 2026-11-17.**
@@ -161,4 +161,141 @@ export function longestBandRunFt(bands: RoofPlaneBands[]): number {
   let worst = 0;
   for (const plane of bands) for (const run of plane.bandRunsFt) worst = Math.max(worst, run);
   return worst;
+}
+
+/**
+ * ⚠ **EVERY INTERIOR WALL THAT CARRIES THE ROOF, AND HOW FAR ABOVE THE EAVE
+ * THE ROOF SITS OVER IT — B34 stride 3b, 2026-11-18.**
+ *
+ * There are two kinds and they arrive from two different places: the wall
+ * under the RIDGE (`ridgeBearingWallFor`, stride 3, which is also why that
+ * roof has no ridge beam) and a wall part way up a PLANE (`roofBearingBands`,
+ * stride 3c, likewise no purlin beam). A Multiplex has one of the first and
+ * one of the second per side.
+ *
+ * ⚠ **This was computed inline inside the Review Log's own memo until stride
+ * 3b**, which was fine while the only consumer was a sentence. It is now also
+ * what decides how TALL those walls are built, and two derivations of "which
+ * walls carry the roof" is how a building comes to be priced for a row the
+ * log says is missing — or, worse, built to a height the log does not know
+ * about. One function, both readers.
+ *
+ * ⚠ **The rise comes from the PLANE's own two heights, not from pitch x run.**
+ * The arithmetic agrees exactly on a symmetric peak (and the Multiplex's 144in
+ * is unchanged by the move), but the plane is the thing that was drawn, and an
+ * off-centre or re-pitched roof is where the two would part company.
+ *
+ * Sorted tallest first, which is the order the Review Log reads them in.
+ */
+export interface InteriorRoofBearing {
+  wallId: string;
+  /** How far the roof's underside above this wall stands above the eave
+   *  reference, in inches. The ridge wall's is the full rise. */
+  aboveEaveIn: number;
+}
+
+export function interiorRoofBearingWalls(
+  footprint: Footprint,
+  roof: SimpleRoofResult,
+  bands: RoofPlaneBands[],
+): InteriorRoofBearing[] {
+  const out: InteriorRoofBearing[] = [];
+  /* ⚠ A SHED has no ridge wall even if a wall sits on the midline: its high
+     edge is a wall of the outline, and `ridgeBearingWallFor` answers a
+     question about a peak. A midline wall under a shed is picked up by the
+     plane loop below like any other, at its own distance up the run. */
+  if (roof.form === "peaked") {
+    const ridge = ridgeBearingWallFor(footprint);
+    if (ridge) {
+      let riseIn = 0;
+      for (const plane of roof.planes) riseIn = Math.max(riseIn, (plane.highHeightFt - plane.lowHeightFt) * 12);
+      out.push({ wallId: ridge.wallId, aboveEaveIn: riseIn });
+    }
+  }
+  for (const planeBands of bands) {
+    const plane = roof.planes[planeBands.planeIndex];
+    if (!plane || !(plane.runFt > 0)) continue;
+    const riseIn = (plane.highHeightFt - plane.lowHeightFt) * 12;
+    for (const line of planeBands.bearingLines) {
+      /* The ridge wall can also read as a bearing line on a plane whose run
+         reaches it; it is already in, at the full rise. */
+      if (out.some((c) => c.wallId === line.wallId)) continue;
+      out.push({ wallId: line.wallId, aboveEaveIn: (riseIn * line.atRunFt) / plane.runFt });
+    }
+  }
+  return out.sort((a, b) => b.aboveEaveIn - a.aboveEaveIn);
+}
+
+/**
+ * ⚠ **HIS RULE FOR HOW TALL ONE PANEL MAY BE ON SUCH A WALL — 2026-11-18.**
+ *
+ * > *"One panel whatever its height up until 16 ft tall peak. Otherwise break
+ * > it down to 10 ft wall with another section above it"*
+ *
+ * Asked how the row above the ceiling should be built on a wall that carries
+ * the roof, he answered about the WHOLE wall rather than about a row: a
+ * bearing wall runs from its floor to the plate under the roof as **one
+ * panel**, however tall that is, and only once the peak passes **16 ft** does
+ * it break into courses.
+ *
+ * ⚠ **The "otherwise" branch is a rule this app already has**, which is what
+ * makes it one decision rather than two: *"panels should have a default max
+ * height of 10'... a wall taller than the selected max height spawns a 10'
+ * panel and a 6' panel"* — `subdivideBandForMaxHeight`, greedy from the
+ * bottom. So a wall over the limit is banded at the project's own
+ * `maxPanelHeightIn` exactly as an over-tall outline wall is, and a wall under
+ * it is **exempted** from that setting. The exemption is the new part: it is
+ * the one place in the app where a panel is deliberately built taller than the
+ * max-height setting allows, and the reason is a load path — the member
+ * carrying the whole roof gets as few horizontal joints as it can.
+ *
+ * ⚠ **The peak, not the panel top, is what the 16ft is measured to**, because
+ * that is what he said and because it is the number a person reads off a
+ * section. The two differ by the bearing assembly's own 2¼in, which is exactly
+ * the band where the distinction can flip the answer.
+ */
+export interface InteriorBearingWallBuild {
+  wallId: string;
+  /** How much taller than its story this wall is built. */
+  aboveStoryIn: number;
+  /** Its story's floor to the TOP of its panels — the plate's underside. */
+  panelTopIn: number;
+  /** Its story's floor to the roof's underside above it: his "peak". */
+  peakIn: number;
+  /** What to band this wall's columns at — `Infinity` is his one-panel case,
+   *  i.e. do not subdivide however tall it is. */
+  courseMaxHeightIn: number;
+}
+
+export function interiorBearingWallBuilds(
+  bearing: readonly InteriorRoofBearing[],
+  options: {
+    /** The height of the story these walls stand on (the TOP story — the roof
+     *  bears on that one). */
+    storyHeightIn: number;
+    /** The truss plate (or box beam) the roof lands on, which the panels are
+     *  shortened by so the roof still arrives at the plane. */
+    bearingAssemblyHeightIn: number;
+    /** The project's own max panel height, used only past the limit. */
+    maxPanelHeightIn: number;
+    /** His 16ft. */
+    onePanelPeakLimitIn: number;
+  },
+): InteriorBearingWallBuild[] {
+  return bearing.map((wall) => {
+    /* ⚠ The panels stop under the plate and the plate's top is the plane, so
+       the panel top is the story height plus the rise — the assembly height
+       cancels, exactly as it does on an eave wall, where `gableEaveHeightIn`
+       is `roofBaseHeightIn` PLUS the same assembly. Subtracting it here as
+       well would build every bearing wall 2¼in short. */
+    const panelTopIn = options.storyHeightIn + Math.max(0, wall.aboveEaveIn);
+    const peakIn = panelTopIn + options.bearingAssemblyHeightIn;
+    return {
+      wallId: wall.wallId,
+      aboveStoryIn: Math.max(0, wall.aboveEaveIn),
+      panelTopIn,
+      peakIn,
+      courseMaxHeightIn: peakIn <= options.onePanelPeakLimitIn ? Number.POSITIVE_INFINITY : options.maxPanelHeightIn,
+    };
+  });
 }

@@ -9,7 +9,7 @@ import type {
   PanelPlanMitre,
   StudConfig,
 } from "@building-integrity/panel-catalog";
-import Building3DView from "./Building3DView";
+import Building3DView, { type InteriorBearingWallsByWallId } from "./Building3DView";
 import type { MidWallBeam } from "./midWallBeam";
 import type { SpanningHeader } from "./spanningHeader";
 
@@ -53,6 +53,12 @@ export interface BuildingSummaryRenderProps {
     }[]
   >;
   roofEnabled?: boolean;
+  /** B34 stride 3b — forwarded so the captured summary image shows the
+   *  dividing walls at the same height the live model does. Without them the
+   *  Project Summary's own picture would be the only place in the app still
+   *  drawing a bearing wall stopped at the ceiling. */
+  groundInteriorBearingWalls?: InteriorBearingWallsByWallId;
+  secondStoryInteriorBearingWalls?: InteriorBearingWallsByWallId;
   boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>;
   boxBeamSizeId?: BoxBeamSizeId;
   midWallBeamsByWallId?: Record<string, MidWallBeam[]>;

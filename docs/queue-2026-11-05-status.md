@@ -263,7 +263,25 @@ is cut, what sets the radius) was answering the wrong question.
     in the plan, with reasons: `I` reads as `1` on a shop label, and a name
     that says what a wall DOES goes stale when the roof changes.
 
-13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3, 3c, 4 AND 5 BUILT.**
+13. **B34 — Multiplex.** ✅ **EVERY STRIDE BUILT — 1, 2, 3, 3b, 3c, 4 AND 5.**
+    **Stride 3b: a wall that carries the roof is BUILT up to it — 2026-11-18.** It
+    used to be tiled at the story height under a ridge a full rise above
+    the eave. His rule: ONE panel however tall, until the peak passes
+    16ft, then courses of the project's max panel height, greedy from the
+    bottom. On his 36x36 at 8:12 the centre wall is 10' + 10' + 2' and
+    each purlin wall 10' + 6'2⅝"; the roof lands on a truss plate like an
+    exterior wall's. ⚠ The under-16ft exemption puts a panel past
+    `panelHeightInRange.maxIn`, which is ALSO his number — obeyed, and
+    named in the Review Log at the real heights. ⚠ Three older defects
+    surfaced in the browser: the panel COUNT was a slot count (62 shown
+    for 99 built), the plan canvas labelled from its own instance list
+    rather than the building's, and a banded safety gap's sheet carried
+    the wrong height. All three fixed.
+    ⚠ **Still open: the ELEVATION tab for an interior wall.**
+    `elevationWall` resolves through `footprint.walls`, and a wall
+    elevation is built from two CORNERS plus the gable row, box-beam
+    coverage and run stops an interior wall has none of. It is now the
+    only thing on this item.
     **Stride 5: the interior walls are DRAWN — 2026-11-18.** They had been
     tiled, counted, priced, numbered and given shop sheets since stride 2 and
     drawn nowhere. Now on the 2D plan, the Plan View sheet and the 3D views,

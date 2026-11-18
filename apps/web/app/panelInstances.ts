@@ -392,6 +392,22 @@ export function allPanelInstances(
    * split — every existing caller either has no gable tiles at all, or (if
    * it does) has no window tiles either, so this is unreachable for them. */
   gableEaveHeightIn?: number,
+  /**
+   * ⚠ **HOW TALL EACH ROOF-BEARING INTERIOR WALL IS BUILT — B34 stride 3b,
+   * 2026-11-18.** Keyed by wall id, from `interiorBearingWallBuilds`.
+   *
+   * An interior wall that carries the ridge or a purlin runs from its floor to
+   * the plate under the roof, not to the story height — the part doing the
+   * carrying was the part that was not built. A wall with no entry here (every
+   * non-bearing dividing wall, and every wall of a building with no roof) is
+   * tiled at the story height exactly as before.
+   *
+   * ⚠ **`courseMaxHeightIn` is his rule and is NOT the project's
+   * `maxPanelHeightIn`**: `Infinity` under a 16ft peak, so such a wall is
+   * deliberately exempt from the max-height setting and comes out as one tall
+   * panel. See `interiorBearingWallBuilds`.
+   */
+  interiorBearingWallsByWallId?: Record<string, { panelTopIn: number; courseMaxHeightIn: number }>,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   /* ⚠ Keyed on the SERIES label, not the compass direction, so an interior
@@ -808,12 +824,61 @@ export function allPanelInstances(
   for (const [index, wall] of (footprint.interiorWalls ?? []).entries()) {
     const series = interiorWallSeries(index);
     const slots = wallSlots[wall.id] ?? [];
+    /* ⚠ **B34 stride 3b — a wall that carries the roof is taller than its
+       story**, and how much taller is not this function's business to work
+       out: see `interiorBearingWallsByWallId`. */
+    const bearing = interiorBearingWallsByWallId?.[wall.id];
     for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
       const slot = slots[slotIndexInWall]!;
       /* Same rule as the outline loop: a framed void fabricates nothing. */
       if (slot.type === "open") continue;
       if (!SIMPLE_NAMED_TYPES.has(slot.type)) continue;
-      pushInstance(series, wall.id, slot.type as NamedPanelType, slot.widthIn, slotIndexInWall);
+      if (bearing === undefined) {
+        pushInstance(series, wall.id, slot.type as NamedPanelType, slot.widthIn, slotIndexInWall);
+        continue;
+      }
+      /* ⚠ **The SAME band splitter the outline uses**, with the wall's own
+         full height standing in for the story height and his own course limit
+         standing in for the project's. Not a second greedy loop written here:
+         the 3D view bands the identical boxes through the identical function,
+         and two implementations of "where does this wall break" is how a plan
+         and a model come to draw different joints.
+
+         ⚠ **`heightOverrideIn` is set even when there is only ONE band**, and
+         it has to be. Every reader downstream resolves a panel's height as
+         `heightOverrideIn ?? wallHeightFt * 12`, so a single 14ft panel that
+         left the field empty would be drawn, weighed, cut and stencilled as an
+         8ft one — the whole stride, lost to an absent field. */
+      const bands = computeWallVerticalBandsForSlotWithMaxHeight(
+        slotIndexInWall,
+        bearing.panelTopIn,
+        [],
+        bearing.courseMaxHeightIn,
+        panelHeightInRange.minIn,
+      );
+      for (const band of bands) {
+        pushInstance(
+          series,
+          wall.id,
+          slot.type as NamedPanelType,
+          slot.widthIn,
+          slotIndexInWall,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          band.topIn - band.bottomIn,
+          /* Only a wall that genuinely broke into courses carries a band
+             index — his one-panel case is one panel, not band 0 of one. */
+          bands.length > 1 ? band.bandIndex : undefined,
+        );
+      }
     }
   }
 

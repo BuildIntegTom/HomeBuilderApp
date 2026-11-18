@@ -67,6 +67,15 @@ export function panelSlotBoxes3D(
   heightFt: number,
   primaryCornerIds: Set<string>,
   runStopsByWallId?: Record<string, WallRunStop>,
+  /**
+   * ⚠ **How tall each roof-bearing INTERIOR wall is — B34 stride 3b.** A wall
+   * under the ridge or a purlin runs to the plate under the roof rather than
+   * to the story height, so its boxes are taller than every other box in the
+   * model. Keyed by wall id, in FEET to match `heightFt`; a wall with no entry
+   * (and every outline wall, which cannot be one) takes `heightFt` exactly as
+   * before.
+   */
+  interiorWallHeightFtByWallId?: Record<string, number>,
 ): PanelSlotBox3D[] {
   const thicknessFt = thicknessIn / 12;
   const ownership = cornerOwnershipWithRunStops(footprint, primaryCornerIds, thicknessIn, runStopsByWallId);
@@ -159,6 +168,8 @@ export function panelSlotBoxes3D(
    * wall's length; here there is only one.
    */
   for (const wall of footprint.interiorWalls ?? []) {
+    /* ⚠ Stride 3b: taller than the story where this wall carries the roof. */
+    const wallHeightFt = interiorWallHeightFtByWallId?.[wall.id] ?? heightFt;
     const dx = wall.end.x - wall.start.x;
     const dz = wall.end.y - wall.start.y;
     const length = Math.hypot(dx, dz) || 1;
@@ -189,7 +200,7 @@ export function panelSlotBoxes3D(
         anchorZ: startZ + dir.z * offsetFt,
         widthFt,
         depthFt: thicknessFt,
-        heightFt,
+        heightFt: wallHeightFt,
         rotationRad,
       });
       offsetFt += widthFt;

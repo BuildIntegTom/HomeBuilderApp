@@ -10,7 +10,10 @@ import {
   allWallPanelJoints,
   isCourtyardFootprint,
   longestBandRunFt,
-  ridgeBearingWallFor,
+  interiorBearingWallBuilds,
+  interiorRoofBearingWalls,
+  interiorWallSeries,
+  wallFabricationLengthIn,
   tileInteriorWalls,
   ringRoofGableBlockReason,
   roofBearingBands,
@@ -291,6 +294,7 @@ import {
   concretePierDimensions,
   cornerPanelWidthIn,
   densePackCelluloseDensityLbFt3,
+  interiorBearingWallOnePanelPeakLimitIn,
   fastenerSpacingTable,
   fastenerTableStatus,
   FIELD_JOIST_DEPTH_REDUCTION_IN,
@@ -7694,56 +7698,12 @@ export default function LayoutEditor() {
     [allSlots],
   );
 
-  // Straw is height-dependent, so (unlike the counts above) it can't just
-  // sum widths across a flattened all-stories slot list against one flat
-  // wallHeightFt — each story contributes its own width x its OWN height,
-  // summed across stories (a 2-story building's second story can have a
-  // different wallHeightFt than the ground floor).
-  const strawWeight = useMemo(() => {
-    return stories.reduce(
-      (acc, story) => {
-        const storyStrawSlots = Object.values(story.wallSlots)
-          .flat()
-          .filter((s) => WALL_PANEL_SLOT_TYPES.has(s.type) && s.type !== "safety-gap");
-        const widthIn = storyStrawSlots.reduce((sum, s) => sum + s.widthIn, 0);
-        const w = computeStrawWeight(widthIn, thicknessIn, story.wallHeightFt * 12, densityLbFt3 * LB_FT3_TO_KG_M3);
-        return { weightKg: acc.weightKg + w.weightKg, weightLb: acc.weightLb + w.weightLb };
-      },
-      { weightKg: 0, weightLb: 0 },
-    );
-  }, [stories, thicknessIn, densityLbFt3]);
-
-  // Summed from each real instance's own member geometry (not a flat
-  // per-panel constant multiplied by count) — the only way a braced
-  // panel's diagonal braces/connector (real trapezoid-cut length, per
-  // bracingStyle) actually count toward the project's wood weight total
-  // (Tommy: "make sure trapezoid pieces... have wood weight... that fill
-  // into project totals"). Same per-story summing as strawWeight above,
-  // since wood weight is height-dependent too.
-  const totalWoodWeightKg = useMemo(() => {
-    return stories.reduce((sum, story) => {
-      const heightIn = story.wallHeightFt * 12;
-      return (
-        sum +
-        Object.values(story.wallSlots)
-          .flat()
-          .filter((s) => s.type === "standard" || s.type === "braced")
-          .reduce((acc, s) => {
-            let members: PanelMember[];
-            if (s.type === "braced") {
-              const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
-              members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored, false, girtStyle);
-            } else {
-              members = standardPanelMembersFor(s, s.widthIn, thicknessIn, heightIn, includeNailer, girtStyle);
-            }
-            return acc + computeMemberSetWoodWeight(members).weightKg;
-          }, 0)
-      );
-    }, 0);
-  }, [stories, thicknessIn, includeNailer, girtStyle, defaultBracePattern, defaultBracedMirrored]);
-  // The project's own total weight is assembled further down, right after
-  // the spanning-header fabrication groups it now also has to include — see
-  // `totalWeightKg` there.
+  /* ⚠ **`strawWeight` and `totalWoodWeightKg` USED TO BE HERE and moved down
+     in B34 stride 3b.** Both are now per WALL rather than per story, because a
+     dividing wall that carries the roof is taller than the story it stands on
+     — so both have to read `roofBearingModel`, which cannot be derived until
+     `gableEaveHeightIn` and the live roof form exist, a few hundred lines
+     below. Nothing between here and there reads either of them. */
 
   const hasClayPlaster = checkedInteriorIds.has("clay-plaster");
   const hasLimePlaster = checkedExteriorIds.has("lime-plaster");
@@ -8681,6 +8641,166 @@ export default function LayoutEditor() {
   // Shop Drawing pages then just filter this same list, rather than each
   // recomputing its own independent (and previously mismatched) counter.
   /**
+   * ⚠ **WHAT THE ROOF BEARS ON INSIDE THE BUILDING, DERIVED ONCE — B34
+   * stride 3b, 2026-11-18.**
+   *
+   * Three readers had grown out of the same arithmetic and one of them was
+   * only a sentence: the Review Log's own memo built the roof planes, banded
+   * them, worked out which interior walls carry the roof and how far above the
+   * eave, and then said that none of it was built. Stride 3b builds it — so
+   * the heights that decide how tall a wall is fabricated and the heights the
+   * log reports have to be the SAME heights, or the building is priced for one
+   * thing and described as another.
+   *
+   * ⚠ **Empty is the normal case.** No roof, no pitch, a refused roof, or a
+   * building with no interior walls at all: every field below is empty and
+   * every consumer behaves exactly as it did before this stride.
+   */
+  const roofBearingModel = useMemo(() => {
+    const topStoryHeightIn = (stories.at(-1)?.wallHeightFt ?? 0) * 12;
+    const empty = {
+      pitchIn12: undefined as number | undefined,
+      spanFt: 0,
+      /** The longest ground run one roof panel has to cover — per BAND since
+       *  stride 3c, which is what the 18ft panel limit judges. */
+      runFt: 0,
+      bearing: [] as ReturnType<typeof interiorRoofBearingWalls>,
+      builds: [] as ReturnType<typeof interiorBearingWallBuilds>,
+      byWallId: {} as Record<string, ReturnType<typeof interiorBearingWallBuilds>[number]>,
+      /** Which story these walls stand on — the roof bears on the TOP one, and
+       *  a ground-floor dividing wall under a second story carries a FLOOR,
+       *  which is a different question nothing here answers. `null` when
+       *  nothing carries the roof. */
+      story: null as "ground" | "second" | null,
+      topStoryHeightIn,
+    };
+    if (!footprint || !roofEnabled) return empty;
+    const pitchIn12 = roofTrussLayoutContext?.pitchIn12;
+    if (pitchIn12 === undefined) return empty;
+    const spanFt = roofSpanFt(footprint);
+    if (!(spanFt > 0)) return empty;
+    /* Measured against the LIVE form and the LIVE pitch rather than by
+       re-running the form decision: a user who has dragged the peak to an end
+       has a shed, and a model describing a peak they do not have is worse than
+       an empty one. */
+    const roof = simpleRoofPlanes(footprint, {
+      form: roofFormFromProfile,
+      pitchIn12,
+      eaveHeightFt: gableEaveHeightIn / 12,
+    });
+    const bands = roof.refusal === null ? roofBearingBands(footprint, roof) : [];
+    const runFt = bands.length > 0 ? longestBandRunFt(bands) : roofFormFromProfile === "shed" ? spanFt : spanFt / 2;
+    const bearing = roof.refusal === null ? interiorRoofBearingWalls(footprint, roof, bands) : [];
+    const builds = interiorBearingWallBuilds(bearing, {
+      storyHeightIn: topStoryHeightIn,
+      /* The plate the roof lands on — his answer of 2026-11-18, *"A truss
+         plate, like an exterior wall"*. The same assembly `gableEaveHeightIn`
+         itself is offset by, so a bearing wall's panels stop exactly where an
+         eave wall's do relative to the plane above them. */
+      bearingAssemblyHeightIn: computeSharedRooflineBearingHeightIn(),
+      maxPanelHeightIn,
+      onePanelPeakLimitIn: interiorBearingWallOnePanelPeakLimitIn.value,
+    });
+    const byWallId: Record<string, (typeof builds)[number]> = {};
+    for (const build of builds) {
+      byWallId[build.wallId] = build;
+    }
+    return {
+      ...empty,
+      pitchIn12,
+      spanFt,
+      runFt,
+      bearing,
+      builds,
+      byWallId,
+      story: builds.length === 0 ? null : stories.length > 1 ? ("second" as const) : ("ground" as const),
+    };
+  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, stories, maxPanelHeightIn]);
+
+  /** The record the GROUND story's own builders take — undefined unless the
+   *  ground floor is the top story, so a two-story building's ground-floor
+   *  dividing walls stay exactly as tall as they were. */
+  const groundInteriorBearingWalls = roofBearingModel.story === "ground" ? roofBearingModel.byWallId : undefined;
+  const secondStoryInteriorBearingWalls = roofBearingModel.story === "second" ? roofBearingModel.byWallId : undefined;
+
+  // Straw is height-dependent, so (unlike the counts above) it can't just
+  // sum widths across a flattened all-stories slot list against one flat
+  // wallHeightFt — each story contributes its own width x its OWN height,
+  // summed across stories (a 2-story building's second story can have a
+  // different wallHeightFt than the ground floor).
+  const strawWeight = useMemo(() => {
+    /* ⚠ **B34 stride 3b — PER WALL, not per story, because a dividing wall
+       that carries the roof is taller than the story it stands on.** This
+       summed one width against one height per story until 2026-11-18, which
+       weighed a 20ft bearing wall as an 8ft one: 12ft of straw per panel,
+       missing from the project total and from every shipping figure built on
+       it. A wall with no bearing entry reads the story height exactly as
+       before. */
+    const bearingTopInFor = (storyIndex: number, wallId: string): number | undefined =>
+      (roofBearingModel.story === "ground" ? storyIndex === 0 : roofBearingModel.story === "second" && storyIndex === 1)
+        ? roofBearingModel.byWallId[wallId]?.panelTopIn
+        : undefined;
+    return stories.reduce(
+      (acc, story, storyIndex) => {
+        let weightKg = 0;
+        let weightLb = 0;
+        for (const [wallId, slots] of Object.entries(story.wallSlots)) {
+          const heightIn = bearingTopInFor(storyIndex, wallId) ?? story.wallHeightFt * 12;
+          const widthIn = slots
+            .filter((sl) => WALL_PANEL_SLOT_TYPES.has(sl.type) && sl.type !== "safety-gap")
+            .reduce((sum, sl) => sum + sl.widthIn, 0);
+          if (widthIn <= 0) continue;
+          const w = computeStrawWeight(widthIn, thicknessIn, heightIn, densityLbFt3 * LB_FT3_TO_KG_M3);
+          weightKg += w.weightKg;
+          weightLb += w.weightLb;
+        }
+        return { weightKg: acc.weightKg + weightKg, weightLb: acc.weightLb + weightLb };
+      },
+      { weightKg: 0, weightLb: 0 },
+    );
+  }, [stories, thicknessIn, densityLbFt3, roofBearingModel]);
+
+  // Summed from each real instance's own member geometry (not a flat
+  // per-panel constant multiplied by count) — the only way a braced
+  // panel's diagonal braces/connector (real trapezoid-cut length, per
+  // bracingStyle) actually count toward the project's wood weight total
+  // (Tommy: "make sure trapezoid pieces... have wood weight... that fill
+  // into project totals"). Same per-story summing as strawWeight above,
+  // since wood weight is height-dependent too.
+  const totalWoodWeightKg = useMemo(() => {
+    /* ⚠ **Per wall since B34 stride 3b**, for the same reason `strawWeight`
+       above is: a roof-bearing dividing wall's panels are built to the plate
+       under the roof, and its girt rows, studs and skins are all height-
+       driven. Built at the story height, a 20ft wall came out with an 8ft
+       wall's lumber in it. */
+    const bearingTopInFor = (storyIndex: number, wallId: string): number | undefined =>
+      (roofBearingModel.story === "ground" ? storyIndex === 0 : roofBearingModel.story === "second" && storyIndex === 1)
+        ? roofBearingModel.byWallId[wallId]?.panelTopIn
+        : undefined;
+    return stories.reduce((sum, story, storyIndex) => {
+      return (
+        sum +
+        Object.entries(story.wallSlots)
+          .flatMap(([wallId, slots]) => slots.map((sl) => ({ slot: sl, heightIn: bearingTopInFor(storyIndex, wallId) ?? story.wallHeightFt * 12 })))
+          .filter(({ slot }) => slot.type === "standard" || slot.type === "braced")
+          .reduce((acc, { slot: s, heightIn }) => {
+            let members: PanelMember[];
+            if (s.type === "braced") {
+              const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
+              members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored, false, girtStyle);
+            } else {
+              members = standardPanelMembersFor(s, s.widthIn, thicknessIn, heightIn, includeNailer, girtStyle);
+            }
+            return acc + computeMemberSetWoodWeight(members).weightKg;
+          }, 0)
+      );
+    }, 0);
+  }, [stories, thicknessIn, includeNailer, girtStyle, defaultBracePattern, defaultBracedMirrored, roofBearingModel]);
+  // The project's own total weight is assembled further down, right after
+  // the spanning-header fabrication groups it now also has to include — see
+  // `totalWeightKg` there.
+
+  /**
    * ⚠ **The inputs to the ONE floor and roof panel takeoff, in one place
    * because the 3D view is handed these very same values below.**
    *
@@ -8853,6 +8973,11 @@ export default function LayoutEditor() {
             groundBandGeometryByWallId,
             maxPanelHeightIn,
             gableEaveHeightIn,
+            /* ⚠ **B34 stride 3b — the dividing walls that carry the roof are
+               built TALLER than this story.** Undefined on a two-story
+               building, where the roof bears on the second story's copy of
+               these walls and this one carries a floor instead. */
+            groundInteriorBearingWalls,
           )
         : [],
     [
@@ -8865,6 +8990,7 @@ export default function LayoutEditor() {
       groundBandGeometryByWallId,
       maxPanelHeightIn,
       gableEaveHeightIn,
+      groundInteriorBearingWalls,
     ],
   );
 
@@ -8885,9 +9011,16 @@ export default function LayoutEditor() {
             undefined,
             secondStory.wallHeightFt * 12,
             secondStoryBandGeometryByWallId,
+            /* `maxPanelHeightIn` stays omitted here, exactly as it always has
+               been — a second story's instances are not height-split — and
+               `gableEaveHeightIn` with it, since this call has no gable tiles
+               to measure against. */
+            undefined,
+            undefined,
+            secondStoryInteriorBearingWalls,
           )
         : [],
-    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryBandGeometryByWallId],
+    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryBandGeometryByWallId, secondStoryInteriorBearingWalls],
   );
 
   /** A panel's own name at a given wall+slot, per story — the lookup both
@@ -9129,12 +9262,20 @@ export default function LayoutEditor() {
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId]);
   const trussPlateWallLengthTotalIn = useMemo(() => {
     if (!footprint) return 0;
+    /* ⚠ **B34 stride 3b — a dividing wall that carries the roof gets a plate
+       too**, which is his own answer of 2026-11-18: *"A truss plate, like an
+       exterior wall"*. Added to both branches below rather than to one,
+       because the roof bears on the TOP story's copy of these walls whether
+       that is the ground floor or a second story. */
+    const interiorIn = (footprint.interiorWalls ?? [])
+      .filter((wall) => roofBearingModel.byWallId[wall.id] !== undefined)
+      .reduce((sum, wall) => sum + wallFabricationLengthIn(wall), 0);
     // A truss plate bears on TOP of this wall's panels — where no panels are
     // built there is no plate, so the single-story total is the BUILT
     // perimeter. (The multi-story branch below sums real per-wall segments
     // off the second story's own slots, so it already shrinks for free.)
-    if (stories.length <= 1) return totalBuiltWallPerimeterIn;
-    let totalIn = 0;
+    if (stories.length <= 1) return totalBuiltWallPerimeterIn + interiorIn;
+    let totalIn = interiorIn;
     for (const wall of footprint.walls) {
       const slots = secondStory?.wallSlots[wall.id] ?? [];
       for (const seg of computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])) {
@@ -9142,7 +9283,7 @@ export default function LayoutEditor() {
       }
     }
     return totalIn;
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalBuiltWallPerimeterIn]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalBuiltWallPerimeterIn, roofBearingModel]);
   const trussPlatePreviewMembers = useMemo(
     () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn),
     [thicknessIn],
@@ -10555,7 +10696,17 @@ export default function LayoutEditor() {
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
       panelTypeId === "safety-gap" ? safetyGapSheetThicknessIn(inst.widthIn) : inst.widthIn;
     const groupKeyFor = (panelTypeId: string, inst: PanelInstance): string => {
-      if (panelTypeId === "safety-gap") return `${panelTypeId}:${safetyGapSheetThicknessIn(inst.widthIn).toFixed(3)}`;
+      /* ⚠ **AND ITS HEIGHT — found in the browser, B34 stride 3b.** This
+         returned early on the thickness alone, which was true while every
+         safety gap in a building stood the full story height. A banded wall
+         splits its safety-gap slot into courses exactly as it splits the
+         panels beside it, and all of them then merged onto one sheet headed
+         with the FIRST instance's height: a 36ft Multiplex printed 21 copies
+         of a 10ft sheet for gaps that are 10ft, 6'2⅝" and 2ft. Same family as
+         the corner panel's plan mitre — a group key missing a dimension that
+         changes the part. */
+      if (panelTypeId === "safety-gap")
+        return `${panelTypeId}:${safetyGapSheetThicknessIn(inst.widthIn).toFixed(3)}:${(inst.heightOverrideIn ?? -1).toFixed(3)}`;
       // heightOverrideIn folded in so a Mid-Wall Bond Beam's below-band
       // piece, above-band piece, and an unrelated full-height copy of the
       // same width never merge onto one Shop Fab page.
@@ -10859,6 +11010,26 @@ export default function LayoutEditor() {
       }
     }
 
+    /* ⚠ **AND A PLATE ON EVERY DIVIDING WALL THAT CARRIES THE ROOF — B34
+       stride 3b**, his *"A truss plate, like an exterior wall"*.
+
+       One segment per wall, its whole length, with no box-beam branch: a box
+       beam is a per-wall ROOFLINE choice offered on the outline, and a plate
+       is what the roof panels from both planes already expect to land on. A
+       plate of the same length as an exterior wall's merges onto that sheet,
+       which is right — it is the identical part — and `walls` then names both,
+       which is what a shop reading one page needs. */
+    for (const [index, wall] of (footprint.interiorWalls ?? []).entries()) {
+      if (roofBearingModel.byWallId[wall.id] === undefined) continue;
+      const lengthIn = wallFabricationLengthIn(wall);
+      if (!(lengthIn > 0)) continue;
+      const key = `truss-plate-${lengthIn.toFixed(3)}`;
+      const existing = groups.get(key);
+      const entry = { id: wall.id, direction: interiorWallSeries(index) };
+      if (existing) existing.walls.push(entry);
+      else groups.set(key, { kind: "truss-plate", lengthIn, walls: [entry] });
+    }
+
     return [...groups.entries()].map(([groupKey, { kind, lengthIn, walls }]) => {
       const kindLabel = kind === "truss-plate" ? "Truss Plate" : "Box Beam";
       const heightIn = kind === "truss-plate" ? computeRoofBearingAssemblyHeightIn(false) : computeBoxBeamAssemblyHeightIn(boxBeamSizeId);
@@ -10905,7 +11076,7 @@ export default function LayoutEditor() {
         instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})`, wallId: w.id })),
       };
     });
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, builtWallLengthInByWallId]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, builtWallLengthInByWallId, roofBearingModel]);
 
   /* Floor and roof PANELS' own Shop Fabrication pages.
 
@@ -10953,15 +11124,37 @@ export default function LayoutEditor() {
    * arrays they come from are already memoised.
    */
   const gableTilesAll = Object.values(gableTilesAsFabricatedByWallId).flat();
+  /**
+   * ⚠ **COUNTED FROM THE PANELS, NOT FROM THE SLOTS — found in the browser,
+   * B34 stride 3b, 2026-11-18.**
+   *
+   * `wall` and `safetyGap` used to read `allWallPanelSlots`, which is one entry per
+   * COLUMN of wall. That was the same number as the panel count for as long as
+   * a column was one panel — and it has not been, since Mid-Wall Bond Beams
+   * and the max-panel-height split, both of which stack two or three real
+   * panels in one column. The Multiplex made it impossible to miss: its three
+   * dividing walls are built in courses now, so the summary said **62 wall
+   * panels** for a building whose shop drawings are 98 of them.
+   *
+   * The instances ARE the panels — that is what `allPanelInstances` is for —
+   * so they are what gets counted. Both stories, because a slot list spanned
+   * both and an instance list does not.
+   *
+   * ⚠ Nothing moves for a building with no bands: one instance per slot is
+   * exactly what the old sum counted.
+   */
+  const wallPanelInstances = [...allInstances, ...secondStoryAllInstances].filter((inst) =>
+    WALL_PANEL_SLOT_TYPES.has(inst.panelType),
+  );
   const panelCounts = {
-    wall: allWallPanelSlots.filter((s) => s.type !== "safety-gap").length,
+    wall: wallPanelInstances.filter((inst) => inst.panelType !== "safety-gap").length,
     windowPairs: openingCounts.windows,
     doors: openingCounts.doors,
     gable: gableTilesAll.filter((t) => t.isSafetyGap !== true).length,
     /** Fabricated, shipped, claimable — and deliberately outside
      *  `panelsTotal`. Wall slots plus the gable row's own filler tiles. */
     safetyGap:
-      allWallPanelSlots.filter((s) => s.type === "safety-gap").length +
+      wallPanelInstances.filter((inst) => inst.panelType === "safety-gap").length +
       gableTilesAll.filter((t) => t.isSafetyGap === true).length,
     floor: deckPanelTakeoff.instances.filter((i) => i.kind === "floor").length,
     roof: deckPanelTakeoff.instances.filter((i) => i.kind === "roof").length,
@@ -12660,6 +12853,36 @@ export default function LayoutEditor() {
     // calculation"), counted once per corner panel — every corner panel
     // sits at a true wall-run end by construction, so no separate
     // end-detection is needed.
+    /**
+     * ⚠ **B34 stride 3b — the part of a roof-bearing dividing wall that stands
+     * ABOVE its story.**
+     *
+     * `areaSqFtFor` above charges every slot at its STORY's height, which is
+     * right for every wall in the building except these: a wall under the
+     * ridge or a purlin is fabricated up to the plate under the roof. Without
+     * this term a 36ft Multiplex's three dividing walls were priced as 8ft
+     * walls while their shop sheets built them 10ft and 14ft tall — the
+     * drawing and the quote describing two different buildings.
+     *
+     * ⚠ **It lands in the panel's OWN bucket (standard/braced), not in the
+     * `roof` one the gable row and the cross-tilt row use.** Those two are
+     * separate rows of separate panels above a wall; this is not a row at all.
+     * His rule makes the whole wall one panel under a 16ft peak — the same
+     * panel, taller — so splitting its area across two buckets would invent a
+     * part that is not fabricated.
+     */
+    const interiorBearingExtraAreaSqFtFor = (type: PanelSlot["type"]) => {
+      const story = roofBearingModel.story === "ground" ? stories[0] : roofBearingModel.story === "second" ? stories[1] : undefined;
+      if (!story) return 0;
+      let sqFt = 0;
+      for (const build of roofBearingModel.builds) {
+        const widthIn = (story.wallSlots[build.wallId] ?? [])
+          .filter((sl) => sl.type === type)
+          .reduce((sum, sl) => sum + sl.widthIn, 0);
+        sqFt += (widthIn / 12) * (build.aboveStoryIn / 12);
+      }
+      return sqFt;
+    };
     const cornerEdgeAreaSqFtFor = (type: PanelSlot["type"]) =>
       stories.reduce((sum, story) => {
         const count = Object.values(story.wallSlots)
@@ -12745,7 +12968,7 @@ export default function LayoutEditor() {
            to pay on a 3/4in sliver: 12.9 x $4 = $51.67 against 0.63 x $25 =
            $15.63. A rate going down and a bill going up is the whole point of
            measuring the piece instead of the gap it fills. */
-        { type: "standard", areaSqFt: areaSqFtFor("standard") },
+        { type: "standard", areaSqFt: areaSqFtFor("standard") + interiorBearingExtraAreaSqFtFor("standard") },
         // safety-oct-corner is a fabrication-ID variant of the same corner panel, priced identically.
         {
           type: "corner",
@@ -12755,7 +12978,7 @@ export default function LayoutEditor() {
             cornerEdgeAreaSqFtFor("corner") +
             cornerEdgeAreaSqFtFor("safety-oct-corner"),
         },
-        { type: "braced", areaSqFt: areaSqFtFor("braced") },
+        { type: "braced", areaSqFt: areaSqFtFor("braced") + interiorBearingExtraAreaSqFtFor("braced") },
         /* ⚠ **The spanning header has left this bucket.** It is a beam with
            no straw in it, so it prices as a shop item now; his 2026-09-25
            decision that it carried the header/sill rate settled a question
@@ -12828,6 +13051,7 @@ export default function LayoutEditor() {
     };
   }, [
     stories,
+    roofBearingModel,
     effectivePricePerSqFt,
     thicknessIn,
     gableTilesAsFabricatedByWallId,
@@ -13436,18 +13660,15 @@ export default function LayoutEditor() {
    * memo you already pay for is the cheapest shape there is (`AGENTS.md`).
    */
   const roofBearingReviewEntries = useMemo(() => {
-    if (!footprint || !roofEnabled) return [];
-    const pitchIn12 = roofTrussLayoutContext?.pitchIn12;
-    if (pitchIn12 === undefined) return [];
-    const spanFt = roofSpanFt(footprint);
-    if (!(spanFt > 0)) return [];
+    const { pitchIn12, spanFt, runFt, builds } = roofBearingModel;
+    if (pitchIn12 === undefined || !(spanFt > 0)) return [];
     const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
 
-    /* ⚠ **FINDING 1: THE ROOF PANELS CANNOT REACH, AND NOTHING HAS EVER SAID
+    /* ⚠ **FINDING 1: THE ROOF PANELS CANNOT REACH, AND NOTHING HAD EVER SAID
        SO.** `decideRoofForm` returns a `refusal` for a building too wide to
        roof at its pitch — *"This roof needs a bearing line between the wall
-       and the ridge, which nothing models yet"* — and that field has
-       **never been read anywhere in this app**. It is computed inside
+       and the ridge, which nothing models yet"* — and that field had **never
+       been read anywhere in this app**. It is computed inside
        `applyRoofDefaultsForFootprint` and thrown away.
 
        ⚠ So the app has been quietly building roofs out of panels the shop
@@ -13455,24 +13676,12 @@ export default function LayoutEditor() {
        The Cindy does it too: 34'-10" across the ridge is 17.4ft a side, past
        the 17.1ft an 18ft panel reaches at 4:12.
 
-       Measured here against the LIVE form and the LIVE pitch rather than by
-       re-running the form decision, because a user who has dragged the peak to
-       an end has a shed, and a refusal describing a peak they do not have is
-       worse than silence. */
-    /* ⚠ **JUDGED PER BAND SINCE B34 STRIDE 3c, not per plane.** An interior
-       wall part way up a plane splits its run of panels in two, so the number
-       the 18ft limit judges is the WORST BAND, not the whole slope. On his
-       36x36 that is what takes a 21.6ft panel down to 11.2ft. A building with
-       no such wall gets one band per plane and the figure is exactly what it
-       was. */
-    const roofPlanes = simpleRoofPlanes(footprint, {
-      form: roofFormFromProfile,
-      pitchIn12,
-      eaveHeightFt: gableEaveHeightIn / 12,
-    });
-    const bands = roofPlanes.refusal === null ? roofBearingBands(footprint, roofPlanes) : [];
-    const runFt =
-      bands.length > 0 ? longestBandRunFt(bands) : roofFormFromProfile === "shed" ? spanFt : spanFt / 2;
+       ⚠ **JUDGED PER BAND SINCE B34 STRIDE 3c, not per plane**, and the whole
+       derivation moved into `roofBearingModel` in stride 3b — the band an
+       interior wall creates is now what decides how TALL that wall is built as
+       well as whether the roof above it can be panelized, and two copies of
+       that arithmetic would be a building priced for one roof and described
+       with another. */
     const neededIn = roofPanelLengthForGroundRunIn(runFt * 12, pitchIn12);
     if (neededIn > MAX_PANEL_LENGTH_IN + 1e-9) {
       entries.push({
@@ -13486,60 +13695,55 @@ export default function LayoutEditor() {
           `counted and priced anyway, out of panels that long. Three ways out, all his: narrow the building, ` +
           `flatten the pitch, or raise the panel limit — itself his own estimate, "I have not had any ` +
           `structural engineer look at these yet. But that's a safe bet for now". A fourth, an intermediate ` +
-          `bearing line part way up each plane, is not modelled at all.`,
+          `bearing line part way up each plane, is an interior wall under the line, which this building ` +
+          `does not have.`,
       });
     }
 
-    /* ⚠ **FINDING 2: THE WALL CARRYING THE RIDGE STOPS AT THE CEILING.** The
-       centre wall's panels are built at the story height like any wall's, and
-       the ridge it is holding up is a full rise above the eave. So the part of
-       the wall that does the carrying is the part that is not built.
+    /* ⚠ **FINDING 2 IS CLOSED AS OF B34 STRIDE 3b, 2026-11-18, AND THE
+       ENTRY IS NOT DELETED — IT CHANGED SUBJECT.**
 
-       The bearing itself IS now right — the ridge runs along the wall and no
-       beam is built over it. What is missing is the row from the ceiling to
-       the ridge, which is the same shape of part as a shed's cross-tilt row:
-       uniform height along its length, with the two roof planes falling away
-       from its top. That is stride 3b, and it is named rather than implied,
-       because a wall priced to the ceiling under a roof it is meant to reach
-       is exactly the silence this log exists to break. */
-    /* ⚠ **EVERY roof-bearing interior wall, not only the ridge one.** Since
-       stride 3c a Multiplex has three: the centre wall under the ridge, and a
-       purlin wall part way up each plane. All three stop at the story height
-       and all three have roof above them, at three different heights. Listing
-       only the ridge would have quietly under-reported the building by two
-       walls the day the purlin walls arrived. */
-    const carrying: { wallId: string; aboveEaveIn: number }[] = [];
-    const ridgeWall = ridgeBearingWallFor(footprint);
-    if (ridgeWall && roofFormFromProfile === "peaked") {
-      carrying.push({ wallId: ridgeWall.wallId, aboveEaveIn: ((spanFt / 2) * 12 * pitchIn12) / 12 });
-    }
-    for (const plane of bands) {
-      for (const line of plane.bearingLines) {
-        if (carrying.some((c) => c.wallId === line.wallId)) continue;
-        carrying.push({ wallId: line.wallId, aboveEaveIn: (line.atRunFt * 12 * pitchIn12) / 12 });
-      }
-    }
-    if (carrying.length > 0) {
-      carrying.sort((a, b) => b.aboveEaveIn - a.aboveEaveIn);
-      const heights = carrying
-        .map((c) => `${c.wallId} by ${formatLengthIn(c.aboveEaveIn, unitSystem)}`)
-        .join(", ");
+       It used to say that the wall carrying the ridge *"stops at the
+       ceiling"*: its panels were tiled at the story height while the ridge it
+       held up was a full rise above the eave, so the part of the wall doing
+       the carrying was the part that was not built. Those walls are now
+       fabricated to the plate under the roof, counted, weighed, priced, drawn
+       and numbered at that height.
+
+       ⚠ What is left is a CONFLICT OF HIS OWN TWO NUMBERS, and it is the
+       reason this entry still exists. His rule for these walls —
+
+       > *"One panel whatever its height up until 16 ft tall peak. Otherwise
+       > break it down to 10 ft wall with another section above it"*
+
+       — exempts a bearing wall under a 16ft peak from the project's own max
+       panel height, and 16ft is 4ft past `panelHeightInRange.maxIn`, which is
+       also his (*"Tommy raised the max to 144in"*). So a wall can come out as
+       a single panel the catalog's own height range says cannot be built. His
+       rule is obeyed, because it is recent, explicit and about a load path —
+       and the panels it produces are named here, at their real heights, on
+       every building where it bites. */
+    const overTall = builds.filter((b) => b.courseMaxHeightIn === Number.POSITIVE_INFINITY && b.panelTopIn > panelHeightInRange.maxIn);
+    if (overTall.length > 0) {
+      const heights = overTall.map((b) => `${b.wallId} at ${formatLengthIn(b.panelTopIn, unitSystem)}`).join(", ");
       entries.push({
-        label: `${carrying.length} interior wall${carrying.length === 1 ? "" : "s"} carr${carrying.length === 1 ? "ies" : "y"} the roof but stop${carrying.length === 1 ? "s" : ""} short of it`,
+        label: `${overTall.length} roof-bearing wall${overTall.length === 1 ? " is" : "s are"} built as single panels past the ${(panelHeightInRange.maxIn / 12).toFixed(0)}ft panel height maximum`,
         status: "pending-BI-confirmation" as const,
         note:
-          `No ridge or purlin beam is built over ${carrying.length === 1 ? "it" : "any of them"}, because the ` +
-          `wall carries the roof directly — his "all the loads of everything transfer down the center row of ` +
-          `diving wall panels". But these walls' panels are tiled at the story height, and the roof above them ` +
-          `is higher than that: ${heights}, at ${pitchIn12}:12 over a ${spanFt.toFixed(1)}ft span. ` +
-          `The row from the ceiling up to the roof is NOT built, NOT drawn and NOT priced. Nothing else in the ` +
-          `building is wrong because of it: the roof planes, the bands of roof panels, the gable ends and the ` +
-          `panel counts are all as they should be.`,
+          `A dividing wall that carries the ridge or a purlin is built from its floor to the truss plate under ` +
+          `the roof, and his rule of 2026-11-18 keeps it as ONE panel until the peak passes 16ft: "One panel ` +
+          `whatever its height up until 16 ft tall peak. Otherwise break it down to 10 ft wall with another ` +
+          `section above it". That exempts these walls from this project's ${(maxPanelHeightIn / 12).toFixed(1)}ft ` +
+          `max panel height, deliberately — the member carrying the whole roof gets as few horizontal joints as ` +
+          `it can. But it also puts them past ${formatLengthIn(panelHeightInRange.maxIn, unitSystem)}, the ` +
+          `catalog's own panel height maximum, which is his too: ${heights}. ${panelHeightInRange.note} ` +
+          `Nothing else in the building is affected; the panels are drawn, cut, priced and stencilled at the ` +
+          `heights listed.`,
       });
     }
 
     return entries;
-  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, unitSystem]);
+  }, [roofBearingModel, maxPanelHeightIn, unitSystem]);
 
   const wallRunStopReviewEntries = useMemo(() => {
     if (!footprint) return [];
@@ -18025,6 +18229,7 @@ export default function LayoutEditor() {
               ) : viewMode === "plan" ? (
                 <FootprintCanvas
                   panelNumberByName={wallPanelNumberByName}
+                  panelInstances={effectiveViewedStoryId === "ground" ? allInstances : secondStoryAllInstances}
                   footprint={footprint}
                   shapeTool={shapeTool}
               drawWallFirstCornerId={drawWallFirstPick?.kind === "corner" ? drawWallFirstPick.cornerId : null}
@@ -18122,6 +18327,8 @@ export default function LayoutEditor() {
                   roofForm={deckPanelTakeoffInput.roofForm}
                   roofDeckSolid={showRoofDeck3DSolid}
                   crossTiltWallIds={crossTiltWallIds}
+                  groundInteriorBearingWalls={groundInteriorBearingWalls}
+                  secondStoryInteriorBearingWalls={secondStoryInteriorBearingWalls}
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
@@ -18216,6 +18423,8 @@ export default function LayoutEditor() {
               wallPlanMitreByWallId={wallPlanMitreByWallId}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
+              groundInteriorBearingWalls={groundInteriorBearingWalls}
+              secondStoryInteriorBearingWalls={secondStoryInteriorBearingWalls}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}
               boxBeamSizeId={boxBeamSizeId}
               midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}

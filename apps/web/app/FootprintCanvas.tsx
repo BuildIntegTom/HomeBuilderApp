@@ -202,6 +202,25 @@ export interface FootprintCanvasProps {
    * what a caller with no project context should get, rather than blanks.
    */
   panelNumberByName?: ReadonlyMap<string, string>;
+  /**
+   * ⚠ **THE BUILDING'S OWN PANELS — found in the browser, B34 stride 3b,
+   * 2026-11-18.**
+   *
+   * This canvas used to build its own instance list, from four arguments, and
+   * that list was a DIFFERENT building: no story height, no bands, no gable
+   * tiles and no roof-bearing dividing walls. One instance per slot was the
+   * same answer as the real one for as long as a column was one panel — and a
+   * banded column is two or three. So the plan labelled a Multiplex's centre
+   * wall `0109` for a column the shop builds as three numbered panels, and
+   * worse, the local list's own counter had named them C1…C11 where the real
+   * one names them C1…C33: the `0109` on screen was a different physical panel
+   * from the `0109` on the sheet.
+   *
+   * Handed the real list, the labels are the building's. Omitted, it falls
+   * back to deriving one, which is what a caller with no project context
+   * should get.
+   */
+  panelInstances?: PanelInstance[];
   leastAccessibleCorner: CornerId;
   /** Corners present before any bump-out was added — only these ever show
    * a least-accessible-corner marker (once a shape's first 4 corners are
@@ -259,6 +278,7 @@ export default function FootprintCanvas({
   standardWidthIn,
   jackStudConfig,
   panelNumberByName,
+  panelInstances,
   leastAccessibleCorner,
   primaryCornerIds,
   isWallLengthEditable,
@@ -292,18 +312,19 @@ export default function FootprintCanvas({
   // into one label (e.g. "N3+4") for the single rectangle drawn here.
   const panelNameByKey = useMemo(() => {
     const grouped = new Map<string, PanelInstance[]>();
-    if (footprint) {
-      for (const inst of allPanelInstances(footprint, wallSlots, standardWidthIn, jackStudConfig)) {
-        const key = `${inst.wallId}-${inst.slotIndexInWall}`;
-        const list = grouped.get(key) ?? [];
-        list.push(inst);
-        grouped.set(key, list);
-      }
+    /* ⚠ The building's own list where there is one — see `panelInstances`. */
+    const source =
+      panelInstances ?? (footprint ? allPanelInstances(footprint, wallSlots, standardWidthIn, jackStudConfig) : []);
+    for (const inst of source) {
+      const key = `${inst.wallId}-${inst.slotIndexInWall}`;
+      const list = grouped.get(key) ?? [];
+      list.push(inst);
+      grouped.set(key, list);
     }
     const map = new Map<string, string>();
     for (const [key, instances] of grouped) map.set(key, combinedPanelLabel(instances, panelNumberByName));
     return map;
-  }, [footprint, wallSlots, standardWidthIn, jackStudConfig, panelNumberByName]);
+  }, [panelInstances, footprint, wallSlots, standardWidthIn, jackStudConfig, panelNumberByName]);
 
   // Estimated bearing/shear numbers for the hover tooltip below (Tommy:
   // "when you hover over a panel... shows you extra details... shear and

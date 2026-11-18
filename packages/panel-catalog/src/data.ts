@@ -29,6 +29,38 @@ export const standardPanelHeightIn: CatalogValue<number> = {
   note: "10'-0\" (120\"), per Panel Set 1 standard panel spec (Tommy): 118.5\" stud + 0.75\" top skin + 0.75\" bottom skin. Supersedes the earlier UI-only 8ft wall-height default.",
 };
 
+/**
+ * ⚠ **HOW TALL A PANEL MAY BE ON A WALL THAT CARRIES THE ROOF — his own
+ * number, 2026-11-18, B34 stride 3b.**
+ *
+ * > *"One panel whatever its height up until 16 ft tall peak. Otherwise break
+ * > it down to 10 ft wall with another section above it"*
+ *
+ * An interior wall under a ridge or a purlin runs from its floor to the plate
+ * under the roof, and this is the peak height at which that stops being ONE
+ * panel and becomes courses of `standardPanelHeightIn` instead. Measured to
+ * the PEAK (the roof's underside), not to the top of the panels, because that
+ * is the number he gave and the one a section drawing shows.
+ *
+ * ⚠ **IT IS 48in PAST `panelHeightInRange.maxIn`, AND THAT CONFLICT IS REAL.**
+ * That range caps a panel at 144in — itself his own raise, from the
+ * manufacturer's 118⅛in, *"so the app's existing 120in/10ft wall-height
+ * default stays valid"*. His 16ft exemption therefore builds panels the
+ * catalog's own height range says cannot be built: a 36ft Multiplex's purlin
+ * walls come out as single panels 14'-2⅝" tall. Obeyed as given — it is
+ * recent, explicit and about a load path — and reported in the Review Log on
+ * every building it happens to, rather than quietly widening the range.
+ */
+export const interiorBearingWallOnePanelPeakLimitIn: CatalogValue<number> = {
+  value: 16 * 12,
+  status: "confirmed",
+  note:
+    "16'-0\" (192\"). Tommy, 2026-11-18, asked how the row above the ceiling should be built on a wall that " +
+    "carries the roof: \"One panel whatever its height up until 16 ft tall peak. Otherwise break it down to 10 ft " +
+    "wall with another section above it\". Past 144in it exceeds panelHeightInRange.maxIn, which is reported in " +
+    "the Review Log rather than reconciled here.",
+};
+
 export const looseDensePackThicknessOptionsIn: number[] = [14, 15.5, 15.75];
 
 export const looseDensePackDefaultThicknessIn: CatalogValue<number> = {
