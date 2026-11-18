@@ -14,8 +14,8 @@ const COMPASS_DIRECTIONS: readonly CompassDirection[] = ["N", "NE", "E", "SE", "
    B36 STRIDE 1 — A SERIES IS ALL LETTERS, A PANEL NUMBER IS ALL DIGITS
 
    ⚠ Not a style choice. A panel's name is `${series}${panelNumber}`, and that
-   string is the KEY both numbering systems are stored against — `panelCodeKey`
-   and `installSequenceKey` are byte-identical formulas. A NUMERIC series
+   string is the KEY a panel's number is stored against (`panelKey` — at the
+   time this was found it was TWO byte-identical formulas). A NUMERIC series
    suffix made two different panels produce one key:
 
        wall "C2" panel 1  ->  C21

@@ -1,4 +1,5 @@
 import { buildCsv } from "./csv";
+import { panelKey } from "./panelKey";
 import type { ExportableAssembly } from "./projectCutListCsv";
 import { assemblyFaceSqFt } from "./shopItemFace";
 
@@ -42,12 +43,31 @@ import { assemblyFaceSqFt } from "./shopItemFace";
 export const TIP4URTIME_CODE_MAX_LENGTH = 40;
 
 export interface Tip4urTimePanel {
-  /** Unique within the project, stable across exports, <=40 chars. */
+  /**
+   * ⚠ **THE PANEL NUMBER — `"0042"` — and since B36 stride 2 it is the
+   * SAME number the app shows, the sheet prints and the shop stencils.**
+   *
+   * It used to be `P-0042`, a join key nobody saw, counted in the export
+   * pipeline's order while a second four-digit number counted in install
+   * order. One number now, issued in install order and stored: see
+   * `panelNumber.ts` for the rule and for why the prefix went.
+   *
+   * Unique within the project, stable across exports, <=40 chars.
+   */
   code: string;
   /** The app's own descriptive type — see `ExportableAssembly.typeName`. */
   panelType: string;
-  /** Friendly locator, blank when there is none. The panel's own stencilled
-   *  name (`N3`, `F12`) — what a crew reads off the panel in the shop. */
+  /**
+   * ⚠ **WHERE the panel goes — its LOCATION, not its identity.** `N3` is the
+   * third panel along a north-facing wall; `F12` the twelfth of the floor run.
+   * Blank when there is none.
+   *
+   * ⚠ **B36 stride 3 split these two apart, and this column is the half that
+   * is allowed to move.** Insert one window upstream and `N3` becomes `N4`
+   * while `code` does not budge — which is exactly why a crew app must join on
+   * `code` and show this only as a human locator. They are two columns rather
+   * than one token precisely so nothing has to parse a wall out of a name.
+   */
   label: string;
   widthIn: number;
   heightIn: number;
@@ -87,22 +107,22 @@ export interface Tip4urTimePanel {
    */
   countsAsPanel: boolean;
   /**
-   * ⚠ **WHERE IT COMES OFF THE TRUCK — B35, 2026-11-16 — and it is a
-   * POSITION, not an identity.** `"0007"`, or `""` for an item the sequence
-   * does not place.
+   * ⚠ **WHICH STEP OF THE INSTALL IT IS — `42`, meaning "step 42 of 134" —
+   * or `null` for an item the sequence does not place.**
    *
    * It runs from the point of least accessibility, clockwise, out to in,
    * bottom to top (`installSequence`), which is his own order and the same one
    * that already drives the truck load.
    *
-   * ⚠ **It is beside `code`, never instead of it, and the two mean opposite
-   * things.** `code` is stamped once and stored so it can NEVER move — that is
-   * what a crew's pay hangs on. This renumbers the moment the design changes:
-   * insert one window and everything after it shifts. A crew app should sort
-   * by this and join on `code`. Swapping the two roles is the one mistake that
-   * would cost somebody money.
+   * ⚠ **It is a PLAIN INTEGER, deliberately not zero-padded, and that is a
+   * fix rather than a style choice.** B35 wrote it as `"0042"`, which made an
+   * ORDER look exactly like an IDENTITY sitting next to one — two four-digit
+   * numbers on the same row for the same panel, and a reader with no way to
+   * tell which was which. A crew app sorts by this and joins on `code`;
+   * swapping the two roles is the one mistake that would cost somebody money,
+   * and now the two do not even look alike.
    */
-  installNumber: string;
+  installStep: number | null;
 }
 
 export interface Tip4urTimeExportInput {
@@ -124,118 +144,40 @@ export function tip4urTimeSqFt(sqFt: number): number {
   return Number(sqFt.toFixed(2));
 }
 
-/**
- * ⚠ **THE LEDGER THAT MAKES A CODE STABLE.**
- *
- * His requirement is that the same panel keeps the same code on every export,
- * that existing panels are never renumbered, and that re-imports match on it.
- * No DERIVATION survives an insert — a panel's stencilled name is sequential
- * along its wall, so inserting one upstream shifts every name below it. So
- * the code has to be remembered.
- *
- * ⚠ **It is remembered at the FIRST EXPORT, not written when the panel is
- * drawn.** That is his own reasoning turned into a seam:
- *
- * > *"Once we start building a project there shouldn't be any edits that
- * > happen... If we're building a project that means it's been approved."*
- *
- * Exporting to Tip4urTime IS the project going to a crew, so stamping at that
- * moment is stamping at approval. A design that never goes to a crew never
- * grows the field, and no migration runs for one.
- *
- * ⚠ **`nextSeq` never goes backwards**, so a deleted panel's number is never
- * reissued to a different panel. That is the failure a crew would feel in
- * their pay, and it is cheap to make impossible.
- *
- * ⚠ **This is a join key, not a panel name.** It must never reach a shop
- * sheet. His standing rule that panel identity is DERIVED — *"not from a
- * memory file"* — governs what the shop reads; this is invisible in the app
- * and in the packet, which is why the rule is untouched rather than excepted.
- */
-export interface PanelCodeLedger {
-  /** Key (see `panelCodeKey`) to the code it was stamped with. */
-  codesByKey: Record<string, string>;
-  /** The next number to issue. Monotonic. */
-  nextSeq: number;
-}
-
-export const EMPTY_PANEL_CODE_LEDGER: PanelCodeLedger = { codesByKey: {}, nextSeq: 1 };
+/* ⚠ **THE LEDGER MOVED OUT — B36 stride 2, 2026-11-18.** `PanelCodeLedger`,
+   `EMPTY_PANEL_CODE_LEDGER`, `panelCodeKey`, `stampPanelCodes` and
+   `tip4urTimePanelKeys` all lived here, which is why a panel's one permanent
+   number was called "the Tip4urTime code" and was shaped by one export's
+   needs. They are `panelNumber.ts` now, because the number is the app's and
+   this file is only one of the places that prints it. */
 
 /**
- * ⚠ **The key is scoped by family as well as by name**, because the stencil
- * names are only unique WITHIN a pipeline — a wall panel and a deck panel can
- * both be the first of their run. Two families sharing a name would otherwise
- * share a code, and a crew would be paid once for two panels.
- */
-export function panelCodeKey(panelFamily: string, instanceName: string, indexWithinGroup: number): string {
-  /* An instance with no name of its own still needs a stable key, and its
-     position within its own group is the only thing it has. */
-  const leaf = instanceName.length > 0 ? instanceName : `#${indexWithinGroup}`;
-  return `${panelFamily}|${leaf}`;
-}
-
-function formatCode(seq: number): string {
-  /* Zero-padded to four so a project's codes sort lexically for as long as
-     anyone would read them, and far inside the 40-character ceiling even
-     when a building runs past 9999 panels. */
-  return `P-${String(seq).padStart(4, "0")}`;
-}
-
-/**
- * Every key that has no code yet takes the next one. **Existing keys are
- * never touched**, which is the whole point and is what his acceptance check
- * tests: export, make an unrelated edit, re-export, every existing panel
- * kept its code and only new panels are new rows.
- */
-export function stampPanelCodes(keys: readonly string[], ledger: PanelCodeLedger): PanelCodeLedger {
-  let nextSeq = ledger.nextSeq;
-  let changed = false;
-  const codesByKey = { ...ledger.codesByKey };
-  for (const key of keys) {
-    if (codesByKey[key] !== undefined) continue;
-    codesByKey[key] = formatCode(nextSeq);
-    nextSeq += 1;
-    changed = true;
-  }
-  /* The same object back when nothing moved, so a caller can skip a save. */
-  return changed ? { codesByKey, nextSeq } : ledger;
-}
-
-/**
- * One entry per physical panel, in the order the building's own pipelines
+ * One row per physical panel, in the order the building's own pipelines
  * produce them — walls, then roof bearing, then beams, then decks.
  *
  * ⚠ It reads `instanceNames`, whose length always equals `copies`, so the row
  * count is the panel count by construction rather than by agreement.
  */
-export function tip4urTimePanelKeys(assemblies: readonly ExportableAssembly[]): string[] {
-  const keys: string[] = [];
-  for (const assembly of assemblies) {
-    assembly.instanceNames.forEach((name, i) => keys.push(panelCodeKey(assembly.panelType, name, i)));
-  }
-  return keys;
-}
-
 export function tip4urTimePanels(
   assemblies: readonly ExportableAssembly[],
-  ledger: PanelCodeLedger,
+  /** The issued panel numbers, by `panelKey` — see `panelNumbering`. */
+  numberByKey: ReadonlyMap<string, string>,
   /**
-   * B35's install positions, keyed exactly as `panelCodeKey` keys the ledger
-   * — see `installSequenceKey`, which is pinned equal to it by a test.
-   * Omitted, every row's `installNumber` is blank and the column still
-   * appears, so a reader never has to handle a missing one.
+   * The install sequence, keyed the same way. Omitted, every row's
+   * `installStep` is null and the column still appears, so a reader never has
+   * to handle a missing one.
    */
-  installSequence?: ReadonlyMap<string, string>,
+  installOrder?: ReadonlyMap<string, number>,
 ): Tip4urTimePanel[] {
   const panels: Tip4urTimePanel[] = [];
   for (const assembly of assemblies) {
     assembly.instanceNames.forEach((name, i) => {
-      const key = panelCodeKey(assembly.panelType, name, i);
+      const key = panelKey(assembly.panelType, name, i);
       panels.push({
-        code: ledger.codesByKey[key] ?? "",
-        /* Blank rather than a guessed number when the sequence has not heard
-           of this key — an invented position is worse than none. */
-        installNumber: installSequence?.get(key) ?? "",
+        code: numberByKey.get(key) ?? "",
+        /* Null rather than a guessed step when the sequence has not heard of
+           this key — an invented position is worse than none. */
+        installStep: installOrder?.get(key) ?? null,
         panelType: assembly.typeName,
         label: name,
         widthIn: assembly.widthIn,
@@ -256,10 +198,22 @@ export function tip4urTimePanels(
 export function tip4urTimeExportProblems(input: Tip4urTimeExportInput): string[] {
   const problems: string[] = [];
   if (input.projectId.trim().length === 0) problems.push("The project has no permanent id.");
+  /* ⚠ **Counted ONCE rather than per panel, and that is a B36 fix.** An
+     unnumbered panel is a project that has not been issued, not 134 separate
+     bad codes — and the old loop said "a panel has no code" once per panel,
+     which both buried the real reason and made the first three lines of the
+     notice identical. */
+  const unnumbered = input.panels.filter((panel) => panel.code.length === 0).length;
+  if (unnumbered > 0) {
+    problems.push(
+      `${unnumbered} panel${unnumbered === 1 ? " has" : "s have"} no number yet — issue the project for ` +
+        "fabrication first.",
+    );
+  }
   const seen = new Set<string>();
   for (const panel of input.panels) {
     if (panel.code.length === 0) {
-      problems.push(`${panel.label || "a panel"} has no code.`);
+      /* Already counted above. */
     } else if (panel.code.length > TIP4URTIME_CODE_MAX_LENGTH) {
       problems.push(`Code ${panel.code} is longer than ${TIP4URTIME_CODE_MAX_LENGTH} characters.`);
     } else if (seen.has(panel.code)) {
@@ -283,10 +237,12 @@ export const TIP4URTIME_HEADERS = [
   /* ⚠ Added after his first brief, so a reader that predates it sees one
      extra column rather than a changed one. A missing column means 1. */
   "Counts as panel",
-  /* ⚠ B35. LAST, for the same reason — appended so an existing reader sees
-     one more column rather than a moved one. It is a sort key, not a join
-     key: see `Tip4urTimePanel.installNumber`. */
-  "Install no",
+  /* ⚠ B35, RENAMED by B36 stride 2. Still last, so an existing reader sees
+     the same column position — but it now says "step" and carries a plain
+     integer, because "Install no" beside "Panel code" was two four-digit
+     numbers for one panel with nothing to tell them apart. It is a sort key,
+     not a join key: see `Tip4urTimePanel.installStep`. */
+  "Install step",
 ] as const;
 
 export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
@@ -300,7 +256,9 @@ export function buildTip4urTimeCsv(input: Tip4urTimeExportInput): string {
       Number(panel.heightIn.toFixed(2)),
       tip4urTimeSqFt(panel.sqFt),
       panel.countsAsPanel ? 1 : 0,
-      panel.installNumber,
+      /* Blank, not 0: a zero would sort first and read as "the first thing you
+         install", which is the opposite of "this has no place in the order". */
+      panel.installStep ?? "",
     ]),
     {
       /* See this module's own doc comment: a program reads this, and a BOM

@@ -127,8 +127,8 @@ export const INTERIOR_WALL_SERIES = "C";
  * wall "C",  panel 21  ->  C21
  * ```
  *
- * ⚠ **That string is the KEY both numbering systems are stored against**
- * (`panelCodeKey` and `installSequenceKey` are byte-identical formulas), so
+ * ⚠ **That string is the KEY a panel's number is stored against** (`panelKey`
+ * — at the time this was found it was TWO byte-identical formulas), so
  * two different panels took ONE crew code — measured through the real ledger,
  * and the exact failure `tip4urTimeCsv.ts` warns about in its own comment:
  * *"a crew would be paid once for two panels."*

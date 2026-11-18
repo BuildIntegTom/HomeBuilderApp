@@ -22,7 +22,8 @@ export interface PanelFabricationInstanceRef {
    * sheet cannot see the other. */
   note?: string;
   /**
-   * ⚠ **WHERE THIS COPY COMES OFF THE TRUCK — `"0007"` — B35, 2026-11-16.**
+   * ⚠ **THIS COPY'S OWN PANEL NUMBER — `"0042"` — B35, merged by B36 stride 2
+   * on 2026-11-18.**
    *
    * > *"Renaming all of the panels to go from point of least accessability,
    * > clockwise, from out to in, from bottom to top by label of 0000, 0001,
@@ -34,12 +35,22 @@ export interface PanelFabricationInstanceRef {
    * roughly a dozen sheets instead of 74, and what makes B25's pusher-head
    * order mean anything. Making a unique number the identity of a SHEET would
    * un-group the whole packet. So the sheet goes on saying what to build, and
-   * lists the positions it covers.
+   * lists the panels it covers.
    *
-   * ⚠ **And it is a position, not an identity.** It renumbers when the
-   * design changes. The stored Tip4urTime code is the thing that never moves.
+   * ⚠ **It used to be `installNumber`, a POSITION, printed beside a separate
+   * four-digit crew code that was an IDENTITY.** One number now: provisional
+   * while the design is being drawn, frozen the moment the project is issued
+   * for fabrication. Undefined for a panel drawn AFTER an issue, which shows
+   * no number rather than one that already belongs to a different panel.
    */
-  installNumber?: string;
+  panelNumber?: string;
+  /**
+   * ⚠ **Which step of the install this copy is — the ORDER, kept apart from
+   * the number above.** A plain integer, printed as "step 42 of 134" and never
+   * zero-padded: two four-digit tokens on one chip is exactly the confusion
+   * B36 stride 2 exists to end.
+   */
+  installStep?: number;
   /**
    * The compass direction of this copy's own wall, for the chip's colour.
    * Undefined for anything that does not face a compass point — a deck
@@ -49,8 +60,25 @@ export interface PanelFabricationInstanceRef {
   direction?: CompassDirection;
 }
 
+/**
+ * ⚠ **How this sheet's numbers should be READ — B36 stride 2.** A four-digit
+ * number on a printed sheet is taken as permanent whether it is or not, so the
+ * sheet says which. Omitted, the sheet prints the numbers with no claim about
+ * them, which is what a caller with no project context should do.
+ */
+export interface PanelNumberContext {
+  /** True once the project has been issued, i.e. the numbers are frozen. */
+  issued: boolean;
+  /** ISO, or null when the ledger exists but nobody recorded the date. */
+  issuedAt: string | null;
+  /** The "of 134" in "step 42 of 134". */
+  installStepTotal: number;
+}
+
 export interface PanelFabricationPageProps {
   title: string;
+  /** ⚠ B36 stride 2 — see `PanelNumberContext`. */
+  panelNumbers?: PanelNumberContext;
   panelDescription: ReactNode;
   widthIn: number;
   heightIn: number;
@@ -90,6 +118,7 @@ export interface PanelFabricationPageProps {
  */
 export default function PanelFabricationPage({
   title,
+  panelNumbers,
   panelDescription,
   widthIn,
   heightIn,
@@ -180,21 +209,26 @@ export default function PanelFabricationPage({
 
       <div>
         <h4 className={styles.sectionHeading}>Also used at ({instances.length})</h4>
-        {/* ⚠ **B35 — one chip per placed copy: its install position and its
-            wall, coloured by direction.** Sorted by the NUMBER, not by the
-            group's own order, because a crew reads this against a sequence.
-            Copies with no number yet keep their plain name rather than being
-            dropped — a missing panel reads as a panel nobody has to build.
+        {/* ⚠ **B36 stride 3 — THE LABEL IS THE NUMBER, and the wall is a
+            separate field beside it.** The bold token is the panel's own
+            number; the lighter one is where it goes (`N3`, the third panel
+            along a north-facing wall). They are never concatenated, because
+            one of them moves when the design changes and the other does not.
 
-            ⚠ The number is a POSITION in this revision's install order and
-            renumbers when the design changes; the line below says so, on the
-            sheet, because a printed number with no such note is read as an
-            identity. */}
-        {instances.some((inst) => inst.installNumber !== undefined) ? (
+            ⚠ **Sorted by the install STEP, not by the number**, so the chips
+            read in the order a crew hangs them even after an issue has frozen
+            numbers that no longer run consecutively. The order is carried by
+            POSITION on the sheet plus the "step N of M" line below — not by a
+            second four-digit token on the chip, which is what made a position
+            and an identity indistinguishable before this stride.
+
+            Copies with no number keep their location chip rather than being
+            dropped — a missing panel reads as a panel nobody has to build. */}
+        {instances.some((inst) => inst.panelNumber !== undefined) ? (
           <>
             <ul className={styles.instanceChips}>
               {[...instances]
-                .sort((a, b) => (a.installNumber ?? "~").localeCompare(b.installNumber ?? "~"))
+                .sort((a, b) => (a.installStep ?? Infinity) - (b.installStep ?? Infinity))
                 .map((inst) => {
                   const color = compassLabelColor(inst.direction);
                   return (
@@ -202,11 +236,11 @@ export default function PanelFabricationPage({
                       key={inst.name}
                       className={styles.instanceChip}
                       style={{ background: color.background, color: color.foreground }}
-                      title={`${inst.name}${inst.direction ? ` · ${inst.direction} wall — ${color.note}` : ""}`}
+                      title={`Panel ${inst.panelNumber ?? "(not yet numbered)"} at ${inst.name}${
+                        inst.direction ? ` · ${inst.direction} wall — ${color.note}` : ""
+                      }${inst.installStep !== undefined ? ` · install step ${inst.installStep}` : ""}`}
                     >
-                      {inst.installNumber !== undefined && (
-                        <span className={styles.instanceChipNumber}>{inst.installNumber}</span>
-                      )}
+                      <span className={styles.instanceChipNumber}>{inst.panelNumber ?? "—"}</span>
                       <span className={styles.instanceChipName}>
                         {inst.name}
                         {inst.isSafetyOctCorner && " (safety-oct-corner)"}
@@ -215,12 +249,45 @@ export default function PanelFabricationPage({
                   );
                 })}
             </ul>
+            {/* ⚠ **THE INSTALL ORDER, ON ITS OWN LINE.** It is the one fact on
+                this sheet that is allowed to move, so it is stated as an order
+                ("step 42") rather than printed as a number on the chip. */}
+            {instances.some((inst) => inst.installStep !== undefined) && (
+              <p className={styles.note}>
+                In install order:{" "}
+                {[...instances]
+                  .map((inst) => inst.installStep)
+                  .filter((step): step is number => step !== undefined)
+                  .sort((a, b) => a - b)
+                  .map((step) => `step ${step}`)
+                  .join(", ")}
+                {panelNumbers ? ` of ${panelNumbers.installStepTotal}` : ""} — counted from the point of least
+                accessibility, clockwise, out to in, bottom to top. <strong>This order is not the number</strong>: it
+                recomputes whenever the design changes.
+              </p>
+            )}
             <p className={styles.note}>
-              The bold number is where that copy comes off the truck — counted from the point of least
-              accessibility, clockwise, out to in, bottom to top. <strong>It is a position in THIS revision</strong>,
-              not a permanent id: change the design and the numbers after the change move. The chip&apos;s colour is
-              its wall&apos;s compass direction, and the letters beside it say the same thing for a black-and-white
-              print.
+              The bold token is the panel&apos;s own <strong>number</strong>, and the lighter one beside it is{" "}
+              <strong>where it goes</strong> — two separate facts, never one label.{" "}
+              {panelNumbers === undefined ? (
+                "Whether these numbers are frozen is not known on this sheet."
+              ) : panelNumbers.issued ? (
+                <>
+                  <strong>These numbers are issued and permanent</strong>
+                  {panelNumbers.issuedAt === null
+                    ? " (issued before the app recorded the date)"
+                    : ` (issued ${new Date(panelNumbers.issuedAt).toLocaleDateString()})`}
+                  : each panel keeps its number whatever the design does. A chip reading “—” is a panel drawn
+                  since the issue, which has no number yet rather than a borrowed one.
+                </>
+              ) : (
+                <>
+                  <strong>These numbers are PROVISIONAL</strong> — the project has not been issued for fabrication,
+                  so they still move when the design changes. Issue it to freeze them.
+                </>
+              )}{" "}
+              The chip&apos;s colour is its wall&apos;s compass direction, and the letters beside it say the same thing
+              for a black-and-white print.
             </p>
           </>
         ) : (

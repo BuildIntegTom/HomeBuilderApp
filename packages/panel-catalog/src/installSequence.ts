@@ -1,3 +1,5 @@
+import { panelKey } from "./panelKey";
+
 /**
  * ⚠ **EVERY PANEL'S POSITION IN THE INSTALL SEQUENCE — `0001`, `0002`, … —
  * B35, 2026-11-16.**
@@ -137,25 +139,6 @@ export interface InstallSequenceItem {
   pipelineIndex: number;
 }
 
-/**
- * ⚠ **The key, and it is deliberately the SAME FORMULA as the Tip4urTime
- * ledger's `panelCodeKey`** — so a panel's position and its stored code are
- * looked up by one key, and a consumer holding one can always find the other.
- *
- * ⚠ **It is a copy of that formula rather than an import, on purpose.**
- * `tip4urTimeCsv` is a leaf module that will want to PRINT an install number,
- * and importing it here to borrow one function would close exactly the kind of
- * cycle that cost a day on 2026-11-16: `panelMemberHelpers` ↔ `panelPlanMitre`
- * passed `tsc`, `vitest` and lint while the dev server answered 500. The two
- * formulas are pinned equal by a test instead, which cannot cycle.
- */
-export function installSequenceKey(family: string, name: string, pipelineIndex: number): string {
-  /* An unnamed item still needs a stable key, and its position in its own
-     pipeline is the only thing it has. */
-  const leaf = name.length > 0 ? name : `#${pipelineIndex}`;
-  return `${family}|${leaf}`;
-}
-
 function phaseRank(phase: InstallPhase): number {
   return INSTALL_PHASE_ORDER.indexOf(phase);
 }
@@ -184,22 +167,16 @@ export function compareInstallSequence(a: InstallSequenceItem, b: InstallSequenc
   return 0;
 }
 
-/**
- * ⚠ **Four digits, 1-based.** He wrote both `0000` and `0001`; it starts at
- * **0001**, because `0000` reads as "unset" wherever it turns up and a crew
- * should never see a panel that looks unassigned.
- *
- * Zero-padded to four so the numbers sort lexically and line up in a column on
- * a printed sheet. ⚠ A building past 9999 panels simply gets a fifth digit
- * rather than wrapping or truncating — the padding is for reading, and
- * silently reusing `0001` is the one thing that must not happen.
- */
-export function formatInstallSequenceNumber(n: number): string {
-  return String(n).padStart(4, "0");
-}
+/* ⚠ **THERE IS NO FORMATTER HERE ANY MORE, AND THAT IS THE POINT — B36
+   stride 2, 2026-11-18.** This module used to export
+   `formatInstallSequenceNumber`, which zero-padded a step to four digits and
+   so made an ORDER look exactly like an IDENTITY: a panel could read install
+   `0042` and crew code `P-0017` at once, and the two counted in different
+   orders. A step is a plain integer now, printed as "step 42 of 134", and the
+   four-digit token belongs to `formatPanelNumber` (`panelNumber.ts`) alone. */
 
 /**
- * Every item's 1-based position, keyed by `installSequenceKey`.
+ * Every item's 1-based position, keyed by `panelKey`.
  *
  * ⚠ **A duplicate key keeps its FIRST position rather than overwriting.** Two
  * items that key the same are the same panel as far as every consumer is
@@ -213,7 +190,7 @@ export function computeInstallSequence(items: readonly InstallSequenceItem[]): M
   const byKey = new Map<string, number>();
   let n = 1;
   for (const item of ordered) {
-    const key = installSequenceKey(item.family, item.name, item.pipelineIndex);
+    const key = panelKey(item.family, item.name, item.pipelineIndex);
     if (byKey.has(key)) continue;
     byKey.set(key, n);
     n += 1;
@@ -222,8 +199,8 @@ export function computeInstallSequence(items: readonly InstallSequenceItem[]): M
 }
 
 /**
- * The numbers one fabrication sheet builds, as the sheet prints them —
- * ⚠ **a TAG on a shared sheet, never a group key.**
+ * The install STEPS one fabrication sheet covers — ⚠ **a TAG on a shared
+ * sheet, never a group key.**
  *
  * A Shop Fabrication page covers every panel that is physically the same, and
  * that grouping is what keeps a Tiny House at roughly a dozen sheets instead
@@ -234,13 +211,12 @@ export function computeInstallSequence(items: readonly InstallSequenceItem[]): M
  * Sorted numerically, not in the group's own order, because the crew reads it
  * against a sequence.
  */
-export function installNumbersForSheet(
+export function installStepsForSheet(
   instanceKeys: readonly string[],
   sequence: ReadonlyMap<string, number>,
-): string[] {
+): number[] {
   return instanceKeys
     .map((key) => sequence.get(key))
     .filter((n): n is number => n !== undefined)
-    .sort((a, b) => a - b)
-    .map(formatInstallSequenceNumber);
+    .sort((a, b) => a - b);
 }

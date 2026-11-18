@@ -72,7 +72,7 @@ export interface PanelInstance {
    * derive from first principles.
    *
    * **This is a DISPLAY string. Do not parse it.** `direction` and
-   * `panelNumber` below are the same information as real fields, and every
+   * `indexInSeries` below are the same information as real fields, and every
    * consumer that needs a part of the name must read those instead. Parsing
    * it is what broke `combinedPanelLabel` the moment the hyphen went. */
   name: string;
@@ -82,9 +82,18 @@ export interface PanelInstance {
    *  letter (`C`) otherwise — see `WallSeriesLabel`. Widened for B34; every
    *  outline panel's value is unchanged. */
   direction: WallSeriesLabel;
-  /** This instance's own number within its direction's run, 1-based — the
-   * number in `name`, as a number. See `combinedPanelLabel`. */
-  panelNumber: number;
+  /**
+   * This instance's own index within its series's run, 1-based — the digits
+   * in `name`, as a number. See `combinedPanelLabel`.
+   *
+   * ⚠ **RENAMED FROM `panelNumber` by B36 stride 3, 2026-11-18, because that
+   * name now means something else entirely.** A panel's NUMBER is `0042`: one
+   * token, stamped at issue, stored, never moving. This is the `3` of `N3` —
+   * where the panel sits along its wall, which moves whenever a panel is
+   * inserted upstream of it. The two were a field name apart, and the whole
+   * point of the stride is that they are different facts.
+   */
+  indexInSeries: number;
   wallId: string;
   panelType: NamedPanelType;
   widthIn: number;
@@ -422,14 +431,14 @@ export function allPanelInstances(
     gablePeakApex?: { offsetXIn: number; heightIn: number },
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
-    const panelNumber = counters[direction]!;
+    const indexInSeries = counters[direction]!;
     instances.push({
       // NO HYPHEN — Tommy, 2026-09-24: "I have spray paint stencils in the
       // shop, and there is no huphen stencil. So let's drop the hyphen."
       // It also makes the app match the drawings he already issues.
-      name: `${direction}${panelNumber}`,
+      name: `${direction}${indexInSeries}`,
       direction,
-      panelNumber,
+      indexInSeries,
       wallId,
       panelType,
       widthIn,
@@ -839,11 +848,59 @@ export function allPanelInstances(
  * drawing label rather than a stencilled panel id, so the stencil constraint
  * does not strictly bind it, but two conventions one character apart is how
  * the wrong one gets stencilled.
+ *
+ * ⚠ **B36 stride 3 — HAND IT THE PANEL NUMBERS AND IT LABELS BY NUMBER
+ * INSTEAD.** *"the label IS the number"*: `0042`, or `0042+0043` where one
+ * drawn rectangle covers a window's header and its sill. The location (`N3`)
+ * becomes a separate field wherever a caller shows both, never a second half
+ * of the same token.
+ *
+ * ⚠ **It falls back to the name when ANY instance in the group has no
+ * number**, rather than labelling the group half one way and half the other.
+ * That happens in two real cases: a caller with no project context (a sheet
+ * rendered on its own), and a panel drawn since the project was issued, which
+ * genuinely has no number yet. A mixed label would be the worst of the three
+ * answers — it would read as a number for the panels that have one and as a
+ * location for the panels that do not, in one string.
  */
-export function combinedPanelLabel(instances: PanelInstance[]): string {
+export function combinedPanelLabel(
+  instances: PanelInstance[],
+  /** Each instance's panel number by `name` — see `panelNumbering`. */
+  panelNumberByName?: ReadonlyMap<string, string>,
+): string {
   if (instances.length === 0) return "";
+  if (panelNumberByName !== undefined) {
+    const numbers = instances.map((inst) => panelNumberByName.get(inst.name));
+    /* ⚠ Sorted, where the series-index branch below keeps instance order. A
+       window slot's header and sill arrive header-first, which read as
+       `0019+0018` on the plan — a descending pair looks like a typo, and the
+       numbers are zero-padded so a lexical sort is a numeric one. */
+    if (numbers.every((n): n is string => n !== undefined)) return [...numbers].sort().join("+");
+  }
   if (instances.length === 1) return instances[0]!.name;
   const prefix = instances[0]!.direction;
-  const numbers = instances.map((inst) => inst.panelNumber);
-  return `${prefix}${numbers.join("+")}`;
+  const indices = instances.map((inst) => inst.indexInSeries);
+  return `${prefix}${indices.join("+")}`;
+}
+
+/**
+ * ⚠ **A 3D MODEL'S GROUP NAME — `0042_N3` — B36 stride 3, 2026-11-18.**
+ *
+ * The one place in this stride where a panel's NUMBER and its LOCATION are
+ * concatenated into one token, and it is forced rather than chosen: a group
+ * name in an OBJ file (and in SketchUp's Outliner, which is what a person
+ * reads it in) is a single string with nowhere to put a second field.
+ *
+ * Number first, so the Outliner sorts in panel order; the location kept,
+ * because it is what somebody standing in the model is looking for. With no
+ * numbers handed in it is exactly the old label, so an export from a caller
+ * with no project context is unchanged.
+ */
+export function exportGroupLabel(
+  instances: PanelInstance[],
+  panelNumberByName?: ReadonlyMap<string, string>,
+): string {
+  const location = combinedPanelLabel(instances);
+  const numbered = combinedPanelLabel(instances, panelNumberByName);
+  return numbered === location ? location : `${numbered}_${location}`;
 }

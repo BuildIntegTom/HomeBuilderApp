@@ -470,25 +470,44 @@ export interface ProjectState {
   jackStudConfig?: "plywood" | "2x4-stud" | "plywood+ext-2x4" | "plywood+int-2x4" | "plywood+2x4";
   projectName: string;
   /**
-   * ⚠ **Tip4urTime's permanent id for this project, and the panel codes it
-   * matches on.** Both are **OPTIONAL, and therefore NOT a
-   * `PROJECT_FILE_VERSION` bump** — a design that has never been exported to
-   * the crew app has neither, which is the honest state rather than a default
+   * ⚠ **Tip4urTime's permanent id for this project, and THE PANEL NUMBERS
+   * — `0042` — issued for it.** Both are **OPTIONAL, and therefore NOT a
+   * `PROJECT_FILE_VERSION` bump** — a design that has never been issued for
+   * fabrication has neither, which is the honest state rather than a default
    * to invent, and an older build reading them simply ignores them.
    *
    * ⚠ **The id never changes, including when the project is renamed** — his
    * requirement, because the name is what a client sees and the id is what a
    * re-import matches.
    *
-   * ⚠ **Spelled out rather than importing `PanelCodeLedger`.** This is a FILE
-   * SCHEMA; importing a package's type would make a rename there a silent
+   * ⚠ **`tip4urTimePanelCodes` IS THE PANEL NUMBER LEDGER — B36 stride 2,
+   * 2026-11-18 — and the field keeps its historical name on purpose.** It used
+   * to hold one export's private join key (`P-0042`); it now holds the one
+   * number the app shows, the sheet prints and the shop stencils. Renaming the
+   * field would make an older build read `undefined` and **reissue every number
+   * in the project**, which is the single failure this ledger exists to
+   * prevent — so the name is wrong and staying.
+   *
+   * ⚠ **The VALUES changed format and are remapped on load**, which is
+   * possible precisely because `P-` is a parseable prefix: see
+   * `remapLegacyPanelCodePrefix`. A value remap, not a version migration.
+   *
+   * ⚠ **Spelled out rather than importing `PanelNumberLedger`.** This is a
+   * FILE SCHEMA; importing a package's type would make a rename there a silent
    * change to what old projects mean, which is the rule the fields above
-   * already follow. `stampPanelCodes` in panel-catalog is the authority on
-   * what these DO — in particular that `nextSeq` never goes backwards, so a
-   * deleted panel's number is never reissued to a different panel.
+   * already follow. `panelNumber.ts` in panel-catalog is the authority on what
+   * these DO — in particular that `nextSeq` never goes backwards, so a deleted
+   * panel's number is never reissued to a different panel.
    */
   tip4urTimeProjectId?: string | null;
   tip4urTimePanelCodes?: { codesByKey: Record<string, string>; nextSeq: number };
+  /**
+   * When the numbers above were issued, ISO, or absent while they are
+   * provisional. ⚠ **Optional, and therefore NOT a `PROJECT_FILE_VERSION`
+   * bump** — a project issued before this field existed has a ledger and no
+   * date, and the Review Log says exactly that rather than inventing one.
+   */
+  panelNumbersIssuedAt?: string | null;
   /** Panelizer's own "keyhole" scope-of-work checkboxes (Tommy: "I want
    * this tab to be the keyhole to getting down to what editor tools are
    * needed for this user's project") — gate which of the Wall/Floor/Roof
@@ -730,6 +749,37 @@ export function serializeProject(state: ProjectState): ProjectFile {
  * v22-migrated branches), since even a file saved moments before this
  * rename shipped is otherwise indistinguishable from a current one.
  */
+/**
+ * ⚠ **Value-only remap (no `PROJECT_FILE_VERSION` bump — the shape has not
+ * changed, just the string in each cell): `P-0042` becomes `0042`.** B36
+ * stride 2, 2026-11-18.
+ *
+ * The number was a crew-app join key nobody saw, so it carried a `P-` prefix.
+ * It is now the token stencilled on the panel, and his shop has no hyphen
+ * stencil (*"there is no huphen stencil. So let's drop the hyphen"*,
+ * 2026-09-24). Left unremapped, a project issued before this would paint
+ * `P-0042` on a panel while the app showed `0042` everywhere else.
+ *
+ * ⚠ **Exact, and that is the whole reason a migration was possible here when
+ * B36 stride 1's was not.** `P-` is a prefix that parses back; stride 1's
+ * ambiguous `C21` was not, which is why its codes were left to be reissued.
+ * Only the one known prefix is stripped — anything else is left alone rather
+ * than guessed at, because a number that fails to remap would be a panel
+ * silently issued a SECOND number.
+ *
+ * Applied unconditionally, since a file saved moments before this shipped is
+ * otherwise indistinguishable from a current one.
+ */
+function remapLegacyPanelCodePrefix(
+  ledger: { codesByKey: Record<string, string>; nextSeq: number } | undefined,
+): { codesByKey: Record<string, string>; nextSeq: number } | undefined {
+  if (!ledger) return ledger;
+  const codesByKey = Object.fromEntries(
+    Object.entries(ledger.codesByKey).map(([key, code]) => [key, code.startsWith("P-") ? code.slice(2) : code]),
+  );
+  return { codesByKey, nextSeq: ledger.nextSeq };
+}
+
 function remapLegacyBigHeaderBeamKind(
   beamsByStoryAndWallId: Record<"ground" | "second", Record<string, MidWallBeam[]>>,
 ): Record<"ground" | "second", Record<string, MidWallBeam[]>> {
@@ -1242,6 +1292,11 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       // rename, which is a value remap rather than a version migration.
       midWallBeamsByStoryAndWallId: remapLegacyBigHeaderBeamKind(
         state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>,
+      ),
+      /* B36 stride 2 — `P-0042` becomes `0042`. See the function's own note
+         for why this one could be migrated exactly and stride 1's could not. */
+      tip4urTimePanelCodes: remapLegacyPanelCodePrefix(
+        state.tip4urTimePanelCodes as { codesByKey: Record<string, string>; nextSeq: number } | undefined,
       ),
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),

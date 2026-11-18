@@ -56,7 +56,14 @@ describe("what counts as the document", () => {
     // a project saved with 2x4 jack studs reopened as plywood and quietly
     // became a different building. Classified `document`: it changes what is
     // drawn and what is cut.
-    expect(all.length).toBe(83);
+    // 83 -> 84 on 2026-11-18: `panelNumbersIssuedAt`, when the panel numbers
+    // were frozen (B36 stride 2). ⚠ `transient`, and the reason is the
+    // stronger version of the ledger's above: undoing past the moment of issue
+    // would clear the DATE while the numbers it describes stay frozen, so the
+    // Review Log would call provisional a set of numbers a shop is already
+    // building to. The two have to move together or not at all, and the ledger
+    // cannot move, so neither does this.
+    expect(all.length).toBe(84);
     // ...75 -> 76 document keys. (The two Tip4urTime keys above are not.)
     expect(DOCUMENT_KEYS.length).toBe(76);
   });

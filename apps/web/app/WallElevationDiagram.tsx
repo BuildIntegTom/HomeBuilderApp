@@ -194,6 +194,16 @@ export interface WallElevationDiagramProps {
    * the 3D view already show for that exact slot, instead of inventing a
    * second ID scheme just for this view. */
   allInstances: PanelInstance[];
+  /**
+   * ⚠ **THE PANEL'S OWN NUMBER — `0042` — by instance name. B36 stride 3,
+   * 2026-11-18: *"the label IS the number"*.**
+   *
+   * Handed in, every panel on this drawing is labelled by its NUMBER rather
+   * than by `N3`, which is its LOCATION and is a separate fact. Omitted, the
+   * drawing falls back to the location labels it has always shown — which is
+   * what a caller with no project context should get, rather than blanks.
+   */
+  panelNumberByName?: ReadonlyMap<string, string>;
   secondStoryAllInstances: PanelInstance[];
   /** Whether THIS wall owns a real "corner" PanelSlot at its own start/end
    * (Tommy: "you see all the panel surfaces on that wall — including the
@@ -533,6 +543,7 @@ export default function WallElevationDiagram({
   slots,
   wallHeightFt,
   allInstances,
+  panelNumberByName,
   secondStoryAllInstances,
   startInsetIn,
   endInsetIn,
@@ -1659,6 +1670,7 @@ export default function WallElevationDiagram({
         const isGenuinelyUnaffectedBand = entry.bands.length === 1 && entry.bands[0]!.bottomIn === 0 && entry.bands[0]!.topIn === storyHeightIn;
         const panelLabel = combinedPanelLabel(
           instancesForSlotBand(instancesBySlot, wall.id, i, isGenuinelyUnaffectedBand ? undefined : band.bandIndex),
+          panelNumberByName,
         );
         if (panelLabel && showPanelLabels) {
           const labelXPx = xPx((x0 + x1) / 2);

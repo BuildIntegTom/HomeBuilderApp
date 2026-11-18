@@ -11,6 +11,16 @@ export interface PlanViewPageProps {
   wallStartOffsetIn: Record<string, number>;
   thicknessIn: number;
   allInstances: PanelInstance[];
+  /**
+   * ⚠ **THE PANEL'S OWN NUMBER — `0042` — by instance name. B36 stride 3,
+   * 2026-11-18: *"the label IS the number"*.**
+   *
+   * Handed in, every panel on this drawing is labelled by its NUMBER rather
+   * than by `N3`, which is its LOCATION and is a separate fact. Omitted, the
+   * drawing falls back to the location labels it has always shown — which is
+   * what a caller with no project context should get, rather than blanks.
+   */
+  panelNumberByName?: ReadonlyMap<string, string>;
   primaryCornerIds: Set<CornerId>;
   leastAccessibleCorner: CornerId;
   /** Stage 3 — see PlanViewDiagram's own prop doc. */
@@ -32,6 +42,7 @@ export default function PlanViewPage({
   wallStartOffsetIn,
   thicknessIn,
   allInstances,
+  panelNumberByName,
   primaryCornerIds,
   leastAccessibleCorner,
   wallUnbuiltSpansIn,
@@ -50,6 +61,7 @@ export default function PlanViewPage({
         wallStartOffsetIn={wallStartOffsetIn}
         thicknessIn={thicknessIn}
         allInstances={allInstances}
+        panelNumberByName={panelNumberByName}
         primaryCornerIds={primaryCornerIds}
         leastAccessibleCorner={leastAccessibleCorner}
         wallUnbuiltSpansIn={wallUnbuiltSpansIn}

@@ -3,11 +3,10 @@ import {
   INSTALL_PHASE_ORDER,
   type InstallSequenceItem,
   computeInstallSequence,
-  formatInstallSequenceNumber,
-  installNumbersForSheet,
-  installSequenceKey,
+  installStepsForSheet,
 } from "./installSequence";
-import { panelCodeKey } from "./tip4urTimeCsv";
+import * as installSequenceModule from "./installSequence";
+import { panelKey } from "./panelKey";
 
 /* ──────────────────────────────────────────────────────────────────────────
    B35 — THE INSTALL SEQUENCE
@@ -140,41 +139,28 @@ describe("the install sequence follows his clauses, outermost first", () => {
   });
 });
 
-describe("the number as it prints", () => {
-  it("⚠ starts at 0001, not 0000 — he wrote both", () => {
-    /* `0000` reads as "unset" wherever it appears, and a crew should never be
-       handed a panel that looks unassigned. */
-    expect(formatInstallSequenceNumber(1)).toBe("0001");
+describe("⚠ a STEP IS NOT A NUMBER — B36 stride 2", () => {
+  it("⚠ this module exports no four-digit formatter at all any more", () => {
+    /* The regression, pinned as a type-level fact rather than a comment.
+       `formatInstallSequenceNumber` zero-padded a step to four digits, which
+       made an ORDER look exactly like an IDENTITY sitting next to one: a panel
+       could read install `0042` and crew code `P-0017` on the same row. The
+       four-digit token is `formatPanelNumber`'s alone now, and a step is a
+       plain integer. */
+    const mod: Record<string, unknown> = installSequenceModule;
+    expect(Object.keys(mod).filter((k) => k.toLowerCase().includes("format"))).toEqual([]);
   });
 
-  it("is zero-padded to four so a column lines up", () => {
-    expect(["0001", "0012", "0123", "1234"]).toEqual([1, 12, 123, 1234].map(formatInstallSequenceNumber));
-  });
-
-  it("⚠ a building past 9999 gets a fifth digit rather than wrapping", () => {
-    /* Silently reusing 0001 is the one outcome that must not happen. */
-    expect(formatInstallSequenceNumber(10000)).toBe("10000");
+  it("⚠ and the key lives in ONE place now, not two pinned-equal copies", () => {
+    /* `installSequenceKey` and `panelCodeKey` were byte-identical bodies in two
+       modules that could not import each other, kept equal by a test. Both are
+       gone; `panelKey` is the formula. */
+    expect(panelKey("wall-panel", "N3", 0)).toBe("wall-panel|N3");
+    expect(panelKey("beam", "", 4)).toBe("beam|#4");
   });
 });
 
 describe("the key", () => {
-  it("⚠ is the SAME formula as the Tip4urTime ledger's, which is the point", () => {
-    /* A panel's position and its stored code are looked up by one key, so a
-       consumer holding either can find the other. The formula is copied rather
-       than imported to avoid a cycle into a leaf module that will itself want
-       to print an install number — the 2026-11-16 lesson, where
-       panelMemberHelpers <-> panelPlanMitre passed tsc, vitest AND lint while
-       the dev server answered 500. THIS TEST is what keeps the copies equal. */
-    for (const [family, name, index] of [
-      ["wall-panel", "N3", 0],
-      ["floor-panel", "F12", 7],
-      ["roof-panel", "", 4],
-      ["beam", "", 0],
-    ] as const) {
-      expect(installSequenceKey(family, name, index), `${family}|${name}`).toBe(panelCodeKey(family, name, index));
-    }
-  });
-
   it("⚠ scopes by family, so a wall panel and a deck panel named alike are two panels", () => {
     const sequence = computeInstallSequence([
       item({ name: "1", family: "wall-panel", phase: "wall" }),
@@ -184,10 +170,6 @@ describe("the key", () => {
     /* And the deck one is FIRST, because the phase says so. */
     expect(sequence.get("floor-panel|1")).toBe(1);
     expect(sequence.get("wall-panel|1")).toBe(2);
-  });
-
-  it("an unnamed item still gets a stable key from its pipeline position", () => {
-    expect(installSequenceKey("beam", "", 4)).toBe("beam|#4");
   });
 
   it("⚠ a duplicate key keeps its FIRST position rather than overwriting", () => {
@@ -211,21 +193,21 @@ describe("what one fabrication sheet prints", () => {
     ["wall-panel|N3", 44],
   ]);
 
-  it("⚠ lists the positions it covers, sorted numerically, as a TAG", () => {
+  it("⚠ lists the STEPS it covers, sorted numerically, as a TAG", () => {
     /* Never a group key: keying a sheet on a unique number would take a Tiny
-       House from ~12 sheets to 74 and retire B25's pusher-head order. */
-    expect(installNumbersForSheet(["wall-panel|N1", "wall-panel|N3", "wall-panel|N2"], sequence)).toEqual([
-      "0003",
-      "0007",
-      "0044",
-    ]);
+       House from ~12 sheets to 74 and retire B25's pusher-head order.
+
+       ⚠ **Plain integers, not `"0003"`** — B36 stride 2. These print as "step
+       3 of 134", which is the one reading that cannot be mistaken for the
+       panel's own number. */
+    expect(installStepsForSheet(["wall-panel|N1", "wall-panel|N3", "wall-panel|N2"], sequence)).toEqual([3, 7, 44]);
   });
 
   it("leaves out a key the sequence has never heard of rather than inventing one", () => {
-    expect(installNumbersForSheet(["wall-panel|N2", "wall-panel|nope"], sequence)).toEqual(["0003"]);
+    expect(installStepsForSheet(["wall-panel|N2", "wall-panel|nope"], sequence)).toEqual([3]);
   });
 
   it("an empty sheet prints nothing", () => {
-    expect(installNumbersForSheet([], sequence)).toEqual([]);
+    expect(installStepsForSheet([], sequence)).toEqual([]);
   });
 });

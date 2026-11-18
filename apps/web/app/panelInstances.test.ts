@@ -480,10 +480,10 @@ describe("allPanelInstances — a braced slot split by a Mid-Wall Bond Beam degr
 
 describe("combinedPanelLabel", () => {
   /** A minimal instance carrying the two fields this function reads. */
-  const inst = (direction: CompassDirection, panelNumber: number, panelType: PanelInstance["panelType"]): PanelInstance => ({
-    name: `${direction}${panelNumber}`,
+  const inst = (direction: CompassDirection, indexInSeries: number, panelType: PanelInstance["panelType"]): PanelInstance => ({
+    name: `${direction}${indexInSeries}`,
     direction,
-    panelNumber,
+    indexInSeries,
     wallId: "AB",
     panelType,
     widthIn: 36,
@@ -557,7 +557,10 @@ describe("combinedPanelLabel", () => {
     // At least one group really is multi-instance, or this test proves nothing.
     expect(groups.some((group) => group.length > 1)).toBe(true);
 
-    for (const label of groups.map(combinedPanelLabel)) {
+    /* ⚠ Wrapped rather than passed bare: `combinedPanelLabel` takes an
+       optional panel-number map now, and `Array.map` hands its callback the
+       INDEX as a second argument — which would be a map here. */
+    for (const label of groups.map((group) => combinedPanelLabel(group))) {
       expect(label).not.toContain("undefined");
       expect(label).not.toContain("-");
       expect(label).toMatch(/^(NE|SE|SW|NW|N|E|S|W)\d+(\+\d+)*$/);
@@ -584,7 +587,7 @@ describe("combinedPanelLabel", () => {
       expect(i.name).not.toContain("-");
       // The fields and the display string say the same thing, so nothing has
       // to parse the string to recover either half of it.
-      expect(i.name).toBe(`${i.direction}${i.panelNumber}`);
+      expect(i.name).toBe(`${i.direction}${i.indexInSeries}`);
     }
   });
 });

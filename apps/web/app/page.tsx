@@ -189,15 +189,15 @@ import {
   bomWidthMismatchWarning,
   buildProjectCutListCsv,
   buildTip4urTimeCsv,
-  EMPTY_PANEL_CODE_LEDGER,
-  stampPanelCodes,
+  EMPTY_PANEL_NUMBER_LEDGER,
+  panelKey,
+  panelNumbering,
+  panelNumberKeys,
+  stampPanelNumbers,
   tip4urTimeExportProblems,
-  tip4urTimePanelKeys,
   tip4urTimePanels,
   computeInstallSequence,
-  installSequenceKey,
-  formatInstallSequenceNumber,
-  type PanelCodeLedger,
+  type PanelNumberLedger,
   CSV_MIME_TYPE,
   DXF_MIME_TYPE,
   bracedPanelDisplayLabel,
@@ -1410,24 +1410,34 @@ export default function LayoutEditor() {
   // input; site label and date are derived from state that already exists.
   const [projectName, setProjectName] = useState("Untitled Project");
   /**
-   * ⚠ **THE TIP4URTIME JOIN KEYS — stamped at the first export, never before.**
+   * ⚠ **EVERY PANEL'S ONE NUMBER — `0001`, `0002`, … — stamped at ISSUE,
+   * never before. B36 stride 2, 2026-11-18.**
    *
-   * Tip4urTime (the crew time clock and profit-sharing app) matches panels on
-   * a code that has to survive edits, and no derivation does: a panel's
-   * stencilled name is sequential along its wall, so inserting one upstream
-   * shifts every name below it. The code is therefore remembered — but only
-   * from the moment a project actually goes to a crew, which is his own
-   * reasoning about when a design stops moving:
+   * > *"gosh i do like the 0001 naming convention though... if there was some
+   * > fool proof way to make 0001 naming scheme work id be open to it."*
    *
-   * > *"Once we start building a project there shouldn't be any edits that
-   * > happen... If we're building a project that means it's been approved."*
+   * `panelNumber.ts` is the rule and the reasoning; the short version is that
+   * while designing a panel's number is its install position and it jumps
+   * freely (*"who cares if at the begining of the design the panels jump
+   * around drastically"*), and at issue every panel takes the next number **in
+   * install order** and keeps it forever.
    *
-   * So a design that is never exported never grows either field, and nothing
-   * migrates. Both are OPTIONAL in the file for the same reason, and
-   * therefore not a `PROJECT_FILE_VERSION` bump. See `stampPanelCodes`.
+   * ⚠ **The stored field is still called `tip4urTimePanelCodes` in the file**,
+   * because that is its name in every project already saved and renaming it
+   * would make an older build reissue every number in the project. The name is
+   * historical; the thing is the panel's number, and it is no longer one
+   * export's private join key.
+   *
+   * ⚠ **Both are OPTIONAL in the file**, so a design that is never issued
+   * grows neither — which is the honest state rather than a default to invent,
+   * and therefore not a `PROJECT_FILE_VERSION` bump.
    */
   const [tip4urTimeProjectId, setTip4urTimeProjectId] = useState<string | null>(null);
-  const [tip4urTimePanelCodes, setTip4urTimePanelCodes] = useState<PanelCodeLedger>(EMPTY_PANEL_CODE_LEDGER);
+  const [panelNumberLedger, setPanelNumberLedger] = useState<PanelNumberLedger>(EMPTY_PANEL_NUMBER_LEDGER);
+  /** When the numbers were issued, ISO, or null while they are provisional.
+   *  ⚠ Shown rather than merely stored: a printed number with no such note is
+   *  read as permanent, and before issue it is not. */
+  const [panelNumbersIssuedAt, setPanelNumbersIssuedAt] = useState<string | null>(null);
   const [tip4urTimeNotice, setTip4urTimeNotice] = useState<string | null>(null);
   // Shipping (Tommy: "which truck bed size are we using... how many trucks
   // will be needed... a changeable equation for how many trucks x how many
@@ -2902,7 +2912,8 @@ export default function LayoutEditor() {
       jackStudConfig,
       projectName,
       tip4urTimeProjectId,
-      tip4urTimePanelCodes,
+      tip4urTimePanelCodes: panelNumberLedger,
+      panelNumbersIssuedAt,
       wallsEnabled,
       floorsEnabled,
       roofEnabled,
@@ -3133,10 +3144,14 @@ export default function LayoutEditor() {
     setJackStudConfig(s.jackStudConfig ?? "plywood");
     setProjectName(s.projectName);
     /* Optional, so a file saved before this existed loads with no id and no
-       codes — exactly the state a project that has never been exported is
-       in, which is the right answer rather than a default to invent. */
+       numbers — exactly the state a project that has never been issued is in,
+       which is the right answer rather than a default to invent. */
     setTip4urTimeProjectId(s.tip4urTimeProjectId ?? null);
-    setTip4urTimePanelCodes(s.tip4urTimePanelCodes ?? EMPTY_PANEL_CODE_LEDGER);
+    setPanelNumberLedger(s.tip4urTimePanelCodes ?? EMPTY_PANEL_NUMBER_LEDGER);
+    /* ⚠ Null for a file issued BEFORE this field existed, which is honest
+       rather than invented: the ledger says the numbers are frozen and this
+       says nobody recorded when. The Review Log prints exactly that. */
+    setPanelNumbersIssuedAt(s.panelNumbersIssuedAt ?? null);
     setWallsEnabled(s.wallsEnabled);
     setFloorsEnabled(s.floorsEnabled);
     setRoofEnabled(s.roofEnabled);
@@ -11768,12 +11783,59 @@ export default function LayoutEditor() {
     crossTiltFabricationGroups,
   ]);
 
-  /** The same thing as printable strings, which is what every consumer wants. */
-  const installNumberByKey = useMemo(() => {
+  /**
+   * ⚠ **EVERY PANEL'S ONE NUMBER, and the honest story about where it came
+   * from — B36 stride 2.**
+   *
+   * This memo replaced `installNumberByKey`, which zero-padded an install
+   * position into a four-digit string. That string sat beside a crew code that
+   * was ALSO four digits and was stamped in a DIFFERENT order, so the two never
+   * agreed about which panel `0028` was. There is one number now:
+   * `panelNumbering` returns the stored one once the project is issued and the
+   * install position until then, and `installSequence` keeps the ORDER as plain
+   * integers for the "step 42 of 134" line.
+   */
+  const panelNumbers = useMemo(
+    () => panelNumbering(panelNumberKeys(exportableAssemblies), panelNumberLedger, installSequence),
+    [exportableAssemblies, panelNumberLedger, installSequence],
+  );
+
+  /**
+   * What every fabrication sheet needs to print its numbers honestly: whether
+   * they are frozen, and how many steps the whole install has.
+   *
+   * ⚠ Not a memo — two primitives read off values already in scope. Wrapping
+   * it would cost the `preserve-manual-memoization` budget for nothing.
+   */
+  const panelNumberContext = {
+    issued: panelNumbers.issued,
+    issuedAt: panelNumbersIssuedAt,
+    installStepTotal: installSequence.size,
+  };
+
+  /**
+   * ⚠ **THE LABEL IS THE NUMBER — B36 stride 3, 2026-11-18.** Every drawing
+   * (the plan canvas, the Plan View sheet, the wall elevations, the 3D view)
+   * labels a panel by its NUMBER and treats `N3` as a separate LOCATION fact.
+   *
+   * ⚠ Keyed by instance NAME rather than by `panelKey`, because that is what a
+   * drawing holds: `combinedPanelLabel` is handed `PanelInstance`s and nothing
+   * on them knows which export family they belong to.
+   *
+   * ⚠ **Every instance in `allInstances` is in the `"Wall panel"` family**,
+   * including a gable tile — they flow through `panelFabricationGroups` like
+   * any other wall panel. A panel the numbering has not heard of is simply
+   * absent, and `combinedPanelLabel` then falls back to the location label for
+   * the whole group rather than labelling half of it one way.
+   */
+  const wallPanelNumberByName = useMemo(() => {
     const map = new Map<string, string>();
-    for (const [key, n] of installSequence) map.set(key, formatInstallSequenceNumber(n));
+    for (const inst of allInstances) {
+      const number = panelNumbers.numberByKey.get(panelKey("Wall panel", inst.name, 0));
+      if (number !== undefined) map.set(inst.name, number);
+    }
     return map;
-  }, [installSequence]);
+  }, [allInstances, panelNumbers]);
 
   /** Each wall-panel instance's own compass direction, for the chip colour.
    *  Read as a FIELD rather than parsed back out of the name — `PanelInstance`
@@ -11808,18 +11870,26 @@ export default function LayoutEditor() {
    * ones, which is the safe direction but is worth knowing when a sheet comes
    * out bare.
    */
-  const withInstallTags = <T extends { name: string }>(family: string, refs: readonly T[]) =>
-    refs.map((ref) => ({
-      ...ref,
-      /* ⚠ Named refs only. `installSequenceKey` falls back to the pipeline
-         index for an unnamed item, and the index a RENDERER has is its position
-         on this one sheet, not in the building — so an unnamed ref would look
-         up a number belonging to some other panel. No number is correct; a
-         confidently wrong one is not. */
-      installNumber:
-        ref.name.length > 0 ? installNumberByKey.get(installSequenceKey(family, ref.name, 0)) : undefined,
-      direction: family === "Wall panel" ? wallInstanceDirectionByName.get(ref.name) : undefined,
-    }));
+  const withPanelTags = <T extends { name: string }>(family: string, refs: readonly T[]) =>
+    refs.map((ref) => {
+      /* ⚠ Named refs only. `panelKey` falls back to the pipeline index for an
+         unnamed item, and the index a RENDERER has is its position on this one
+         sheet, not in the building — so an unnamed ref would look up a number
+         belonging to some other panel. No number is correct; a confidently
+         wrong one is not. */
+      const key = ref.name.length > 0 ? panelKey(family, ref.name, 0) : null;
+      return {
+        ...ref,
+        /** ⚠ The panel's IDENTITY. Blank after issue for a panel added
+         *  since — see `panelNumbering`, which refuses to invent one. */
+        panelNumber: key === null ? undefined : panelNumbers.numberByKey.get(key),
+        /** ⚠ Its place in the ORDER, a plain integer, printed as "step 42 of
+         *  134". Deliberately not padded: two four-digit tokens on one chip is
+         *  the confusion this stride exists to end. */
+        installStep: key === null ? undefined : installSequence.get(key),
+        direction: family === "Wall panel" ? wallInstanceDirectionByName.get(ref.name) : undefined,
+      };
+    });
 
   /**
    * ⚠ **THE PANEL LIST TIP4URTIME READS — one row per PHYSICAL panel, and
@@ -11831,20 +11901,75 @@ export default function LayoutEditor() {
    * what a shop builds from; collapsing copies in this file would collapse
    * somebody's pay.
    *
-   * ⚠ **Exporting STAMPS, and the stamp is the point.** Any panel without a
-   * code gets the next one and the ledger is saved with the project, so the
-   * same panel exports with the same code forever after and a re-import
-   * matches on it. See `stampPanelCodes` for why the first export is the
-   * right moment and why `nextSeq` never goes backwards.
+   * ⚠ **Exporting ISSUES the project, and the stamp is the point.** Any panel
+   * without a number gets the next one IN INSTALL ORDER and the ledger is
+   * saved with the project, so the same panel exports with the same number
+   * forever after and a re-import matches on it. See `issuePanelNumbers`, and
+   * `panelNumber.ts` for why this is the right moment and why `nextSeq` never
+   * goes backwards.
+   *
+   * ⚠ **The code column carries `0042`, not `P-0042`, since B36 stride 2** —
+   * it is the same number the app shows and the shop stencils. Tip4urTime's
+   * importer has to know that, and that the last column is now `Install step`
+   * with a plain integer in it.
    *
    * ⚠ **It reports rather than trusting itself.** `tip4urTimeExportProblems`
    * is his own acceptance check as code — every code unique and present,
    * every square footage above zero — and a failure is shown instead of a
    * file being handed to an app that pays people from it.
    */
+  /**
+   * ⚠ **ISSUE FOR FABRICATION — the one moment a panel number stops moving.
+   * B36 stride 2.**
+   *
+   * Called by every door that hands the project to somebody who will build
+   * from it: the Tip4urTime export, a shop-packet PDF that contains any panel
+   * fabrication sheet, and the explicit button. His own reasoning for why that
+   * is the right moment:
+   *
+   * > *"Once we start building a project there shouldn't be any edits that
+   * > happen... If we're building a project that means it's been approved."*
+   *
+   * ⚠ **Idempotent, and it returns the ledger rather than only setting it** —
+   * the Tip4urTime export needs the numbers in the same tick it stamps them,
+   * and reading them back off state would export the PREVIOUS ledger.
+   *
+   * ⚠ `stampPanelNumbers` returns the same object when nothing moved, so a
+   * re-issue writes no state and marks no new date.
+   */
+  const issuePanelNumbers = (): PanelNumberLedger => {
+    const ledger = stampPanelNumbers(
+      panelNumberKeys(exportableAssemblies),
+      panelNumberLedger,
+      /* ⚠ **IN INSTALL ORDER.** Numbering the export pipeline's own list is
+         what made a crew code and an install number disagree — see
+         `panelNumber.ts`. Stamping in install order makes the moment of issue
+         invisible: the provisional number a person already read is the number
+         that gets frozen. */
+      installSequence,
+    );
+    if (ledger === panelNumberLedger) return ledger;
+    setPanelNumberLedger(ledger);
+    if (panelNumbersIssuedAt === null) setPanelNumbersIssuedAt(new Date().toISOString());
+    return ledger;
+  };
+
+  const handleIssueForFabrication = () => {
+    const before = Object.keys(panelNumberLedger.codesByKey).length;
+    const ledger = issuePanelNumbers();
+    const total = Object.keys(ledger.codesByKey).length;
+    const minted = total - before;
+    setTip4urTimeNotice(
+      minted === 0
+        ? `Already issued — ${total} panel number${total === 1 ? "" : "s"} are frozen and nothing new needed one.`
+        : `${minted} panel number${minted === 1 ? "" : "s"} issued — ${total} frozen in all. ` +
+            "Save the project so the numbers survive.",
+    );
+  };
+
   const handleExportTip4urTime = () => {
-    const keys = tip4urTimePanelKeys(exportableAssemblies);
-    const ledger = stampPanelCodes(keys, tip4urTimePanelCodes);
+    const keys = panelNumberKeys(exportableAssemblies);
+    const ledger = issuePanelNumbers();
     /* Minted here for the same reason the codes are: a project that never
        goes to a crew never needs one. Never re-minted, so renaming the
        project cannot break a re-import. */
@@ -11852,10 +11977,11 @@ export default function LayoutEditor() {
     const input = {
       projectName: projectName || "Untitled Project",
       projectId,
-      /* ⚠ B35's install positions ride along beside the stored codes — see
-         `Tip4urTimePanel.installNumber`. The crew app sorts by one and joins
-         on the other. */
-      panels: tip4urTimePanels(exportableAssemblies, ledger, installNumberByKey),
+      /* ⚠ The stamped NUMBER and the install STEP, which are two different
+         facts about one panel — an identity and an order. The crew app sorts
+         by the step and joins on the number, and since B36 the two do not even
+         look alike: `0042` against `42`. */
+      panels: tip4urTimePanels(exportableAssemblies, new Map(Object.entries(ledger.codesByKey)), installSequence),
     };
     const problems = tip4urTimeExportProblems(input);
     if (problems.length > 0) {
@@ -11866,13 +11992,12 @@ export default function LayoutEditor() {
       );
       return;
     }
-    if (ledger !== tip4urTimePanelCodes) setTip4urTimePanelCodes(ledger);
     if (projectId !== tip4urTimeProjectId) setTip4urTimeProjectId(projectId);
-    const newCodes = keys.filter((key) => tip4urTimePanelCodes.codesByKey[key] === undefined).length;
+    const newCodes = keys.filter((key) => panelNumberLedger.codesByKey[key] === undefined).length;
     setTip4urTimeNotice(
       `${input.panels.length} panel${input.panels.length === 1 ? "" : "s"} exported · ` +
-        `${newCodes} new code${newCodes === 1 ? "" : "s"} · ${input.panels.length - newCodes} kept from a previous export. ` +
-        "Save the project so the codes survive.",
+        `${newCodes} new number${newCodes === 1 ? "" : "s"} · ${input.panels.length - newCodes} kept from a previous issue. ` +
+        "Save the project so the numbers survive.",
     );
     downloadExport(buildTip4urTimeCsv(input), "tip4urtime-panels.csv", CSV_MIME_TYPE);
   };
@@ -12326,6 +12451,13 @@ export default function LayoutEditor() {
   const handleExportSelectedPdf = () => {
     const ids = effectiveExportIds;
     if (ids.size === 0) return;
+    /* ⚠ **A PACKET WITH A FABRICATION SHEET IN IT IS AN ISSUE — B36 stride 2.**
+       Those sheets print a panel number per copy, and a printed number that
+       renumbers on the next edit is the whole hazard. Gated on the sheets
+       rather than on "a PDF was exported", so emailing a client the Project
+       Summary does not freeze a design that is still being drawn. */
+    const justIssued =
+      [...ids].some((id) => id.startsWith("shop-")) && issuePanelNumbers() !== panelNumberLedger;
     const wasOpen = new Set(openNoteIds);
     const needsOpening = [...ids].some((id) => !openNoteIds.has(id));
     const doExport = () => {
@@ -12356,6 +12488,14 @@ export default function LayoutEditor() {
     };
     if (needsOpening) {
       setOpenNoteIds((was) => new Set([...was, ...ids]));
+      requestAnimationFrame(run);
+    } else if (justIssued) {
+      /* ⚠ **Issuing is a STATE change, and `window.print()` photographs the
+         DOM as it stands.** Printing in the same tick would put the
+         *"PROVISIONAL"* note on a packet that had just frozen its numbers, and
+         — worse — would print an em dash for every panel that had been awaiting
+         one a moment earlier. One frame, the same deferral the section-opening
+         branch above already uses for the same reason. */
       requestAnimationFrame(run);
     } else {
       run();
@@ -13189,6 +13329,79 @@ export default function LayoutEditor() {
    * ⚠ Its dep is plain `useState`, so this memo costs nothing against the
    * `preserve-manual-memoization` budget — the 2026-11-15 rule.
    */
+  /**
+   * ⚠ **WHETHER A PRINTED PANEL NUMBER CAN BE TRUSTED — B36 stride 2.**
+   *
+   * A four-digit number on a drawing is read as permanent whether it is or
+   * not, so the Review Log says which. Added to the log rather than only to
+   * the sheets because it is a fact about the whole project: before issue
+   * every number in the packet is provisional, and after issue the useful
+   * facts are when, how many are waiting, and how many are retired.
+   */
+  const panelNumberReviewEntries = useMemo(() => {
+    const total = panelNumbers.numberByKey.size;
+    if (total === 0 && panelNumbers.awaiting.length === 0) return [];
+    if (!panelNumbers.issued) {
+      return [
+        {
+          label: `${total} panel number${total === 1 ? " is" : "s are"} PROVISIONAL — not yet issued for fabrication`,
+          status: "pending-BI-confirmation" as const,
+          note:
+            `0001–${[...panelNumbers.numberByKey.values()].sort().at(-1) ?? "0001"}, counted in install order from the ` +
+            "point of least accessibility. Every one of them MOVES when the design does: insert a window on the " +
+            "first wall and everything after it shifts by one. That is what a position is, and while a design is " +
+            "being drawn it is the honest answer. Issuing the project for fabrication — or exporting to " +
+            "Tip4urTime, or printing a packet containing any panel fabrication sheet — freezes them: each panel " +
+            "keeps the number it has right now, forever, and a panel added later takes the next unused one. " +
+            "Nothing is written to the project until then, so nothing here is a number anybody can be held to.",
+        },
+      ];
+    }
+    const awaiting = panelNumbers.awaiting.length;
+    const retired = panelNumbers.retired.length;
+    /* ⚠ **A CLEANLY ISSUED PROJECT SAYS NOTHING HERE, AND THAT IS DELIBERATE
+       — found in the browser, 2026-11-18.** `toReviewLog` keeps only
+       `pending-BI-confirmation` entries, because this log is *"Items for
+       Engineer/Contractor Review"* rather than a status board. My first version
+       filed the issued case as `confirmed`, which this filter dropped on the
+       floor: the entry rendered in no build and three gates said nothing.
+
+       The filter is right and the entry was wrong. Every panel numbered,
+       nothing awaiting and nothing retired is not a review item — it is the
+       normal state, and it is already stated on every fabrication sheet with
+       its date. What IS a review item is a panel with no number or a number
+       with no panel, so only those two raise a line. */
+    if (awaiting === 0 && retired === 0) return [];
+    const when = panelNumbersIssuedAt === null ? null : new Date(panelNumbersIssuedAt);
+    return [
+      {
+        label:
+          `${total} panel number${total === 1 ? "" : "s"} are issued and frozen` +
+          (awaiting > 0 ? ` · ⚠ ${awaiting} panel${awaiting === 1 ? "" : "s"} drawn since have NO number` : "") +
+          (retired > 0 ? ` · ${retired} number${retired === 1 ? "" : "s"} retired` : ""),
+        status: "pending-BI-confirmation" as const,
+        note:
+          (when === null
+            ? "Issued before this app recorded the date, so the date is genuinely unknown rather than guessed. "
+            : `Issued ${when.toLocaleDateString()} at ${when.toLocaleTimeString()}. `) +
+          "A frozen number never moves again, whatever the design does — that is what a crew's pay and a stencilled " +
+          "panel hang on. " +
+          (awaiting > 0
+            ? `⚠ ${awaiting} panel${awaiting === 1 ? "" : "s"} drawn since the issue ${awaiting === 1 ? "has" : "have"} ` +
+              "NO number and deliberately show none: the number their install position would give already belongs to a " +
+              "different panel. Issue again to give them the next unused numbers. "
+            : "") +
+          (retired > 0
+            ? `⚠ ${retired} number${retired === 1 ? "" : "s"} (${panelNumbers.retired.slice(0, 8).join(", ")}` +
+              `${retired > 8 ? ", …" : ""}) belonged to panels that have since been deleted. They are RETIRED, never ` +
+              "reissued — a reused number is the one failure somebody would feel in their pay. "
+            : "") +
+          "The install ORDER is a separate fact and still recomputes freely: each sheet prints it as \"step N of " +
+          `${installSequence.size}\" rather than as a second four-digit number.`,
+      },
+    ];
+  }, [panelNumbers, panelNumbersIssuedAt, installSequence.size]);
+
   const interiorWallNotDrawnReviewEntries = useMemo(() => {
     const interior = footprint?.interiorWalls ?? [];
     if (interior.length === 0) return [];
@@ -13772,6 +13985,9 @@ export default function LayoutEditor() {
       // header with no web is a part built another way, a gable window
       // through its own roofline is a part that was never built at all.
       ...gableWindowRooflineReviewEntries,
+      /* ⚠ FIRST of the project-wide facts, because it governs how every
+         number further down this packet should be read. */
+      ...panelNumberReviewEntries,
       /* ⚠ Beside the run-stop entries, because it is the same kind of fact:
          a wall that is not what a drawing shows it to be. */
       ...interiorWallNotDrawnReviewEntries,
@@ -13967,6 +14183,7 @@ export default function LayoutEditor() {
     unhonouredLockedWidths,
     seismicZone,
     unitSystem,
+    panelNumberReviewEntries,
     interiorWallNotDrawnReviewEntries,
     wallRunStopReviewEntries,
     spanningHeaderReviewEntries,
@@ -16691,12 +16908,34 @@ export default function LayoutEditor() {
                 >
                   Export DXF{exportableAssemblies.length > 0 ? ` (${exportableAssemblies.length})` : ""}
                 </button>
-                {/* ⚠ One row per PHYSICAL panel, not per drawing — the crew
-                    app pays by the panel. Exporting stamps each panel with a
-                    permanent code, so save the project afterwards. */}
+                {/* ⚠ **THE EXPLICIT DOOR — B36 stride 2.** The other two are
+                    side effects of exporting; this one is the decision on its
+                    own, for the case where a project is approved before
+                    anything is downloaded. All three run the same function and
+                    it is idempotent, so pressing this twice does nothing. */}
                 <button
                   type="button"
-                  title="Download this project's panel list for Tip4urTime — one row per physical panel with a permanent code, so crews can claim panels and square footage. Exporting stamps any new panel with its code; save the project afterwards."
+                  title={
+                    panelNumbers.issued
+                      ? `Panel numbers are already issued and frozen (${panelNumbers.numberByKey.size} of them).` +
+                        (panelNumbers.awaiting.length > 0
+                          ? ` ${panelNumbers.awaiting.length} panel(s) drawn since have no number — press to give them the next unused ones.`
+                          : " Press again to number anything drawn since.")
+                      : "Freeze every panel's number at what it reads now, in install order, and store them with the project. Until you do, the numbers on every sheet move whenever the design changes."
+                  }
+                  disabled={exportableAssemblies.length === 0}
+                  onClick={handleIssueForFabrication}
+                >
+                  {panelNumbers.issued
+                    ? `Issue new numbers${panelNumbers.awaiting.length > 0 ? ` (${panelNumbers.awaiting.length})` : ""}`
+                    : "Issue for fabrication"}
+                </button>
+                {/* ⚠ One row per PHYSICAL panel, not per drawing — the crew
+                    app pays by the panel. Exporting ISSUES the project, so
+                    every panel number is frozen; save the project afterwards. */}
+                <button
+                  type="button"
+                  title="Download this project's panel list for Tip4urTime — one row per physical panel with its permanent number, so crews can claim panels and square footage. Exporting issues the project, freezing every panel's number; save the project afterwards."
                   disabled={exportableAssemblies.length === 0}
                   onClick={handleExportTip4urTime}
                 >
@@ -16860,6 +17099,7 @@ export default function LayoutEditor() {
           describe different panels.
         </p>
         <PanelFabricationPage
+          panelNumbers={panelNumberContext}
           /* ⚠ His two deck colours, 2026-11-04: *"Floors should be dark grey and
              roofs light brown."* These sheets carried no band at all until he
              said so — see `panelSheetAccentColor`, which refused to pick. */
@@ -16937,7 +17177,7 @@ export default function LayoutEditor() {
           widthIn={group.widthIn}
           heightIn={group.spanIn}
           members={group.members}
-          instances={withInstallTags(
+          instances={withPanelTags(
             "Deck panel",
             group.instances.map((i) => ({
               name: i.name,
@@ -17698,6 +17938,7 @@ export default function LayoutEditor() {
             {editorTab === "wall" && !showStarterTemplates &&
               (elevationWall ? (
                 <WallElevationDiagram
+                  panelNumberByName={wallPanelNumberByName}
                   wall={elevationWall}
                   wallLabel={wallLabels[elevationWall.id]}
                   slots={overlayWallSlots[elevationWall.id] ?? []}
@@ -17781,6 +18022,7 @@ export default function LayoutEditor() {
                 />
               ) : viewMode === "plan" ? (
                 <FootprintCanvas
+                  panelNumberByName={wallPanelNumberByName}
                   footprint={footprint}
                   shapeTool={shapeTool}
               drawWallFirstCornerId={drawWallFirstPick?.kind === "corner" ? drawWallFirstPick.cornerId : null}
@@ -17825,6 +18067,7 @@ export default function LayoutEditor() {
                 />
               ) : (
                 <Building3DView
+                  panelNumberByName={wallPanelNumberByName}
                   footprint={footprint}
                   wallSlots={overlayWallSlots}
                   wallHeightFt={wallHeightFt}
@@ -19278,6 +19521,7 @@ export default function LayoutEditor() {
             onPrint={() => handlePrintNote("detail-plan-view")}
           >
             <PlanViewPage
+              panelNumberByName={wallPanelNumberByName}
               footprint={footprint}
               wallSlots={overlayWallSlots}
               wallStartOffsetIn={wallRenderOffsetIn}
@@ -19867,6 +20111,7 @@ export default function LayoutEditor() {
                     and a weight checker with a blank line for the shop&apos;s own measured weight.
                   </p>
                   <PanelFabricationPage
+                    panelNumbers={panelNumberContext}
                     /* ⚠ B25 — the sheet's own primary label is the height and
                        the distinct name, the two things that let him build the
                        panel from the title. `panelType.label` is still the
@@ -19879,7 +20124,7 @@ export default function LayoutEditor() {
                     widthIn={group.widthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={withInstallTags("Wall panel", group.instances)}
+                    instances={withPanelTags("Wall panel", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={group.panelType.loadBearingCapacity}
                     shearValue={group.panelType.shearValue}
@@ -19923,6 +20168,7 @@ export default function LayoutEditor() {
                     this header in return.
                   </p>
                   <PanelFabricationPage
+                    panelNumbers={panelNumberContext}
                     /* B25's band — a spanning header IS a header, so it takes
                        the header colour the plan already draws rather than one
                        of its own. */
@@ -19933,7 +20179,7 @@ export default function LayoutEditor() {
                     widthIn={group.widthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={withInstallTags("Spanning header", group.instances)}
+                    instances={withPanelTags("Spanning header", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
@@ -19981,6 +20227,7 @@ export default function LayoutEditor() {
                     measured weight.
                   </p>
                   <PanelFabricationPage
+                    panelNumbers={panelNumberContext}
                     /* ⚠ His two assembly colours, 2026-11-05: *"Box beam green
                        and truss plate blue."* A Big Header mid-wall beam is a
                        box beam's sibling and takes the same green — both are
@@ -19992,7 +20239,7 @@ export default function LayoutEditor() {
                     widthIn={group.lengthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={withInstallTags("Mid-wall beam", group.instances)}
+                    instances={withPanelTags("Mid-wall beam", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
@@ -20022,6 +20269,7 @@ export default function LayoutEditor() {
                     one takeoff, so this sheet and the model cannot describe different panels.
                   </p>
                   <PanelFabricationPage
+                    panelNumbers={panelNumberContext}
                     /* B25's band, in the gable colour — a cross-tilted row is
                        a gable panel laid over. Truss plate, box beam, floor
                        and roof sheets get NO band: those types have no entry
@@ -20057,7 +20305,7 @@ export default function LayoutEditor() {
                     widthIn={group.widthIn}
                     heightIn={group.highHeightIn}
                     members={group.members}
-                    instances={withInstallTags(
+                    instances={withPanelTags(
                       "Tilted gable",
                       group.instances.map((i) => ({
                         name: i.name,
@@ -20140,6 +20388,7 @@ export default function LayoutEditor() {
                     used on, and a weight checker with a blank line for the shop&apos;s own measured weight.
                   </p>
                   <PanelFabricationPage
+                    panelNumbers={panelNumberContext}
                     typeLabel={group.kindLabel}
                     accentColor={panelSheetAccentColor(group.kind)}
                     title={`Panel Fabrication — ${group.kindLabel}`}
@@ -20147,7 +20396,7 @@ export default function LayoutEditor() {
                     widthIn={group.lengthIn}
                     heightIn={group.heightIn}
                     members={group.members}
-                    instances={withInstallTags("Roof bearing", group.instances)}
+                    instances={withPanelTags("Roof bearing", group.instances)}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}

@@ -1252,3 +1252,53 @@ describe("a stored wall whose safety gap was COMBINED with a panel (2026-11-02)"
     expect(loaded.stories[0]!.wallSlots.AB!.some((s) => s.secondaryType !== undefined)).toBe(false);
   });
 });
+
+describe("⚠ B36 stride 2 — a project issued before the merge loads with `P-0042` remapped to `0042`", () => {
+  /* ⚠ **A VALUE remap, not a version migration**, and it was possible where
+     B36 stride 1's was NOT — which is the lesson worth keeping. `P-` is a
+     prefix that parses back; stride 1's ambiguous `C21` key could not be, so
+     its numbers were left to be reissued instead. Left unremapped, a project
+     issued before this change would stencil `P-0042` on a panel while every
+     screen in the app said `0042`. */
+  const loadWithLedger = (codesByKey: Record<string, string>, nextSeq = 3) => {
+    const file = serializeProject(makeState({ tip4urTimePanelCodes: { codesByKey, nextSeq } }));
+    const result = parseProjectFile(JSON.stringify(file));
+    expect(result.ok).toBe(true);
+    return result.ok ? result.state.tip4urTimePanelCodes : undefined;
+  };
+
+  it("strips the prefix, keeps the digits, and leaves nextSeq alone", () => {
+    expect(loadWithLedger({ "Wall panel|N1": "P-0001", "Deck panel|F2": "P-0002" })).toEqual({
+      codesByKey: { "Wall panel|N1": "0001", "Deck panel|F2": "0002" },
+      nextSeq: 3,
+    });
+  });
+
+  it("is idempotent — a file already in the new format is untouched", () => {
+    expect(loadWithLedger({ "Wall panel|N1": "0001" })?.codesByKey).toEqual({ "Wall panel|N1": "0001" });
+  });
+
+  it("⚠ leaves anything that is NOT the one known prefix exactly alone", () => {
+    /* A number that failed to remap would be a panel silently issued a SECOND
+       number, so nothing is guessed at. */
+    expect(loadWithLedger({ a: "X-7", b: "P0003", c: "" })?.codesByKey).toEqual({ a: "X-7", b: "P0003", c: "" });
+  });
+
+  it("a project that was never issued keeps no ledger rather than gaining an empty one", () => {
+    const result = parseProjectFile(JSON.stringify(serializeProject(makeState())));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.tip4urTimePanelCodes).toBeUndefined();
+    expect(result.state.panelNumbersIssuedAt).toBeUndefined();
+  });
+
+  it("round-trips the issue DATE, which is a separate optional field", () => {
+    const at = "2026-11-18T12:00:00.000Z";
+    const result = parseProjectFile(
+      JSON.stringify(serializeProject(makeState({ panelNumbersIssuedAt: at }))),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.panelNumbersIssuedAt).toBe(at);
+  });
+});

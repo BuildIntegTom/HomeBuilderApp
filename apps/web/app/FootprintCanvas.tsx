@@ -191,6 +191,16 @@ export interface FootprintCanvasProps {
    * Drawing page. */
   standardWidthIn: number;
   jackStudConfig: JackStudConfig;
+  /**
+   * ⚠ **THE PANEL'S OWN NUMBER — `0042` — by instance name. B36 stride 3,
+   * 2026-11-18: *"the label IS the number"*.**
+   *
+   * Handed in, every panel on this drawing is labelled by its NUMBER rather
+   * than by `N3`, which is its LOCATION and is a separate fact. Omitted, the
+   * drawing falls back to the location labels it has always shown — which is
+   * what a caller with no project context should get, rather than blanks.
+   */
+  panelNumberByName?: ReadonlyMap<string, string>;
   leastAccessibleCorner: CornerId;
   /** Corners present before any bump-out was added — only these ever show
    * a least-accessible-corner marker (once a shape's first 4 corners are
@@ -247,6 +257,7 @@ export default function FootprintCanvas({
   bracingStyle,
   standardWidthIn,
   jackStudConfig,
+  panelNumberByName,
   leastAccessibleCorner,
   primaryCornerIds,
   isWallLengthEditable,
@@ -289,9 +300,9 @@ export default function FootprintCanvas({
       }
     }
     const map = new Map<string, string>();
-    for (const [key, instances] of grouped) map.set(key, combinedPanelLabel(instances));
+    for (const [key, instances] of grouped) map.set(key, combinedPanelLabel(instances, panelNumberByName));
     return map;
-  }, [footprint, wallSlots, standardWidthIn, jackStudConfig]);
+  }, [footprint, wallSlots, standardWidthIn, jackStudConfig, panelNumberByName]);
 
   // Estimated bearing/shear numbers for the hover tooltip below (Tommy:
   // "when you hover over a panel... shows you extra details... shear and

@@ -174,23 +174,78 @@ migration has to be exact: a code that fails to remap is a panel that silently
 gets a *second* number. Pin it with a test that stamps under the old format,
 migrates, and asserts every code survived with the same value.
 
-### Stride 2 — one number, not two
+### ✅ Stride 2 — one number, not two. BUILT 2026-11-18
 
-Merge the install number and the crew code into a single **panel number**,
-stamped by the rule above, and show the install **order** as its own separate
-line ("step 42 of 134") wherever the chip shows it today.
+Done as planned, and **the hazard was worse than this doc said.** The two
+four-digit numbers did not merely coexist: they counted in **different
+orders**. Crew codes were stamped walking the EXPORT PIPELINE's list (walls,
+roof bearing, beams, decks) while B35's install number counted in his own
+install order, so on a 16ft Tiny House `P-0028` and install `0028` were
+different panels from the very first export. That is the literal answer to
+*"wheres the 0028?"*.
 
-Issue happens at the first of: exporting to Tip4urTime, exporting the shop
-packet PDF, or an explicit **Issue for fabrication** action. Before issue the
-Review Log says the numbers are provisional; after issue it says when they were
-stamped and how many are retired.
+**The fix that makes the merge invisible: numbers are stamped IN INSTALL
+ORDER.** A provisional number is the install position; stamping walks the same
+order; so the number a person already read is the number that gets frozen.
+Measured live on the Tiny House: 86 panels, press **Issue for fabrication**,
+**zero numbers moved.**
 
-### Stride 3 — the label is the number
+What shipped:
 
-Everywhere a panel is named, show **the number** as the label and the wall plus
-index as a separate *location* field — never concatenated into one token. The
-`C21` string stops existing in the UI, the CSV and the drawings, which is what
-retires the Review Log entry stride 3c added.
+- `panelNumber.ts` (panel-catalog) — the ledger, moved out of
+  `tip4urTimeCsv.ts` where it had been living as one export's private join key.
+  `panelNumbering()` returns the stored number once issued and the install
+  position until then, plus `awaiting` and `retired`.
+- `panelKey.ts` — ONE key formula. `panelCodeKey` and
+  `installSequenceKey` were byte-identical bodies in two modules that could not
+  import each other, kept equal by a test. Both deleted.
+- **`formatInstallSequenceNumber` DELETED.** An install step is a plain
+  integer now, printed *"step 42 of 134"*. The zero-padding was the whole
+  mechanism of the confusion — it made an ORDER look exactly like an
+  IDENTITY sitting next to one.
+- Format `0042`, not `P-0042`: it is the token the shop stencils and there is
+  no hyphen stencil. Migrated exactly on load — `P-` is a prefix that
+  parses back, which is precisely what stride 1's ambiguous `C21` was not.
+- Three doors issue: **Issue for fabrication** (explicit), the Tip4urTime
+  export, and a packet PDF **that contains a fabrication sheet** — gated
+  on the sheets so emailing a client the Project Summary does not freeze a
+  design still being drawn.
+- CSV: `Panel code` carries `0042`; the last column is renamed `Install no`
+  — `Install step` and carries a plain integer. ⚠ **The crew app's
+  importer needs to know about both**, and that is the one cross-repo cost of
+  this stride.
+
+⚠ **One defect found in the browser and nowhere else**: `toReviewLog`
+keeps only `pending-BI-confirmation` entries, so the issued-state entry (filed
+as `confirmed`) rendered in no build at all while `tsc`, `vitest` and lint all
+passed. The filter is right and the entry was wrong: a cleanly issued project
+is not a review item, so the log now says nothing then, and raises a line only
+for panels with no number or numbers with no panel.
+
+### ✅ Stride 3 — the label is the number. BUILT 2026-11-18
+
+The number is the label on the plan canvas, the Plan View sheet, every wall
+elevation, the 3D view and every fabrication sheet's chips; `N3` sits beside it
+as its own **location** field. Verified live: the plan and the N elevation
+label every panel `0014`, `0015`, `0018+0019` — **no old-style label
+survives anywhere in either drawing.**
+
+- `PanelInstance.panelNumber` — the `3` of `N3` — is renamed
+  **`indexInSeries`**. It had the same name as the new concept and means the
+  opposite kind of thing.
+- `combinedPanelLabel(instances, numbers?)` labels by number when handed
+  numbers. ⚠ **It falls back to the location label when ANY instance in the
+  group lacks a number**, because a half-numbered token would read as a number
+  for one panel and as a location for the other, in one string.
+- Numbers in a joined label are **sorted ascending**. Found on a real plan: a
+  window slot's header and sill arrive header-first and rendered `0019+0018`,
+  which reads as a typo.
+- ⚠ **ONE place still concatenates, and it is forced**: an OBJ/SketchUp
+  group name is a single string with nowhere to put a second field, so it is
+  `0042_N3` — number first so the Outliner sorts in panel order.
+- The CSV already had the two as separate columns (`Panel code`, `Label`); only
+  the doc comment changed, to say that `Label` is a LOCATION and is allowed to
+  move while `code` is not.
 
 The panel's **distinct name** (`8' Super Carrot`) is untouched: that says what
 the panel *is*, which is a third thing again and already works.
@@ -203,4 +258,6 @@ the panel *is*, which is a third thing again and already works.
 - Fabrication grouping, which gathers physically identical panels and sorts by
   shape, not by name.
 - The distinct-name scheme for panel types.
-- Any existing project, as long as stride 1's migration is exact.
+- Any existing project: stride 2's `P-` migration is exact and idempotent,
+  and stride 1 deliberately did not migrate (its key format cannot be parsed
+  back, which is the defect itself).

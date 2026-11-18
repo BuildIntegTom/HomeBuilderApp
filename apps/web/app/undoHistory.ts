@@ -145,6 +145,11 @@ export const UNDO_CLASSIFICATION = {
   jackStudConfig: "document",
   tip4urTimeProjectId: "transient",
   tip4urTimePanelCodes: "transient",
+  /* ⚠ **Transient for the same reason the ledger is, and it is the stronger
+     case of the two.** Undoing past the moment of issue would unset the date
+     while the numbers it describes stay frozen, so the Review Log would say
+     "provisional" about numbers a shop is already building to. B36 stride 2. */
+  panelNumbersIssuedAt: "transient",
 } as const satisfies Record<keyof ProjectState, "document" | "transient">;
 
 export const DOCUMENT_KEYS = (Object.keys(UNDO_CLASSIFICATION) as (keyof ProjectState)[]).filter(

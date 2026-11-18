@@ -2,15 +2,30 @@ import { describe, expect, it } from "vitest";
 import type { ExportableAssembly } from "./projectCutListCsv";
 import {
   buildTip4urTimeCsv,
-  EMPTY_PANEL_CODE_LEDGER,
-  panelCodeKey,
-  stampPanelCodes,
   TIP4URTIME_CODE_MAX_LENGTH,
   tip4urTimeExportProblems,
-  tip4urTimePanelKeys,
   tip4urTimePanels,
   tip4urTimeSqFt,
 } from "./tip4urTimeCsv";
+import { panelKey } from "./panelKey";
+import {
+  EMPTY_PANEL_NUMBER_LEDGER,
+  panelNumberKeys,
+  stampPanelNumbers,
+  type PanelNumberLedger,
+} from "./panelNumber";
+
+/* ⚠ **B36 stride 2 — the ledger left this module, and its format changed.**
+   A panel's one number is `0042`, not `P-0042`, and it is issued in INSTALL
+   order rather than in the export pipeline's. These two helpers keep the
+   fixtures below about the export rather than about the ledger: `stamp` issues
+   numbers (with no install order handed in, so the pipeline order IS the
+   order), and `numbers` is what `tip4urTimePanels` now takes — a plain
+   number-by-key map, because printing a row has no business holding a
+   ledger. */
+const stamp = (assemblies: ExportableAssembly[], ledger: PanelNumberLedger = EMPTY_PANEL_NUMBER_LEDGER) =>
+  stampPanelNumbers(panelNumberKeys(assemblies), ledger, new Map());
+const numbers = (ledger: PanelNumberLedger) => new Map(Object.entries(ledger.codesByKey));
 
 /** Only the fields this export reads; `members` is irrelevant here and a
  *  single empty one keeps the fixtures about the thing being tested. */
@@ -55,8 +70,8 @@ describe("\u26a0 a SHOP ITEM is measured by its largest face \u2014 his 2026-11-
        instead \u2014 for that same gap, the sheet: 15.5in x 120in = 12.9 sq ft."*
        This is the test the whole change exists to pass. */
     const gap = assembly("Wall panel", "Safety Gap", ["N4"], 0.75, 120, false, 15.5);
-    const ledger = stampPanelCodes(tip4urTimePanelKeys([gap]), EMPTY_PANEL_CODE_LEDGER);
-    const [row] = tip4urTimePanels([gap], ledger);
+    const ledger = stamp([gap]);
+    const [row] = tip4urTimePanels([gap], numbers(ledger));
     expect(tip4urTimeSqFt(row.sqFt)).toBe(12.92);
     expect(row.countsAsPanel).toBe(false);
     /* The two dimensions on the row are unchanged \u2014 a crew still reads a
@@ -71,8 +86,8 @@ describe("\u26a0 a SHOP ITEM is measured by its largest face \u2014 his 2026-11-
        lying down (48 x 15.5 = 5.17) rather than standing (48 x 12 = 4) \u2014 so a
        plain `max` would have quietly re-measured the top of every gable row. */
     const tile = assembly("Wall panel", "Gable End Panel", ["G1"], 48, 12, true, 15.5);
-    const ledger = stampPanelCodes(tip4urTimePanelKeys([tile]), EMPTY_PANEL_CODE_LEDGER);
-    const [row] = tip4urTimePanels([tile], ledger);
+    const ledger = stamp([tile]);
+    const [row] = tip4urTimePanels([tile], numbers(ledger));
     expect(tip4urTimeSqFt(row.sqFt)).toBe(4);
   });
 });
@@ -84,8 +99,8 @@ describe("⚠ one row per PHYSICAL panel, not per drawing", () => {
        collapse their pay. */
     const names = Array.from({ length: 12 }, (_, i) => `N${i + 1}`);
     const assemblies = [assembly("Wall panel", "Standard Panel", names)];
-    const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
-    const panels = tip4urTimePanels(assemblies, ledger);
+    const ledger = stamp(assemblies);
+    const panels = tip4urTimePanels(assemblies, numbers(ledger));
     expect(panels).toHaveLength(12);
     expect(new Set(panels.map((p) => p.code)).size).toBe(12);
     expect(panels.map((p) => p.label)).toEqual(names);
@@ -96,9 +111,9 @@ describe("⚠ one row per PHYSICAL panel, not per drawing", () => {
        This one is read by a program that pays people. */
     const names = Array.from({ length: 300 }, (_, i) => `R${i + 1}`);
     const assemblies = [assembly("Deck panel", "Roof Panel", names)];
-    const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
-    expect(tip4urTimePanels(assemblies, ledger)).toHaveLength(300);
-    expect(buildTip4urTimeCsv({ projectName: "P", projectId: "id", panels: tip4urTimePanels(assemblies, ledger) })
+    const ledger = stamp(assemblies);
+    expect(tip4urTimePanels(assemblies, numbers(ledger))).toHaveLength(300);
+    expect(buildTip4urTimeCsv({ projectName: "P", projectId: "id", panels: tip4urTimePanels(assemblies, numbers(ledger)) })
       .trimEnd()
       .split("\r\n")).toHaveLength(303); // 2 preamble + 1 header + 300
   });
@@ -113,8 +128,8 @@ describe("⚠ the panel code is stable — his acceptance check, as a test", () 
   ];
 
   it("an unrelated edit keeps every existing code and only adds new ones", () => {
-    const ledger1 = stampPanelCodes(tip4urTimePanelKeys(before), EMPTY_PANEL_CODE_LEDGER);
-    const first = tip4urTimePanels(before, ledger1);
+    const ledger1 = stamp(before);
+    const first = tip4urTimePanels(before, numbers(ledger1));
 
     /* The "unrelated edit": the ROOF gains panels and a wall panel's size
        changes. Neither touches the identity of the panels that already
@@ -124,8 +139,8 @@ describe("⚠ the panel code is stable — his acceptance check, as a test", () 
       assembly("Deck panel", "Floor Panel", ["F1", "F2"]),
       assembly("Deck panel", "Roof Panel", ["R1", "R2"]),
     ];
-    const ledger2 = stampPanelCodes(tip4urTimePanelKeys(after), ledger1);
-    const second = tip4urTimePanels(after, ledger2);
+    const ledger2 = stamp(after, ledger1);
+    const second = tip4urTimePanels(after, numbers(ledger2));
 
     const codeOf = (panels: typeof first, label: string) => panels.find((p) => p.label === label)!.code;
     for (const label of ["N1", "N2", "N3", "F1", "F2"]) {
@@ -139,19 +154,19 @@ describe("⚠ the panel code is stable — his acceptance check, as a test", () 
   it("⚠ a deleted panel's number is never reissued to a different panel", () => {
     /* The failure a crew would feel in their pay. `nextSeq` is monotonic, so
        the ledger can only ever grow. */
-    const ledger1 = stampPanelCodes(tip4urTimePanelKeys(before), EMPTY_PANEL_CODE_LEDGER);
-    const n3 = ledger1.codesByKey[panelCodeKey("Wall panel", "N3", 2)];
+    const ledger1 = stamp(before);
+    const n3 = ledger1.codesByKey[panelKey("Wall panel", "N3", 2)];
     const shrunk = [assembly("Wall panel", "Standard Panel", ["N1", "N2"])];
-    const ledger2 = stampPanelCodes(tip4urTimePanelKeys(shrunk), ledger1);
+    const ledger2 = stamp(shrunk, ledger1);
     const grown = [assembly("Wall panel", "Standard Panel", ["N1", "N2"]), assembly("Deck panel", "Floor Panel", ["F9"])];
-    const ledger3 = stampPanelCodes(tip4urTimePanelKeys(grown), ledger2);
-    expect(ledger3.codesByKey[panelCodeKey("Deck panel", "F9", 0)]).not.toBe(n3);
+    const ledger3 = stamp(grown, ledger2);
+    expect(ledger3.codesByKey[panelKey("Deck panel", "F9", 0)]).not.toBe(n3);
     expect(ledger3.nextSeq).toBeGreaterThan(ledger1.nextSeq);
   });
 
   it("re-exporting with nothing changed mints nothing and returns the same ledger", () => {
-    const ledger1 = stampPanelCodes(tip4urTimePanelKeys(before), EMPTY_PANEL_CODE_LEDGER);
-    const ledger2 = stampPanelCodes(tip4urTimePanelKeys(before), ledger1);
+    const ledger1 = stamp(before);
+    const ledger2 = stamp(before, ledger1);
     /* Reference equality on purpose — the caller skips a save on it. */
     expect(ledger2).toBe(ledger1);
   });
@@ -164,8 +179,8 @@ describe("⚠ the panel code is stable — his acceptance check, as a test", () 
       assembly("Wall panel", "Standard Panel", ["N1"]),
       assembly("Deck panel", "Floor Panel", ["N1"]),
     ];
-    const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
-    const panels = tip4urTimePanels(assemblies, ledger);
+    const ledger = stamp(assemblies);
+    const panels = tip4urTimePanels(assemblies, numbers(ledger));
     expect(panels[0]!.code).not.toBe(panels[1]!.code);
   });
 });
@@ -176,11 +191,11 @@ const CRLF = String.fromCharCode(13, 10);
 
 describe("⚠ the file's own shape", () => {
   const assemblies = [assembly("Wall panel", "Standard Panel", ["N1", "N2"])];
-  const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
+  const ledger = stamp(assemblies);
   const csv = buildTip4urTimeCsv({
     projectName: "Rogers-Sehorn ADU",
     projectId: "abc-123",
-    panels: tip4urTimePanels(assemblies, ledger),
+    panels: tip4urTimePanels(assemblies, numbers(ledger)),
   });
   const lines = csv.trimEnd().split("\r\n");
 
@@ -188,7 +203,7 @@ describe("⚠ the file's own shape", () => {
     expect(lines[0]).toBe("Project,Rogers-Sehorn ADU");
     expect(lines[1]).toBe("Project ID,abc-123");
     expect(lines[2]).toBe(
-      "Panel code,Panel type,Label,Width (in),Height (in),Sq ft,Counts as panel,Install no",
+      "Panel code,Panel type,Label,Width (in),Height (in),Sq ft,Counts as panel,Install step",
     );
   });
 
@@ -207,43 +222,53 @@ describe("⚠ the file's own shape", () => {
   });
 
   it("writes a row per panel with a plain numeric square footage", () => {
-    /* ⚠ The trailing empty cell is `Install no` with no sequence passed — the
-       column is always THERE, so a reader never has to handle a missing one,
-       and a blank is an honest "this export did not place it" rather than a
-       guessed position. */
-    expect(lines[3]).toBe("P-0001,Standard Panel,N1,48,96,32,1,");
-    expect(lines[4]).toBe("P-0002,Standard Panel,N2,48,96,32,1,");
+    /* ⚠ The trailing empty cell is `Install step` with no sequence passed —
+       the column is always THERE, so a reader never has to handle a missing
+       one, and a blank is an honest "this export did not place it" rather than
+       a guessed position.
+
+       ⚠ **And the code reads `0001`, not `P-0001`** — B36 stride 2. The prefix
+       existed while this was a join key nobody saw; it is now the token the
+       shop stencils, and his shop has no hyphen stencil. */
+    expect(lines[3]).toBe("0001,Standard Panel,N1,48,96,32,1,");
+    expect(lines[4]).toBe("0002,Standard Panel,N2,48,96,32,1,");
   });
 
-  it("⚠ carries the install position when one is handed in — B35", () => {
+  it("⚠ carries the install STEP when one is handed in — B35, unpadded by B36", () => {
+    /* ⚠ **`7`, not `0007`, and that is the fix.** A zero-padded step beside a
+       zero-padded panel number was two four-digit tokens on one row with
+       nothing to tell a reader which was the identity. */
     const sequence = new Map([
-      [panelCodeKey("Wall panel", "N1", 0), "0007"],
-      [panelCodeKey("Wall panel", "N2", 1), "0008"],
+      [panelKey("Wall panel", "N1", 0), 7],
+      [panelKey("Wall panel", "N2", 1), 8],
     ]);
     const withSequence = buildTip4urTimeCsv({
       projectName: "P",
       projectId: "id",
-      panels: tip4urTimePanels(assemblies, ledger, sequence),
+      panels: tip4urTimePanels(assemblies, numbers(ledger), sequence),
     })
       .trimEnd()
       .split(CRLF);
-    expect(withSequence[3]!.endsWith(",1,0007")).toBe(true);
-    expect(withSequence[4]!.endsWith(",1,0008")).toBe(true);
+    expect(withSequence[3]!.endsWith(",1,7")).toBe(true);
+    expect(withSequence[4]!.endsWith(",1,8")).toBe(true);
   });
 
-  it("⚠ the two columns mean OPPOSITE things, and the file keeps them apart", () => {
+  it("⚠ the two columns mean OPPOSITE things, and now they do not even LOOK alike", () => {
     /* `Panel code` is stamped once and stored so it can never move — that is
-       what a crew's pay hangs on. `Install no` renumbers the moment the design
-       changes. A crew app sorts by one and joins on the other; swapping the
-       roles is the one mistake that would cost somebody money. */
-    const sequence = new Map([[panelCodeKey("Wall panel", "N1", 0), "0007"]]);
-    const rows = tip4urTimePanels(assemblies, ledger, sequence);
-    expect(rows[0]!.code).toBe("P-0001");
-    expect(rows[0]!.installNumber).toBe("0007");
-    /* And a panel the sequence has not placed keeps its code and gets no
-       invented position. */
-    expect(rows[1]!.code).toBe("P-0002");
-    expect(rows[1]!.installNumber).toBe("");
+       what a crew's pay hangs on. The install step renumbers the moment the
+       design changes. A crew app sorts by one and joins on the other; swapping
+       the roles is the one mistake that would cost somebody money, and the
+       four-digit string versus the plain integer is what makes that visible on
+       the row rather than only in a doc comment. */
+    const sequence = new Map([[panelKey("Wall panel", "N1", 0), 7]]);
+    const rows = tip4urTimePanels(assemblies, numbers(ledger), sequence);
+    expect(rows[0]!.code).toBe("0001");
+    expect(rows[0]!.installStep).toBe(7);
+    /* And a panel the sequence has not placed keeps its number and gets no
+       invented position — null, not 0, which would sort first and read as
+       "install this before everything else". */
+    expect(rows[1]!.code).toBe("0002");
+    expect(rows[1]!.installStep).toBe(null);
   });
 
   it("quotes a project name containing a comma rather than shifting a column", () => {
@@ -253,7 +278,7 @@ describe("⚠ the file's own shape", () => {
 });
 
 describe("tip4urTimeExportProblems — his acceptance check, enforced before the file leaves", () => {
-  const ok = { code: "P-0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, sqFt: (48 * 96) / 144, countsAsPanel: true, installNumber: "0001" };
+  const ok = { code: "0001", panelType: "Standard Panel", label: "N1", widthIn: 48, heightIn: 96, sqFt: (48 * 96) / 144, countsAsPanel: true, installStep: 1 };
 
   it("passes a sound export", () => {
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [ok] })).toEqual([]);
@@ -285,8 +310,17 @@ describe("tip4urTimeExportProblems — his acceptance check, enforced before the
     ).toEqual([]);
   });
 
-  it("catches a panel that never got a code", () => {
+  it("catches a panel that never got a number", () => {
     expect(tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: [{ ...ok, code: "" }] })).toHaveLength(1);
+  });
+
+  it("⚠ counts unnumbered panels ONCE — a project not yet issued is one problem, not 134", () => {
+    /* It used to push a line per panel, so the notice opened with three
+       identical sentences and never said the actual reason. */
+    const none = Array.from({ length: 134 }, (_, i) => ({ ...ok, code: "", label: `N${i + 1}` }));
+    const problems = tip4urTimeExportProblems({ projectName: "P", projectId: "id", panels: none });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("134 panels have no number yet");
   });
 });
 
@@ -302,8 +336,8 @@ describe("⚠ a Safety Gap is claimable, earns its square footage, and is NOT a 
     assembly("Wall panel", "Safety Gap", ["N2"], 0.75, 120, false),
     assembly("Roof bearing", "Box Beam", ["B1"], 240, 15.5, false),
   ];
-  const ledger = stampPanelCodes(tip4urTimePanelKeys(assemblies), EMPTY_PANEL_CODE_LEDGER);
-  const panels = tip4urTimePanels(assemblies, ledger);
+  const ledger = stamp(assemblies);
+  const panels = tip4urTimePanels(assemblies, numbers(ledger));
 
   it("exports a row for it, with its own code", () => {
     expect(panels).toHaveLength(3);
@@ -313,7 +347,7 @@ describe("⚠ a Safety Gap is claimable, earns its square footage, and is NOT a 
   it("writes 0 in the last column for the gap and the beam, 1 for the panel", () => {
     const csv = buildTip4urTimeCsv({ projectName: "P", projectId: "id", panels });
     const lines = csv.trimEnd().split("\r\n");
-    /* ⚠ `Counts as panel` is no longer the LAST column — `Install no`
+    /* ⚠ `Counts as panel` is no longer the LAST column — `Install step`
        follows it — so these read the counts column by position rather than
        by being last. A test that asserts "ends with" is a test that breaks
        every time a column is appended, and appending is how this file stays
@@ -326,7 +360,7 @@ describe("⚠ a Safety Gap is claimable, earns its square footage, and is NOT a 
        panel."* The two dimensions beside it are unchanged and deliberately
        do not multiply out to it \u2014 the missing factor is the 15.5in through
        the wall, which is not a column. */
-    expect(lines[4]).toBe("P-0002,Safety Gap,N2,0.75,120,12.92,0,");
+    expect(lines[4]).toBe("0002,Safety Gap,N2,0.75,120,12.92,0,");
     expect(countsCell(lines[5]!)).toBe("0");
   });
 

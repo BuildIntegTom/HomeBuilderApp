@@ -228,6 +228,39 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, B36 strides 2 and 3 (one panel number, and the label IS the
+  number): ZERO delta.** **186 problems**, every rule byte-identical
+  (`preserve-manual-memoization` 81, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **TWO new `useMemo`s cost nothing, and one of them REPLACED a memo**, which
+  is worth separating. `panelNumbers` took the place of `installNumberByKey`
+  and grew two deps (`exportableAssemblies`, `panelNumberLedger`) — neither
+  flagged, so the 2026-11-15 rule holds again: one per ALREADY-FLAGGED value a
+  dep array touches, nothing otherwise. `wallPanelNumberByName` is brand new,
+  over `[allInstances, panelNumbers]`, and is free for the same reason.
+
+  ⚠ **And `panelNumberContext` is deliberately NOT a memo** — a three-field
+  object literal read off values already in scope, rebuilt every render and
+  passed to six fabrication sheets. Memoising it would have cost one per
+  flagged dep for no benefit; the sheets are not memo-gated on it.
+
+  ⚠ **The rest of a large change measured zero**: two new panel-catalog modules
+  and a deleted formatter, a rewritten CSV column, a renamed `PanelInstance`
+  field, an optional prop threaded through FOUR drawing components, a new
+  Review Log memo and two new test files.
+
+  ⚠ **AND THE GATE MISSED THE ONLY REAL DEFECT, for the fifth time this week.**
+  The new Review Log entry was filed with `status: "confirmed"`, and
+  `toReviewLog` (calc-engine) keeps **only** `pending-BI-confirmation` entries
+  — so it rendered in **no build at all** while `tsc`, `vitest` and lint passed
+  clean. Found by reading the Review Log in the browser after pressing the new
+  button. The narrow lesson: **a Review Log entry that is not
+  `pending-BI-confirmation` does not exist.** The wider one is the same as
+  2026-11-17's: a thing with no test and no type is only visible where a person
+  looks at it.
+
 - **2026-11-18, hold-the-pitch + B36 stride 1: ZERO delta.** **186 problems**,
   every rule byte-identical (`preserve-manual-memoization` 81,
   `no-unused-vars` 35, `refs` 29, `no-unescaped-entities` 15,

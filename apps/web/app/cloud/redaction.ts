@@ -169,6 +169,8 @@ export const MONEY_CLASSIFICATION = {
   jackStudConfig: "not-money",
   tip4urTimeProjectId: "not-money",
   tip4urTimePanelCodes: "not-money",
+  /* A date, not a price. */
+  panelNumbersIssuedAt: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 
 /** The keys classified `money`, as a literal union. Derived, never restated. */

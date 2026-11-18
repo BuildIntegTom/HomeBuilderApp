@@ -67,9 +67,10 @@ describe("the centre wall's panels are named C1, C2, …", () => {
     /* ⚠ **This asserted `C2` until 2026-11-17, and the reason it had to change
        is a KEY COLLISION rather than taste.** A panel's name is
        `${series}${panelNumber}`, so `C2` + `1` and `C` + `21` were both `C21`
-       — and that string is the key `panelCodeKey` and `installSequenceKey`
-       both store against. Measured through the real ledger, two different
-       panels took ONE crew code.
+       — and that string is the key a panel's number is stored against
+       (`panelKey`; at the time this was found it was TWO byte-identical
+       formulas). Measured through the real ledger, two different panels took
+       ONE crew code.
 
        ⚠ **The rationale this test used to carry was also false.** It said the
        numeric suffix matched "a second N wall", but `panelInstances` counts

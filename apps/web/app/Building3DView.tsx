@@ -27,7 +27,7 @@ import {
   type PanelSlotBox3D,
   type WallRunStop,
 } from "@building-integrity/geometry";
-import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
+import { allPanelInstances, combinedPanelLabel, exportGroupLabel, type PanelInstance } from "./panelInstances";
 import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWallBeam } from "./midWallBeam";
 import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
@@ -951,6 +951,16 @@ interface Building3DViewProps {
   /** Jack stud construction + standard panel width — feed window/door
    * opening assemblies (header/jack-studs/sill) via buildOpeningAssemblyMembers. */
   jackStudConfig: JackStudConfig;
+  /**
+   * ⚠ **THE PANEL'S OWN NUMBER — `0042` — by instance name. B36 stride 3,
+   * 2026-11-18: *"the label IS the number"*.**
+   *
+   * Handed in, every panel in this view is labelled by its NUMBER rather
+   * than by `N3`, which is its LOCATION and is a separate fact. Omitted, the
+   * view falls back to the location labels it has always shown — which is
+   * what a caller with no project context should get, rather than blanks.
+   */
+  panelNumberByName?: ReadonlyMap<string, string>;
   standardWidthIn: number;
   /** Bale Foundation floor system (Tommy: "the default option is the
    * double 2x6 + 1.5in gap 'bale foundation'") — Ring A/Ring B/field-stack
@@ -1489,6 +1499,7 @@ export default function Building3DView({
   bracingStyle = "chevron",
   nailerOffsetIn = 0,
   jackStudConfig,
+  panelNumberByName,
   standardWidthIn,
   isBaleFoundationFloor = false,
   showFloorPanels = false,
@@ -2910,11 +2921,18 @@ export default function Building3DView({
        other than the panel schedule is a model nobody can check against the
        schedule. The wall/slot string stays as the fallback for anything the
        instance pipeline does not name (and as the band suffix), so nothing
-       ever exports as an empty group. */
+       ever exports as an empty group.
+
+       ⚠ **B36 stride 3 — the NUMBER leads and the location follows it in the
+       same token**: `0042_N3`. That is the one place in this stride where the
+       two facts ARE concatenated, and it is forced — a group name in an OBJ
+       file is a single string with nowhere to put a second field. Number
+       first so the Outliner sorts in panel order; the location kept because
+       it is what somebody standing in the model is looking for. */
     const toWorldPlacedPanel =
       (labelPrefix: string, worldYIn: number, instancesBySlot: Map<string, PanelInstance[]>) =>
       ({ box, members }: { box: (typeof slotRenderData)[number]["box"]; members: PanelMember[] | null }): WorldPlacedPanel => ({
-        label: `${labelPrefix}${combinedPanelLabel(instancesForBox(instancesBySlot, box)) || `${box.wallId}_${box.slotIndex}`}${box.midWallBandIndex !== undefined ? `_band${box.midWallBandIndex}` : ""}`,
+        label: `${labelPrefix}${exportGroupLabel(instancesForBox(instancesBySlot, box), panelNumberByName) || `${box.wallId}_${box.slotIndex}`}${box.midWallBandIndex !== undefined ? `_band${box.midWallBandIndex}` : ""}`,
         worldXIn: box.anchorX * IN_PER_FT,
         worldZIn: box.anchorZ * IN_PER_FT,
         worldYIn: worldYIn + box.yOffsetFt * IN_PER_FT,
@@ -3507,7 +3525,7 @@ export default function Building3DView({
                   />
                   <WallPanelLabel
                     faces={["top"]}
-                    text={combinedPanelLabel(instancesForBox(groundInstancesBySlot, box))}
+                    text={combinedPanelLabel(instancesForBox(groundInstancesBySlot, box), panelNumberByName)}
                     widthFt={box.widthFt}
                     heightFt={box.heightFt}
                     depthFt={box.depthFt}
@@ -3571,7 +3589,7 @@ export default function Building3DView({
                   />
                   <WallPanelLabel
                     faces={["top"]}
-                    text={combinedPanelLabel(instancesForBox(secondStoryInstancesBySlot, box))}
+                    text={combinedPanelLabel(instancesForBox(secondStoryInstancesBySlot, box), panelNumberByName)}
                     widthFt={box.widthFt}
                     heightFt={box.heightFt}
                     depthFt={box.depthFt}

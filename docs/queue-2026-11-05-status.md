@@ -190,8 +190,8 @@ is cut, what sets the radius) was answering the wrong question.
     and the one width a corner panel never has. *Sweep the size the app emits,
     not the size the constant is named after.*
 
-14. **B36 — the panel's name is its number.** ✅ **STRIDE 1 BUILT 2026-11-18**;
-    strides 2–3 still queued. **Stride 1 closed the key collision.** A series
+14. **B36 — the panel's name is its number.** ✅ **ALL THREE STRIDES BUILT
+    2026-11-18.** **Stride 1 closed the key collision.** A series
     is now all LETTERS and a panel number all digits — `C`, `CB`, `CC`, … — so
     `C21` can only be wall `C` panel 21. ⚠ A separator was the obvious fix and
     the SHOP rules it out: *"there is no huphen stencil"*. ⚠ The rationale the
@@ -202,7 +202,7 @@ is cut, what sets the radius) was answering the wrong question.
     exposure, nothing in fabrication. Plan for strides 2–3 (one stamped number,
     the label is the number) in
     `Claude outputs/panel-naming-plan-2026-11-17.md`, whose separator option is
-    now struck out.
+    now struck out. **Strides 2 and 3 are item 16 below, and they are done.**
 
 15. **Hold the pitch on resize + a ninth footprint rebuild.** ✅ **BUILT
     2026-11-18.** His *"hold the pitch on resize"*. ⚠ Verifying it found that
@@ -213,24 +213,55 @@ is cut, what sets the radius) was answering the wrong question.
     still dropped, because `resizeSlotsForShapeChange` walks the outline only.
     The footprint and the slots are two paths and only one had been fixed.
 
-16. **B36 — the panel's name is its number (strides 2–3).** 📋 **QUEUED 2026-11-17**,
-    planned in `Claude outputs/panel-naming-plan-2026-11-17.md`. He likes the
-    `0001` scheme and asked for a foolproof version: *"who cares if at the
-    begining of the design the panels jump around drastically."* He can have
-    it — the mechanism already exists as the Tip4urTime code (derived while
-    designing, **stamped at issue**, never reissued, never reused). ⚠ **And
-    the question turned up a real latent defect:** the concatenated name is the
-    KEY both numbering systems are stored against, and `C2`+`1` is the same
-    string as `C`+`21`. Measured through the real ledger: **two different
-    panels, one code** — the exact failure that module's own comment warns
-    about. Not reachable on today's tiles (needs a 21-panel wall plus a second
-    wall in its series) but the Multiplex now ships `C`, `C2`, `C3` by default.
-    Three strides: close the collision (with a ledger migration), merge the
-    install number and the crew code into ONE stamped number, then make the
-    number the label and the wall a separate location field. ⚠ His `i`/`e`/`x`
-    idea and functional names (`RIDGE1`) are both argued against in the plan,
-    with reasons: `I` reads as `1` on a shop label, and a name that says what a
-    wall DOES goes stale when the roof changes.
+16. **B36 — the panel's name is its number (strides 2–3).** ✅ **BUILT
+    2026-11-18**, planned in `Claude outputs/panel-naming-plan-2026-11-17.md`.
+    His ask: *"gosh i do like the 0001 naming convention though... if there
+    was some fool proof way to make 0001 naming scheme work id be open to
+    it."* He has it.
+
+    ⚠ **THE HAZARD WAS WORSE THAN THE PLAN SAID.** Three numbers sat on one
+    panel and two were four digits long — and those two counted in
+    **different orders**: crew codes were stamped walking the EXPORT
+    PIPELINE's list (walls, roof bearing, beams, decks) while B35's install
+    number counted in his own install order. `P-0028` and install `0028`
+    were different panels from the very first export, and both were shown to
+    crews. That is the literal answer to *"wheres the 0028?"*.
+
+    **One number now, and stamping it IN INSTALL ORDER is what makes the
+    merge invisible**: a provisional number is the install position, so the
+    number a person already read is the number that freezes. Measured live
+    on the Tiny House: 86 panels, press **Issue for fabrication**, **zero
+    numbers moved.** Widening 24ft to 25ft then added 4 panels, which showed
+    `—` rather than a borrowed number and took `0087`—`0090` on the next
+    issue while the first 86 held.
+
+    ⚠ **An install STEP is a plain integer now** (*"step 42 of 134"*), and
+    `formatInstallSequenceNumber` is DELETED — the zero-padding was the
+    whole mechanism of the confusion. `panelCodeKey` and
+    `installSequenceKey`, two byte-identical bodies kept equal by a test
+    because neither module could import the other, are one `panelKey`.
+
+    **Stride 3**: the plan canvas, the Plan View sheet, every elevation, the
+    3D view and the fabrication chips label by NUMBER with `N3` beside it as
+    its own location field. `PanelInstance.panelNumber` is renamed
+    `indexInSeries`. ⚠ The one forced concatenation is an OBJ group name
+    (`0042_N3`), which is a single string with nowhere to put a second
+    field.
+
+    ⚠ **CROSS-REPO**: the crew CSV's `Panel code` carries `0042` not
+    `P-0042`, and `Install no` is renamed `Install step` with a plain
+    integer. **Tip4urTime's importer needs to know about both.**
+
+    ⚠ **And the gate missed a defect again, found only in the browser**:
+    `toReviewLog` keeps only `pending-BI-confirmation` entries, so the
+    issued-state line (filed `confirmed`) rendered in no build while all
+    three gates passed. The filter is right — a cleanly issued project is
+    not a review item — so the log is silent then and speaks only for
+    panels with no number or numbers with no panel.
+
+    His `i`/`e`/`x` idea and functional names (`RIDGE1`) are argued against
+    in the plan, with reasons: `I` reads as `1` on a shop label, and a name
+    that says what a wall DOES goes stale when the roof changes.
 
 13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3, 3c AND 4 BUILT 2026-11-17.**
     **Stride 4: the tile, at his 8:12, with a Four-plex.** The tile states

@@ -52,4 +52,6 @@ export * from "./shopItemFace";
 export * from "./materialCosts";
 export * from "./tip4urTimeCsv";
 export * from "./installSequence";
+export * from "./panelKey";
+export * from "./panelNumber";
 export * from "./strawFillBox";
