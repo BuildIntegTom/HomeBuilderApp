@@ -62,6 +62,25 @@ export interface StarterPlan {
   /** Multiplex only: one more interior wall per side, under each roof purlin.
    *  See `MultiplexFootprintOptions.roofBearingWalls`. */
   roofBearingWalls?: boolean;
+  /**
+   * ⚠ **A pitch the TILE states, rather than the app's 4:12 default — B34
+   * stride 4.** His Multiplex is **8:12**, his own number, reaching for the
+   * loft headroom he mentioned. Omitted on every other tile, whose roofs are
+   * deliberately *"his own dimensions"* and nothing else.
+   */
+  roofPitchIn12?: number;
+  /**
+   * ⚠ **How many storeys this tile draws.** 2 is his four-plex: *"the same
+   * drawing, except with another story"*, and **the upper centre wall BEARS ON
+   * the lower** rather than running full height — his answer, and how the
+   * app already stacks every wall.
+   *
+   * ⚠ **A two-storey tile ships with NO WAY UP**, because he deferred stairs
+   * himself (*"a whole nother structural commercial thing i'm not ready for
+   * yet"*). That has to be SAID on the tile rather than discovered, which is
+   * what the option's own description does.
+   */
+  stories?: 1 | 2;
   widthFt: number;
   depthFt: number;
   /**
@@ -121,6 +140,12 @@ const CINDY_DEPTH_FT = 34 + 10 / 12;
  *  it butts, so the thickness is part of the plan, not a setting. */
 const DEFAULT_MULTIPLEX_THICKNESS_IN = 15.5;
 
+/** ⚠ **His own 8:12**, stated here rather than inherited from the editor's
+ *  4:12 default. It is the reason the purlin walls exist: at 8:12 an 18ft roof
+ *  panel reaches 15.0ft of ground and each side of a 36ft building covers 18ft,
+ *  so without a bearing line this tile could not be roofed at all. */
+const MULTIPLEX_ROOF_PITCH_IN12 = 8;
+
 export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
   {
     id: "tiny-house",
@@ -143,7 +168,7 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
   {
     id: "multiplex",
     name: "Multiplex",
-    blurb: "Two one-bedrooms either side of a load-bearing straw wall that carries the ridge.",
+    blurb: "One-bedrooms either side of a load-bearing straw wall that carries the ridge.",
     /* ⚠ **His 36x36, and 36 ft is the OUTSIDE dimension — his own answer.**
        FIVE wall thicknesses cross it: two exterior, the centre wall, and the
        two purlin walls stride 3c added. So it is four rooms of 7'-4⅝", which
@@ -154,16 +179,37 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
        drawing, except with another story"*) and his 8:12 pitch arrive with the
        roof, which is the next stride — a tile that promised an upper floor
        before there was a way up to it would be a drawing, not a plan. */
+    /* ⚠ **8:12 is HIS number**, not the app's 4:12 default — he picked it
+       reaching for the loft headroom he mentioned, and it is why stride 3c's
+       purlin walls had to exist first: at 8:12 an 18ft roof panel reaches only
+       15.0ft of ground, against the 18ft each side of this building covers. */
     options: [
       {
         id: "duplex",
-        label: "36 × 36 ft",
+        label: "Duplex — 36 × 36 ft",
         plan: {
           shape: "multiplex",
           widthFt: 36,
           depthFt: 36,
           thicknessIn: DEFAULT_MULTIPLEX_THICKNESS_IN,
           roofBearingWalls: true,
+          roofPitchIn12: MULTIPLEX_ROOF_PITCH_IN12,
+        },
+      },
+      {
+        id: "four-plex",
+        /* ⚠ **The label says the missing stair out loud.** His own deferral,
+           and a tile that promised an upper floor without saying there is no
+           way up to it would be a drawing rather than a plan. */
+        label: "Four-plex — two storeys, no stair yet",
+        plan: {
+          shape: "multiplex",
+          widthFt: 36,
+          depthFt: 36,
+          thicknessIn: DEFAULT_MULTIPLEX_THICKNESS_IN,
+          roofBearingWalls: true,
+          roofPitchIn12: MULTIPLEX_ROOF_PITCH_IN12,
+          stories: 2,
         },
       },
     ],

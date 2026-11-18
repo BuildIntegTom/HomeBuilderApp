@@ -407,6 +407,47 @@ decision. Three shapes it could take: a separator (`C2-1`), a letter per wall
 (`CA1`, `CB1`, `CC1`), or names that say what the wall does (`RIDGE1`,
 `PURLIN-W1`).
 
+## Stride 4 — the tile, at his 8:12, with a Four-plex. BUILT 2026-11-17
+
+The tile states its own pitch and its own storey count.
+
+- **8:12 is his**, not the app's 4:12. Measured live: a **12'-0" ridge rise**
+  over an 18ft half-span. It is why stride 3c had to come first.
+- **Four-plex**: *"the same drawing, except with another story"*, the upper
+  centre wall **bearing on** the lower. Measured: **126 wall panels, exactly
+  twice the single-storey 63**; 8 window pairs against 4, 6 doors against 3.
+- ⚠ The option LABEL says it: *"Four-plex — two storeys, no stair yet"*.
+
+### ⚠ Stating a pitch exposed a defect older than the tile
+
+`refreshRoofForShapeChange` re-derives the roof when a shape change
+invalidates it — and it re-derived at the **4:12 default**. A roof set to
+8:12 by hand came back 4:12 after one drag, silently, with every gable tile,
+roof panel and the price following it down. Unhit only because every building
+was DRAWN at 4:12, so the default was right by accident.
+
+Fixed by reading the pitch back out of the stored rise. Both directions live in
+one module so they cannot disagree about the run or the heel seat. The round
+trip is **bounded, not exact** — the rise rounds to a whole inch, so a pitch
+returns within half an inch of rise, about 0.03:12 on an 18ft run. Reporting
+7.97:12 is honest; snapping to 8 would hide a real drift.
+
+### ⚠ Left for you: a resize carries the RISE, so the PITCH drifts
+
+Separate and pre-existing. Measured on The Tank: depth 24ft to 22ft left the
+ridge rise at 4'-0", which over the new 11ft half-span is **4.36:12**, not the
+4:12 it was drawn at. Defensible as *"do not throw away a roofline somebody
+shaped by hand"* — but it means a tile that states a pitch does not keep it
+through a resize. **Hold the rise or hold the pitch is your call.**
+
+### ⚠ What is NOT browser-verified
+
+The 8:12 tile, the four-plex's two storeys and the label were all checked live.
+The **re-derive path that keeps the pitch was not** — the pitch dial does not
+accept a typed or dragged value through automation, so that path rests on
+fifteen unit tests of the pure module, including an exact round trip and a test
+that 4:12 and 8:12 do not read back as each other.
+
 ## Why it is worth doing beyond this one tile
 
 An interior load-bearing wall is the missing piece for every building that is

@@ -51,14 +51,31 @@ describe("the starter templates are his six, plus the Multiplex", () => {
              walls it runs into, so without a thickness its length cannot be
              worked out at all. */
           t.id === "multiplex"
-            ? /* ⚠ **And `roofBearingWalls` is a THIRD kind of key again** — not a
-                 property of his building and not a geometry input, but a
-                 STRUCTURAL CHOICE he made (2026-11-17: a wall under each roof
-                 purlin, over posts, struts and a loft knee wall). It is on the
-                 plan rather than in a live default because without it this
-                 building cannot be roofed at all: 18ft a side against the
-                 15.0ft an 18ft panel reaches at 8:12. */
-              ["depthFt", "roofBearingWalls", "shape", "thicknessIn", "widthFt"]
+            ? /* ⚠ **The Multiplex states FOUR things, and each is a different
+                 KIND of statement** — which is why this tile is the one
+                 exception to "a template carries no roof".
+
+                 - `thicknessIn`: a geometry INPUT. The centre wall butts the
+                   inside faces of the walls it runs into, so without it the
+                   wall's length cannot be worked out at all.
+                 - `roofBearingWalls`: a STRUCTURAL CHOICE he made (a wall
+                   under each roof purlin, over posts, struts and a loft knee
+                   wall). Without it this building cannot be roofed: 18ft a
+                   side against the 15.0ft an 18ft panel reaches at 8:12.
+                 - `roofPitchIn12`: **his own 8:12**, and the reason it does
+                   NOT violate the rule above is that the rule is about not
+                   going stale against a DEFAULT THAT LATER MOVES. 8:12 is a
+                   property of this building, like the Cindy's thickness. If
+                   the app's default pitch became 6:12 tomorrow, the Multiplex
+                   should still be 8:12.
+                 - `stories`: what the tile IS. His four-plex is "the same
+                   drawing, except with another story".
+
+                 ⚠ Only the four-plex carries `stories`, so the two options
+                 differ and this is asserted per option rather than per tile. */
+              o.plan.stories === undefined
+                ? ["depthFt", "roofBearingWalls", "roofPitchIn12", "shape", "thicknessIn", "widthFt"]
+                : ["depthFt", "roofBearingWalls", "roofPitchIn12", "shape", "stories", "thicknessIn", "widthFt"]
             : t.id === "the-cindy"
               ? ["depthFt", "shape", "thicknessIn", "widthFt"]
               : o.plan.courtyardBuildingWidthFt !== undefined

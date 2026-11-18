@@ -228,6 +228,49 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-17, B34 stride 4 (the Multiplex tile at 8:12): ZERO delta, after a
+  +3 that was diagnosed and fixed rather than recorded.** Final: **186
+  problems**, every rule byte-identical to the stride-3c run
+  (`preserve-manual-memoization` 81, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **THE FIND, AND IT IS A NEW RULE: reading a component value from a
+  handler declared ABOVE it costs this budget.** The first run came back
+  `preserve-manual-memoization` **81 -> 84, +3**, and the source-line diff
+  printed three lines that are all the same cause:
+
+  ```
+  +1  roofFormFromProfile,
+  +1  [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight],
+  +1  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, unitSystem]);
+  ```
+
+  Nothing was added to those arrays. **`roofFormFromProfile` itself BECAME a
+  flagged value**, and then cost one in each of the three dep arrays that
+  touch it — including one array that was already flagged for a different
+  dep, which is why the multiset diff shows it as +1 rather than as unchanged.
+
+  The cause: `refreshRoofForShapeChange` (declared around line 4,100) started
+  reading `roofFormFromProfile` (declared around line 8,450). The value escapes
+  into a function defined *before* it, so the compiler stops treating it as
+  preservable and everything downstream of it flags.
+
+  ⚠ **Fixed rather than recorded as an exception, and the fix was also more
+  correct.** The derivation moved into `roofPitchFromRise.ts` as a pure
+  `roofFormFromProfilePositions(walls, gableEndWallIds, positions)`. The
+  handler now asks it about the **OLD footprint**, which is the honest question
+  anyway — the stored rise was measured under the old building's form, not
+  the new one's. Same family as the 2026-11-16 note about a plain helper
+  function in the component body: **if a handler needs a derived value, give it
+  a pure function, not a closure over the component's own const.**
+
+  ⚠ **`no-unused-vars` then read 36**: `gableProfilePointIsShedEnd` in
+  `page.tsx`, dead the moment the derivation moved out — the only remaining
+  mention was in a comment. Removed, not silenced. **Third time this week that
+  an extraction orphaned its import**, so it is worth making a habit: after
+  moving a derivation into a module, grep the old file for the helpers it used.
+
 - **2026-11-17, B34 stride 3c (a wall under each roof purlin), +1.**
   `preserve-manual-memoization` 80 -> 81, **186 problems**. Every other rule
   byte-identical and no correctness rule moved (`exhaustive-deps` 12, `refs` 29,

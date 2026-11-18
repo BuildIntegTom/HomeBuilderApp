@@ -190,7 +190,37 @@ is cut, what sets the radius) was answering the wrong question.
     and the one width a corner panel never has. *Sweep the size the app emits,
     not the size the constant is named after.*
 
-13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3 AND 3c BUILT 2026-11-17.**
+14. **B36 — the panel's name is its number.** 📋 **QUEUED 2026-11-17**,
+    planned in `Claude outputs/panel-naming-plan-2026-11-17.md`. He likes the
+    `0001` scheme and asked for a foolproof version: *"who cares if at the
+    begining of the design the panels jump around drastically."* He can have
+    it — the mechanism already exists as the Tip4urTime code (derived while
+    designing, **stamped at issue**, never reissued, never reused). ⚠ **And
+    the question turned up a real latent defect:** the concatenated name is the
+    KEY both numbering systems are stored against, and `C2`+`1` is the same
+    string as `C`+`21`. Measured through the real ledger: **two different
+    panels, one code** — the exact failure that module's own comment warns
+    about. Not reachable on today's tiles (needs a 21-panel wall plus a second
+    wall in its series) but the Multiplex now ships `C`, `C2`, `C3` by default.
+    Three strides: close the collision (with a ledger migration), merge the
+    install number and the crew code into ONE stamped number, then make the
+    number the label and the wall a separate location field. ⚠ His `i`/`e`/`x`
+    idea and functional names (`RIDGE1`) are both argued against in the plan,
+    with reasons: `I` reads as `1` on a shop label, and a name that says what a
+    wall DOES goes stale when the roof changes.
+
+13. **B34 — Multiplex.** ✅ **STRIDES 1, 2, 3, 3c AND 4 BUILT 2026-11-17.**
+    **Stride 4: the tile, at his 8:12, with a Four-plex.** The tile states
+    its own pitch (12'-0" rise over an 18ft half-span, measured live) and
+    its own storey count; the four-plex draws 126 wall panels, exactly twice
+    the single-storey 63, and its LABEL says there is no stair yet. ⚠ It
+    exposed a defect older than the tile: a resize that re-derives the roof
+    reset the pitch to the app's 4:12 DEFAULT, silently. Fixed by reading the
+    pitch back out of the stored rise (`roofPitchFromRise.ts`, both
+    directions in one module so they cannot drift). ⚠ Left for him: a resize
+    that does NOT re-derive carries the RISE, so the pitch drifts — measured,
+    4.00:12 became 4.36:12 on a 2ft depth change. Hold the rise or hold the
+    pitch is his call.
     **Stride 3c: a wall under each roof purlin — his answer** over posts to
     the floor, raking struts and a loft knee wall. A plane crossed by an
     interior wall builds TWO bands of panels, each bearing on that wall, so

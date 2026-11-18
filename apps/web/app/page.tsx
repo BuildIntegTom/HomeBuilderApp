@@ -41,7 +41,6 @@ import {
   gableEndWallIdsFor,
   simpleRoofPlanes,
   GABLE_SHED_SNAP_THRESHOLD_IN,
-  gableProfilePointIsShedEnd,
   computePanelLoadOrder,
   computePanelsPerStack,
   computePierGrid,
@@ -526,6 +525,7 @@ import { isGablePeakColumn } from "./panelInstances";
 import { applyDrawTimeBracing } from "./drawTimeBracing";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 import HomePage from "./HomePage";
+import { pitchFromStoredRiseFt, riseFtForPitch, roofFormFromProfilePositions } from "./roofPitchFromRise";
 import { footprintForPlan, type StarterPlan } from "./starterTemplates";
 import { bigHeaderFaceAreaSqFt } from "./bigHeaderTakeoff";
 import { toExportableAssemblies } from "./projectExportAssemblies";
@@ -4161,8 +4161,27 @@ export default function LayoutEditor() {
     newFp: Footprint,
     slotsByWallId: Record<string, PanelSlot[]>,
   ): Record<string, PanelSlot[]> => {
-    const verdict = roofShapeChangeVerdict(oldFp, newFp, { roofEnabled, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
-    if (verdict.rederive) return applyRoofDefaultsForFootprint(newFp, slotsByWallId);
+    /* ⚠ **THE PITCH THE BUILDING ALREADY HAS, not the app's default.** Read
+       off the OLD footprint and the stored rise, because the re-derive below
+       is about to replace that rise with one computed over the NEW span —
+       and at the same pitch, which is the whole point. Falls back to the
+       default only when there is no rise to read. */
+    /* ⚠ **The OLD footprint's form, derived here rather than read off
+       `roofFormFromProfile`.** Two reasons and both matter: the stored rise was
+       measured under the OLD building's form, which is the honest question to
+       ask; and reading the component's own value from a handler declared ABOVE
+       it cost three `preserve-manual-memoization` errors, because the value
+       escapes into a function defined before it. */
+    const oldForm = roofFormFromProfilePositions(oldFp.walls, gableEndWallIds, gableProfilePositionsInByWallId);
+    const currentPitchIn12 =
+      pitchFromStoredRiseFt(
+        roofSpanFt(oldFp),
+        oldForm === "shed",
+        roofProfilePointHeightsFt[0],
+        roofPitchSeatContext,
+      ) ?? DEFAULT_ROOF_PITCH_IN12;
+    const verdict = roofShapeChangeVerdict(oldFp, newFp, { roofEnabled, pitchIn12: currentPitchIn12 });
+    if (verdict.rederive) return applyRoofDefaultsForFootprint(newFp, slotsByWallId, currentPitchIn12);
     /* Same roof, new lengths — see `remapEndAnchoredPositions`. */
     setGableProfilePositionsInByWallId((was) => remapEndAnchoredPositions(oldFp, newFp, was));
     return slotsByWallId;
@@ -4299,9 +4318,26 @@ export default function LayoutEditor() {
    * them — the draw path has fresh slots in hand and the resize path has
    * them in state, and neither should have to know what the other does.
    */
+  /** ⚠ **The seat context both pitch directions read**, built once here so the
+   *  forward (pitch -> rise) and inverse (rise -> pitch) calculations in
+   *  `roofPitchFromRise.ts` cannot disagree about the run or the heel. Plain
+   *  object rather than a memo: it is only ever passed straight into a pure
+   *  function, never depended on. */
+  const roofPitchSeatContext = {
+    standardWidthIn,
+    heelHeightIn: effectiveHeelHeightIn,
+    anchorMode: roofBearingAnchorMode,
+    trussPlateInsetIn,
+  };
+
   const applyRoofDefaultsForFootprint = (
     fp: Footprint,
     slotsByWallId: Record<string, PanelSlot[]>,
+    /** ⚠ **The pitch this building is drawn at.** Defaults to the app's 4:12,
+     *  which is every path that predates B34 stride 4. A starter template may
+     *  state its own (his Multiplex is 8:12), and a RESIZE passes the pitch
+     *  the building already had rather than letting it fall back here. */
+    pitchIn12: number = DEFAULT_ROOF_PITCH_IN12,
   ): Record<string, PanelSlot[]> => {
     const autoGableWallIds = roofEnabled && ringRoofGableBlockReason(fp) === null ? gableEndWallIdsFor(fp) : [];
 
@@ -4328,7 +4364,7 @@ export default function LayoutEditor() {
     /* `decideRoofForm` is his rule exactly: a shed runs one set of panels
        clear across, a peak halves that, and 18ft of panel at 4:12 reaches
        about 17.1ft of ground. */
-    const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
+    const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12 });
     const isPeaked = form.kind !== "shed";
     setRoofProfileType("peaked");
 
@@ -4338,17 +4374,7 @@ export default function LayoutEditor() {
        sidebar's own pitch dropdowns use, so this lands on the number picking
        "4/12" by hand would. A shed runs the wall's full width, a centred peak
        half of it. */
-    const wallWidthIn = acrossFt * 12;
-    const seat = resolveHeelSeat(
-      wallWidthIn,
-      standardWidthIn,
-      effectiveHeelHeightIn,
-      form.kind === "shed" ? 1 : 2,
-      roofBearingAnchorMode,
-      trussPlateInsetIn,
-    );
-    const runForPitchIn = (form.kind === "shed" ? wallWidthIn : wallWidthIn / 2) - seat.runOffsetIn;
-    const riseFt = computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn);
+    const riseFt = riseFtForPitch(acrossFt, form.kind === "shed", pitchIn12, roofPitchSeatContext);
     setRoofProfilePointHeightsFt([riseFt]);
 
     /* ⚠ **ON A MITERED SHAPE, EVERY WALL UNDER THE ROOF CARRIES A ROW — not
@@ -4379,11 +4405,11 @@ export default function LayoutEditor() {
       ? (() => {
           const roof = simpleRoofPlanes(fp, {
             form: form.kind === "shed" ? "shed" : "peaked",
-            pitchIn12: DEFAULT_ROOF_PITCH_IN12,
+            pitchIn12,
             eaveHeightFt: wallHeightFt,
           });
           if (roof.refusal !== null) return autoGableWallIds;
-          const tallWallId = form.kind === "shed" ? shedTallWallId(fp, { form: "shed", pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt }) : null;
+          const tallWallId = form.kind === "shed" ? shedTallWallId(fp, { form: "shed", pitchIn12, eaveHeightFt: wallHeightFt }) : null;
           const kept = wallRoofTopsFor(fp, roof, wallHeightFt).filter(
             (top) => top.tallerAboveEaveIn > GABLE_PANEL_MIN_HEIGHT_IN && top.wallId !== tallWallId,
           );
@@ -4416,7 +4442,7 @@ export default function LayoutEditor() {
        shed position is an absolute inch count that means nothing on a wall of
        a different length. Leaving it behind is what made one gable wall read
        as a peak and the other as a shed. */
-    const shedOptions = { form: "shed" as const, pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt };
+    const shedOptions = { form: "shed" as const, pitchIn12, eaveHeightFt: wallHeightFt };
     const shedPlane = form.kind === "shed" ? simpleRoofPlanes(fp, shedOptions).planes[0] : undefined;
     const cornerPointOf = (cornerId: string) => fp.corners.find((c) => c.id === cornerId)?.point;
     const profilePositionsInByWallId: Record<string, number[]> =
@@ -4554,7 +4580,13 @@ export default function LayoutEditor() {
    * Everything below was already generic over the footprint; only the two
    * lines that CHOSE one were specific to a drag.
    */
-  const commitNewFootprint = (fp: Footprint, origin: { x: number; y: number }) => {
+  const commitNewFootprint = (
+    fp: Footprint,
+    origin: { x: number; y: number },
+    /** ⚠ **What a starter template states about its own roof — B34 stride 4.**
+     *  Omitted (every other draw path) means the app's 4:12 default. */
+    options: { roofPitchIn12?: number } = {},
+  ): Record<string, PanelSlot[]> => {
     // Corner ids aren't shared across shapes (rectangle uses "A".."D",
     // octagon "0".."7") — a fresh draw always resets which corner is
     // least-accessible, same as it already resets openings via retile.
@@ -4625,7 +4657,11 @@ export default function LayoutEditor() {
        very first draw there is no old building to read. The pure geometry
        is computed from `fp` here instead. A shed has no ridge and gets
        none. */
-    const drawnSlots = applyRoofDefaultsForFootprint(fp, retile(fp, nextLeastAccessible, nextPrimary, {}));
+    const drawnSlots = applyRoofDefaultsForFootprint(
+      fp,
+      retile(fp, nextLeastAccessible, nextPrimary, {}),
+      options.roofPitchIn12,
+    );
     setBaseWallSlots(drawnSlots);
     recordTilingBasis(nextLeastAccessible);
     setShapeTool("edit");
@@ -4639,6 +4675,11 @@ export default function LayoutEditor() {
     // at all), so the blanket Infinity-as-old-max form is correct for all
     // of them at once.
     reconcileWallZonesForHeightChange("ground", Number.POSITIVE_INFINITY, maxPanelHeightIn, wallHeightFt, wallHeightFt);
+    /* ⚠ **Handed back, because a caller cannot read the state it just set.**
+       A template that wants a SECOND STORY has to clone the ground floor's
+       slots, and `setBaseWallSlots` above has not landed yet — reading
+       `overlayWallSlots` here would clone the PREVIOUS building. */
+    return drawnSlots;
   };
 
   /**
@@ -4692,10 +4733,35 @@ export default function LayoutEditor() {
     if (plan.thicknessIn !== undefined) setThicknessIn(plan.thicknessIn);
     const widthFt = Math.max(...fp.corners.map((c) => c.point.x)) - Math.min(...fp.corners.map((c) => c.point.x));
     const depthFt = Math.max(...fp.corners.map((c) => c.point.y)) - Math.min(...fp.corners.map((c) => c.point.y));
-    commitNewFootprint(fp, {
-      x: Math.max(20, Math.round((PLAN_CANVAS_WIDTH_PX - widthFt * SCALE_PX_PER_FT) / 2)),
-      y: Math.max(20, Math.round((PLAN_CANVAS_HEIGHT_PX - depthFt * SCALE_PX_PER_FT) / 2)),
-    });
+    const drawnSlots = commitNewFootprint(
+      fp,
+      {
+        x: Math.max(20, Math.round((PLAN_CANVAS_WIDTH_PX - widthFt * SCALE_PX_PER_FT) / 2)),
+        y: Math.max(20, Math.round((PLAN_CANVAS_HEIGHT_PX - depthFt * SCALE_PX_PER_FT) / 2)),
+      },
+      { roofPitchIn12: plan.roofPitchIn12 },
+    );
+    /* ⚠ **A SECOND STOREY, when the tile states one — B34 stride 4.** His
+       four-plex is *"the same drawing, except with another story"*, and the
+       upper centre wall BEARS ON the lower rather than running full height,
+       which is his answer and is how this app already stacks every wall.
+
+       ⚠ Cloned from the slots `commitNewFootprint` just HANDED BACK, never
+       from `overlayWallSlots`: `setBaseWallSlots` has not landed yet, so
+       reading state here would stack the PREVIOUS building's walls on top of
+       this one. `commitNewFootprint` has already cleared `secondStory`, so
+       this is setting it rather than merging.
+
+       ⚠ The upper storey takes the SAME wall height as the ground one, so
+       the tile is one building at one height rather than two guesses. */
+    if (plan.stories === 2) {
+      setSecondStory({
+        id: "second",
+        label: "Second Story",
+        wallHeightFt,
+        wallSlots: structuredClone(drawnSlots),
+      });
+    }
     setStarterTemplatesDismissed(true);
     /* ⚠ Picking a template is the one thing on Home that LEAVES Home. Tommy's
        *"just because you travel back to home doesnt reset the drawing youre
@@ -8394,17 +8460,11 @@ export default function LayoutEditor() {
    * `gableProfilePointIsShedEnd`, which is that same dead zone and the same
    * code the anchors use.
    */
-  const roofFormFromProfile: "shed" | "peaked" = [...gableEndWallIds].some((wallId) => {
-    const positionIn = gableProfilePositionsInByWallId[wallId]?.[0];
-    if (positionIn === null || positionIn === undefined) return false;
-    const wallLengthIn = (footprint?.walls.find((w) => w.id === wallId)?.lengthFt ?? 0) * 12;
-    /* A wall with no length cannot be measured along, so it cannot be the
-       thing that declares a shed. */
-    if (!(wallLengthIn > 0)) return false;
-    return gableProfilePointIsShedEnd(positionIn, wallLengthIn);
-  })
-    ? "shed"
-    : "peaked";
+  const roofFormFromProfile: "shed" | "peaked" = roofFormFromProfilePositions(
+    footprint?.walls ?? [],
+    gableEndWallIds,
+    gableProfilePositionsInByWallId,
+  );
 
   /* The ridge beam's run and its columns, for the plan view. Derived here
      rather than inside the canvas so 2D and 3D cannot disagree about where
