@@ -459,8 +459,15 @@ export function memberLocalCornersIn(member: PanelMember): [number, number, numb
   if (sectionCornersIn) {
     const nearXIn = member.position.xIn;
     const farXIn = nearXIn + memberBoxSizeIn(member).xIn;
+    /* ⚠ **A PLAN MITRE gives the two X faces DIFFERENT sections** — see
+       `sectionFarCornersIn`. Absent, both faces read the same ring, which is
+       byte-identical to every section prism written before 2026-11-18. The
+       same two rings are read again by `memberPrism`, because the overlap
+       audit builds its own solid and the two must not be allowed to disagree
+       about the shape of one board. */
+    const farRing = member.position.sectionFarCornersIn ?? sectionCornersIn;
     const near: [number, number, number][] = sectionCornersIn.map((c) => [nearXIn, c.zIn, c.yIn]);
-    const far: [number, number, number][] = sectionCornersIn.map((c) => [farXIn, c.zIn, c.yIn]);
+    const far: [number, number, number][] = farRing.map((c) => [farXIn, c.zIn, c.yIn]);
     return [...near, ...far];
   }
 

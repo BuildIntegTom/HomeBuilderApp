@@ -234,6 +234,44 @@ export interface MemberPosition {
    * of as a quad with two corners sitting on top of each other.
    */
   sectionCornersIn?: SectionSpacePoint2D[];
+  /**
+   * ⚠ **The same section at the FAR X face — an OBLIQUE SECTION PRISM, and
+   * what lets a roof panel be MITRED.**
+   *
+   * > *"i imagined roof panels to be cut plumb vertically when plan view
+   * > looking down on the building. this would in reality make an elongated
+   * > octagon roof."* — Tommy, 2026-11-18
+   *
+   * A roof panel already carries cuts in the Y-Z plane: the plumb tall end
+   * and the eave, both varying with DEPTH. A plan mitre varies with WIDTH.
+   * `sectionCornersIn` alone extrudes one section straight along X, so the
+   * two could not be composed and `floorRoofMitreUnsupportedReason` refused
+   * the pair out loud.
+   *
+   * With this set, `sectionCornersIn` is the section at the member's near X
+   * face (`position.xIn`) and this is the section at its far one
+   * (`xIn + memberBoxSizeIn(member).xIn`). Absent, the two are the same and
+   * the prism is straight — byte-identical to every section prism written
+   * before 2026-11-18.
+   *
+   * ⚠ **A VERTICAL cut is exactly a Z SHIFT between the two faces, which is
+   * why this is enough.** His mitre is a plumb plane whose plan trace is the
+   * footprint's own edge, so across a member's width the cut moves in Z and
+   * in nothing else: the section KEEPS ITS SHAPE and slides. That matters
+   * because a roof joist's eave section is FIVE-sided (the seat's taper
+   * kink), which no quad-based mechanism could have carried — here the
+   * five corners simply slide together.
+   *
+   * ⚠ Same length and same perimeter order as `sectionCornersIn`, so
+   * `memberFaceIndices`' n-gon path describes the topology unchanged.
+   * Meaningless without it.
+   *
+   * ⚠ **`memberPrism` has to be told**, exactly as it was for
+   * `trapezoidFarCornersIn`: its exact-overlap argument rests on a convex
+   * polygon extruded along ONE axis, and an oblique prism is no longer that,
+   * so any pair involving one goes through the exact 3D test instead.
+   */
+  sectionFarCornersIn?: SectionSpacePoint2D[];
 }
 
 export interface PanelMember {

@@ -241,26 +241,14 @@ export interface FloorRoofPanelOptions {
   mitreIn?: FloorRoofPanelMitre;
 }
 
-/**
- * How far a mitred panel is pulled back from its rectangle at each of its
- * four plan corners, in inches along Z. See `FloorRoofPanelOptions.mitreIn`.
- */
-export interface FloorRoofPanelMitre {
-  /** At the span's START (z = 0): the pull-back at x = 0 and at x = widthIn. */
-  startNearIn: number;
-  startFarIn: number;
-  /** At the span's END (z = lengthIn), measured back from that end. */
-  endNearIn: number;
-  endFarIn: number;
-}
-
-/** Nothing cut back: what every rectangle gets, and the identity for a merge. */
-export const NO_FLOOR_ROOF_MITRE: FloorRoofPanelMitre = {
-  startNearIn: 0,
-  startFarIn: 0,
-  endNearIn: 0,
-  endFarIn: 0,
-};
+/* ⚠ `FloorRoofPanelMitre` and `NO_FLOOR_ROOF_MITRE` MOVED to their own leaf
+   module on 2026-11-18 and are re-exported here, so no caller has to know.
+   `roofPlanMitre.ts` needs both and this module imports IT — see that file's
+   own note, and `AGENTS.md` on the import cycle that took the dev server down
+   while all three gates passed. */
+import { NO_FLOOR_ROOF_MITRE, type FloorRoofPanelMitre } from "./floorRoofPanelMitreTypes";
+import { applyRoofPlanMitre } from "./roofPlanMitre";
+export { NO_FLOOR_ROOF_MITRE, type FloorRoofPanelMitre };
 
 /**
  * True when this panel really is cut on an angle somewhere.
@@ -1813,43 +1801,26 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
  * next, not forgotten.
  */
 /**
- * ⚠ **WHY A MITRE AND A ROOF'S OWN END CUTS CANNOT BOTH BE BUILT YET — said
- * out loud rather than approximated into the picture.**
+ * Every physical member of a floor or roof panel.
  *
- * A roof panel already carries two cuts in the Y-Z plane: the plumb tall end
- * and the eave. A mitre is a cut in the X-Z plane. `MemberPosition` states in
- * its own doc comment that `sectionCornersIn` and `trapezoidCornersIn` are
- * MUTUALLY EXCLUSIVE — `memberLocalCornersIn` checks the trapezoid first, so a
- * member carrying both renders as a trapezoid and the plumb cut vanishes.
- * Composing them needs a general polyhedron, which nothing in this schema
- * expresses.
+ * ⚠ **A ROOF'S MITRE IS APPLIED AFTERWARDS, NOT DURING THE BUILD — 2026-11-18,
+ * and the order is the whole design.**
  *
- * And it is not only the drawing. A mitred eave would have to run its fascia,
- * its bearing wedge and its cap ALONG the cut line, where the apparent pitch
- * is no longer the roof's pitch — a wedge sized on 4:12 would not sit level
- * on a 45° facet. That is a fabrication question, not a rendering one.
+ * The builders below carry a FLOOR's mitre inline: its ends are plain lids and
+ * the cut reshapes them, so each one has to know. A ROOF panel is built square
+ * and then cut by a PLUMB PLANE — his own answer, *"i imagined roof panels to
+ * be cut plumb vertically when plan view looking down on the building"* — which
+ * leaves every end cut it already carries intact and means not one roof builder
+ * has to learn about mitres. See `roofPlanMitre.ts`.
  *
- * So: a FLOOR panel's mitre is built (its ends are plain lids), and a roof
- * panel's is refused here. Returns the reason, or null when the panel is
- * buildable as asked.
+ * ⚠ `floorRoofMitreUnsupportedReason` LIVED HERE and is deleted with the
+ * refusal it carried. The one refusal left is measured on real members rather
+ * than guessed from options: `applyRoofPlanMitre` reports `uncutMemberIds` for
+ * any member whose shape runs through an axis a plumb cut cannot touch.
  */
-export function floorRoofMitreUnsupportedReason(o: FloorRoofPanelOptions): string | null {
-  if (!hasFloorRoofMitre(o)) return null;
-  if (o.kind !== "roof") return null;
-  return (
-    "A roof panel cannot be mitred yet: its tall end is plumb-cut and its eave is cut back, " +
-    "and a mitre is a cut in the other plane. The floor deck is cut to the building; the roof deck " +
-    "is still laid across its bounding box."
-  );
-}
-
 export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
-  /* ⚠ The mitre is DROPPED, not approximated, where it cannot be composed
-     with a roof's own end cuts — and `floorRoofMitreUnsupportedReason` is
-     what makes that visible instead of silent. The takeoff does not pass one
-     here; this is the belt to that braces. */
-  const o: FloorRoofPanelOptions =
-    floorRoofMitreUnsupportedReason(options) === null ? options : { ...options, mitreIn: undefined };
+  const roofMitre = options.kind === "roof" && hasFloorRoofMitre(options) ? options.mitreIn : undefined;
+  const o: FloorRoofPanelOptions = roofMitre ? { ...options, mitreIn: undefined } : options;
   const plumb = plumbEndCut(o, "end");
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
   if (plumb) members.push(...buildTallEndWedge(o, plumb));
@@ -1999,6 +1970,9 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
     }
   }
 
+  if (roofMitre) {
+    return applyRoofPlanMitre(members, { widthIn: o.widthIn, lengthIn: o.lengthIn, mitreIn: roofMitre }).members;
+  }
   return members;
 }
 

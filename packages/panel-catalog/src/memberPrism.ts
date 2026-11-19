@@ -41,19 +41,32 @@ export interface Prism {
 }
 
 /**
- * ⚠ **Is this member an OBLIQUE prism — one whose two depth faces are
- * different shapes?** See `trapezoidFarCornersIn`.
+ * ⚠ **Is this member an OBLIQUE prism — one whose two end faces are different
+ * shapes?** See `trapezoidFarCornersIn` and `sectionFarCornersIn`.
  *
  * The 2D test below cannot describe one, so a pair involving an oblique member
  * is routed through `convexSolidsOverlap` instead. Everything else keeps the
  * exact 2D path it has always taken, unchanged and at the same cost.
+ *
+ * ⚠ **BOTH mechanisms, since 2026-11-18.** A gable's compound bevel makes the
+ * two DEPTH faces of a trapezoid differ; a roof panel's plan mitre makes the
+ * two WIDTH faces of a section differ. They are the same situation on two
+ * different axes, and leaving the second out would have let a mitred roof
+ * panel through the overlap audit on a solid it does not occupy.
  */
 export function memberIsOblique(member: PanelMember): boolean {
-  const { trapezoidCornersIn, trapezoidFarCornersIn } = member.position;
-  if (!trapezoidCornersIn || !trapezoidFarCornersIn) return false;
-  return trapezoidFarCornersIn.some(
-    (c, i) => Math.abs(c.xIn - trapezoidCornersIn[i]!.xIn) > EPS || Math.abs(c.zIn - trapezoidCornersIn[i]!.zIn) > EPS,
-  );
+  const { trapezoidCornersIn, trapezoidFarCornersIn, sectionCornersIn, sectionFarCornersIn } = member.position;
+  if (trapezoidCornersIn && trapezoidFarCornersIn) {
+    return trapezoidFarCornersIn.some(
+      (c, i) => Math.abs(c.xIn - trapezoidCornersIn[i]!.xIn) > EPS || Math.abs(c.zIn - trapezoidCornersIn[i]!.zIn) > EPS,
+    );
+  }
+  if (sectionCornersIn && sectionFarCornersIn) {
+    return sectionFarCornersIn.some(
+      (c, i) => Math.abs(c.yIn - sectionCornersIn[i]!.yIn) > EPS || Math.abs(c.zIn - sectionCornersIn[i]!.zIn) > EPS,
+    );
+  }
+  return false;
 }
 
 /** A shared face is contact, not overlap. Tighter than the thinnest real
@@ -84,7 +97,12 @@ export function memberPrism(member: PanelMember): Prism {
 
   if (member.position.sectionCornersIn) {
     /* A plumb-cut roof member: its bevel is already the real cut, in the
-       panel's depth/span plane, swept along the width from its min corner. */
+       panel's depth/span plane, swept along the width from its min corner.
+
+       ⚠ **The NEAR width face only.** On a MITRED roof panel the far face is
+       a different ring and this prism is not the whole solid — which is why
+       `membersOverlap` sends such a pair to the 3D test rather than here.
+       Same caveat the trapezoid branch above already carries. */
     return {
       axis: "x",
       polygon: member.position.sectionCornersIn.map((c) => ({ u: c.yIn, v: c.zIn })),

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildFloorRoofPanelMembers,
   floorRoofMitreAngleDeg,
-  floorRoofMitreUnsupportedReason,
   floorRoofMitreZRangeIn,
   floorRoofPanelCutLengthIn,
   hasFloorRoofMitre,
+  NO_FLOOR_ROOF_MITRE,
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
 import { memberPrism } from "./memberPrism";
@@ -248,7 +248,7 @@ describe("⚠ girts and blocking are clipped, or are not built", () => {
   });
 });
 
-describe("⚠ a roof panel's mitre is refused out loud, not approximated", () => {
+describe("⚠ a roof panel's mitre is BUILT now — his plumb cut, 2026-11-18", () => {
   const ROOF: FloorRoofPanelOptions = {
     kind: "roof",
     widthIn: 48,
@@ -259,23 +259,42 @@ describe("⚠ a roof panel's mitre is refused out loud, not approximated", () =>
     bearingSeatDepthIn: 15.5,
   };
 
-  it("names the reason", () => {
-    expect(floorRoofMitreUnsupportedReason(ROOF)).toBeNull();
-    const reason = floorRoofMitreUnsupportedReason({ ...ROOF, mitreIn: LEADING.mitreIn });
-    expect(reason).toContain("A roof panel cannot be mitred yet");
+  it("⚠ the panel CHANGES, where it used to come back byte-identical", () => {
+    /* This asserted the opposite until 2026-11-18: a roof's mitre was dropped
+       and `floorRoofMitreUnsupportedReason` said why. He answered both of that
+       refusal's reasons — "i dont think there should be any wedges?" and "i
+       imagined roof panels to be cut plumb vertically when plan view looking
+       down on the building" — and a plumb cut needs no general polyhedron. */
+    const asked = buildFloorRoofPanelMembers({ ...ROOF, mitreIn: LEADING.mitreIn });
+    expect(asked).not.toEqual(buildFloorRoofPanelMembers(ROOF));
   });
 
-  it("⚠ and builds the panel it CAN build, unchanged, rather than a wrong one", () => {
+  it("⚠ and the plumb END CUT survives the mitre, which is the whole trick", () => {
     const asked = buildFloorRoofPanelMembers({ ...ROOF, mitreIn: LEADING.mitreIn });
-    expect(asked).toEqual(buildFloorRoofPanelMembers(ROOF));
-    /* The plumb cut survives, which is the thing a silently-applied mitre
-       would have erased. */
     const joist = asked.find((m) => m.memberId === "joist-left-bottom")!;
+    /* Still a SECTION prism — the end cuts it carries are in the Y-Z plane and
+       the mitre is a shift in Z across X, so the two compose instead of one
+       overwriting the other. A trapezoid here would mean the plumb cut had
+       been thrown away. */
     expect(joist.position.sectionCornersIn).toBeDefined();
     expect(joist.position.trapezoidCornersIn).toBeUndefined();
+    /* And the second face is what carries the mitre. */
+    expect(joist.position.sectionFarCornersIn).toBeDefined();
   });
 
-  it("a FLOOR's mitre is never refused", () => {
-    expect(floorRoofMitreUnsupportedReason(LEADING)).toBeNull();
+  it("⚠ the eave joist's FIVE-cornered section survives too", () => {
+    /* The reason a quad-based mechanism could not have done this: the top
+       chord's eave section has a taper kink, so it has five corners. A plumb
+       cut slides them; it does not reshape them. */
+    const asked = buildFloorRoofPanelMembers({ ...ROOF, mitreIn: LEADING.mitreIn });
+    const top = asked.find((m) => m.memberId === "joist-left-top")!;
+    expect(top.position.sectionCornersIn).toHaveLength(5);
+    expect(top.position.sectionFarCornersIn).toHaveLength(5);
+  });
+
+  it("a square roof panel is untouched, byte for byte", () => {
+    expect(buildFloorRoofPanelMembers({ ...ROOF, mitreIn: NO_FLOOR_ROOF_MITRE })).toEqual(
+      buildFloorRoofPanelMembers(ROOF),
+    );
   });
 });
