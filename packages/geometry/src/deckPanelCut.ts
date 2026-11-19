@@ -46,8 +46,16 @@ export function deckRunAxis(footprint: Footprint): "x" | "y" {
  * courtyard plan changes behaviour here; a ring's real roof is R5's job and
  * does not come through this function.
  */
-export function deckSpanRangeFtAt(footprint: Footprint, runAtFt: number): { startFt: number; endFt: number } | null {
-  const runAxis = deckRunAxis(footprint);
+export function deckSpanRangeFtAt(
+  footprint: Footprint,
+  runAtFt: number,
+  /** ⚠ **The ROOF repeats along a different axis from the floor** — its panels
+   *  run along the eave, which is the ridge's axis, while a floor's run is
+   *  whichever axis its joists do not span. They agree on most buildings and
+   *  not on all. Omitted, this is the floor's own axis and nothing changes. */
+  runAxisOverride?: "x" | "y",
+): { startFt: number; endFt: number } | null {
+  const runAxis = runAxisOverride ?? deckRunAxis(footprint);
   const at = (p: Point) => (runAxis === "x" ? p.x : p.y);
   const across = (p: Point) => (runAxis === "x" ? p.y : p.x);
   const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
@@ -88,8 +96,8 @@ export function deckSpanRangeFtAt(footprint: Footprint, runAtFt: number): { star
  * five-sided part. These are the same kind of forced boundary the gable row
  * already takes from the wall below it.
  */
-export function deckRunSplitPointsIn(footprint: Footprint): number[] {
-  const runAxis = deckRunAxis(footprint);
+export function deckRunSplitPointsIn(footprint: Footprint, runAxisOverride?: "x" | "y"): number[] {
+  const runAxis = runAxisOverride ?? deckRunAxis(footprint);
   const { minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
   const runStart = runAxis === "x" ? minX : minY;
   const runEnd = runAxis === "x" ? maxX : maxY;

@@ -127,6 +127,7 @@ export const UNDO_CLASSIFICATION = {
   /* It changes what is drawn — gable tops and where the roof stops — so
      it is part of the document and belongs under undo. */
   gableEndsFullHeight: "document",
+  roofCutToFootprint: "document",
   wallBracePattern: "document",
   /**
    * ⚠ **TRANSIENT, and this one is NOT a judgement call about tidiness.**

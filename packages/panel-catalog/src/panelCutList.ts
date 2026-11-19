@@ -1,5 +1,10 @@
 import type { MemberRole, PanelMember } from "./componentSchema";
-import { computeBraceEndCutAngleDeg, describeBraceEndCuts, type BraceEndCut } from "./panelMemberHelpers";
+import {
+  computeBraceEndCutAngleDeg,
+  describeBraceEndCuts,
+  memberBoxSizeIn,
+  type BraceEndCut,
+} from "./panelMemberHelpers";
 import {
   compoundBevelNote,
   cutNoteForEnds,
@@ -128,6 +133,11 @@ function cutKey(member: PanelMember): string {
      trap the bevel above carries, on a third axis. */
   const mitre = planMitreFor(member);
   if (mitre) parts.push(mitre.angleDeg.toFixed(2), mitre.longFace, mitre.alongIn.toFixed(3));
+  /* ⚠ **And the roof panel's own plumb cut**, on a fourth axis. A cut board
+     and a square one of the same stock and the same stated length are
+     different parts; merged, half of them are cut square. */
+  const plumbCut = sectionPlumbCutFor(member);
+  if (plumbCut) parts.push(plumbCut.angleDeg.toFixed(2), plumbCut.longFace, plumbCut.alongIn.toFixed(3));
   return parts.join("|");
 }
 
@@ -312,6 +322,50 @@ function planMitreFor(
   };
 }
 
+/**
+ * ⚠ **THE ROOF PANEL'S PLUMB CUT — read off the z difference between a
+ * member's two WIDTH faces, the same way `planMitreFor` reads the x
+ * difference between its two DEPTH faces.**
+ *
+ * > *"i imagined roof panels to be cut plumb vertically when plan view
+ * > looking down on the building."* — Tommy, 2026-11-18
+ *
+ * A roof panel cut to the building ends at a different z on each of its two
+ * width faces. Without this the LENGTH column was already right — the members
+ * really are cut — and the ANGLE column said **Square** on a bevelled board,
+ * which is a part cut wrong from a sheet that looked complete.
+ *
+ * ⚠ Same 1/32in floor as `planMitreFor`, and for the same reason: below it
+ * the geometry still carries the difference, but telling a shop to swing a
+ * saw 0.1 degrees is noise.
+ */
+function sectionPlumbCutFor(
+  member: PanelMember,
+): { angleDeg: number; acrossIn: number; alongIn: number; longFace: string } | null {
+  const near = member.position.sectionCornersIn;
+  const far = member.position.sectionFarCornersIn;
+  if (!near || !far) return null;
+  let maxIn = 0;
+  let signed = 0;
+  for (let i = 0; i < near.length; i++) {
+    const d = far[i]!.zIn - near[i]!.zIn;
+    if (Math.abs(d) > Math.abs(maxIn)) {
+      maxIn = Math.abs(d);
+      signed = d;
+    }
+  }
+  if (maxIn < 1 / 32) return null;
+  const acrossIn = memberBoxSizeIn(member).xIn;
+  if (!(acrossIn > 0)) return null;
+  return {
+    angleDeg: (Math.atan(maxIn / acrossIn) * 180) / Math.PI,
+    acrossIn,
+    alongIn: maxIn,
+    /* A far face that moved in +z leaves the near face as the SHORT one. */
+    longFace: signed > 0 ? "near side" : "far side",
+  };
+}
+
 function angleLabelFor(cuts: readonly BraceEndCut[]): string {
   if (cuts.length === 0) return "Square";
   const angles = [...new Set(cuts.map((c) => formatShopDegrees(c.angleDeg)))];
@@ -369,7 +423,9 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
         /* The bevel and the plan mitre belong in the ANGLE column too, not only
            in the prose: this column is what a shop scans down when setting up. */
         const withBevel = bevel ? `${base} + ${formatShopDegrees(bevel.bevelDeg)} bevel` : base;
-        return mitre ? `${withBevel} + ${formatShopDegrees(mitre.angleDeg)} plan mitre` : withBevel;
+        const withMitre = mitre ? `${withBevel} + ${formatShopDegrees(mitre.angleDeg)} plan mitre` : withBevel;
+        const plumbCut = sectionPlumbCutFor(first);
+        return plumbCut ? `${withMitre} + ${formatShopDegrees(plumbCut.angleDeg)} plumb cut` : withMitre;
       })(),
       // ⚠ Blank, not a sentence, for a square crosscut — see `cutNote`.
       cutNote: (() => {
@@ -386,9 +442,16 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
            once — a top plate whose rake happens to be zero on a diagonal
            octagon facet is exactly that. Every note that applies must reach
            the sheet, so they are collected rather than chosen between. */
+        const plumbCut = sectionPlumbCutFor(first);
         const extra = [
           bevel ? compoundBevelNote(bevel.bevelDeg, bevel.acrossIn, bevel.alongIn, bevel.highFace) : "",
           mitre ? planMitreNote(mitre.angleDeg, mitre.acrossIn, mitre.alongIn, mitre.longFace) : "",
+          plumbCut
+            ? `CUT PLUMB IN PLAN — this end follows the building's own outline, not a square across the panel. ` +
+              `Swing the saw ${formatShopDegrees(plumbCut.angleDeg)} off square across the ${formatDimIn(plumbCut.acrossIn)} ` +
+              `width; the ${plumbCut.longFace} runs ${formatDimIn(plumbCut.alongIn)} longer. It stacks with the end cut ` +
+              `this board already carries, so it is a dual bevel.`
+            : "",
         ].filter((note) => note !== "");
         return [ends, ...extra].filter((note) => note !== "").join(" ");
       })(),

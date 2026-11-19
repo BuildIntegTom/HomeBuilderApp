@@ -1,9 +1,12 @@
 import {
   clipDeckPanelsToFootprint,
   deckPanelPlacements,
+  clipRoofBandPanels,
   deckRunSplitPointsIn,
   footprintSpanAndRun,
   planDeckRunWidths,
+  roofBandCutPlanAreaSqFt,
+  roofBandCutToMitre,
   roofBearingBands,
   roofNeedsRidgeBeam,
   simpleRoofPlanes,
@@ -184,6 +187,21 @@ export interface DeckPanelTakeoffInput {
   /** How far the roof stops short of each gable wall, which is the gable
    * panel's own depth when the gable ends run full height and 0 otherwise. */
   roofGableEndInsetIn: number;
+  /**
+   * ⚠ **Cut the roof to the building, or keep the simple overhang — his
+   * choice, 2026-11-18.**
+   *
+   * > *"can we have the roof be basically cut to fit the raised octagon gable
+   * > perimeter?"* ... *"i do like the simple overhang as an option."*
+   *
+   * On, every roof panel is cut by a PLUMB plane following the footprint, the
+   * way the floor deck has been since 2026-11-16. Off, the roof is laid across
+   * the building's bounding box and overhangs the chamfers, which is what it
+   * did before this existed. ⚠ On a RECTANGLE the two are the same roof, so
+   * the toggle does nothing there and every box building is untouched either
+   * way.
+   */
+  roofCutToFootprint?: boolean;
 }
 
 const EMPTY: DeckPanelTakeoff = {
@@ -302,7 +320,16 @@ function mitreFromCut(cut: DeckPanelCut, spanIn: number, spanRunsBackwards: bool
 }
 
 export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanelTakeoff {
-  const { footprint, depthIn, roofForm, roofPitchIn12, roofEaveHeightFt, roofTallSideNorth, roofGableEndInsetIn } =
+  const {
+    footprint,
+    depthIn,
+    roofForm,
+    roofPitchIn12,
+    roofEaveHeightFt,
+    roofTallSideNorth,
+    roofGableEndInsetIn,
+    roofCutToFootprint = false,
+  } =
     input;
   if (!footprint) return EMPTY;
 
@@ -530,6 +557,25 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
           continue;
         }
         const rotationRad = Math.atan2(edgeDy, edgeDx);
+        /* ⚠ **THE EAVE'S OWN AXIS, which is NOT the floor's run axis.** A
+           floor repeats along whichever axis its joists do not span; a roof
+           repeats along its eave, which is the ridge's. They agree on most
+           buildings and not on all, and taking the floor's is the mistake the
+           cut's own `runAxis` parameter exists to make impossible. */
+        const eaveUx = edgeDx / (fullEdgeLengthIn / IN_PER_FT);
+        const eaveUy = edgeDy / (fullEdgeLengthIn / IN_PER_FT);
+        const runAxis: "x" | "y" = Math.abs(eaveUx) >= Math.abs(eaveUy) ? "x" : "y";
+        const runComponent = runAxis === "x" ? eaveUx : eaveUy;
+        /* ⚠ **Only an AXIS-ALIGNED eave is cut.** `simpleRoofPlanes` builds
+           its planes over the bounding box, so every eave it produces is
+           axis-aligned today — and a diagonal one would make the clip's run
+           coordinate a projection rather than a position, which is a different
+           construction. Refused by not cutting rather than by cutting wrongly. */
+        const eaveIsAxisAligned = Math.abs(runComponent) > 1 - 1e-6;
+        const cutThisPlane = roofCutToFootprint && eaveIsAxisAligned;
+        const runSign: 1 | -1 = runComponent >= 0 ? 1 : -1;
+        const runOriginFt = (runAxis === "x" ? originX : originY) + runComponent * (roofGableEndInsetIn / IN_PER_FT);
+        const eaveAcrossFt = runAxis === "x" ? lowMidY : lowMidX;
         /* Unit vector along the eave — from the FULL edge, because the inset
            is a distance along that same direction and dividing by the already
            shortened length would scale it wrong. */
@@ -549,6 +595,23 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
            RATIO off the plane rather than recomputed from the pitch, so a band
            and its own plane can never disagree about how steep the roof is. */
         const slopePerRunFt = plane.runFt > 0 ? plane.slopeFt / plane.runFt : 1;
+        const upSign: 1 | -1 = (runAxis === "x" ? upY : upX) >= 0 ? 1 : -1;
+        /* ⚠ **A panel may not straddle a corner of the building**, or its end
+           is a kink and the part is five-sided. The floor takes the same
+           boundaries from `deckRunSplitPointsIn`; the roof's are computed in its
+           OWN row frame, because that function measures from the footprint's
+           minimum along its axis while this row starts at the gable inset and
+           may run backwards. */
+        const cornerSplitsIn = !cutThisPlane
+          ? []
+          : [
+              ...new Set(
+                footprint.corners
+                  .map((c) => ((runAxis === "x" ? c.point.x : c.point.y) - runOriginFt) * runSign * IN_PER_FT)
+                  .filter((alongIn) => alongIn > 1e-6 && alongIn < edgeLengthIn - 1e-6)
+                  .map((alongIn) => Math.round(alongIn * 1e6) / 1e6),
+              ),
+            ].sort((a, b) => a - b);
         const planeBands = bands[planeIndex]?.bandRunsFt ?? [plane.runFt];
         let groundBeforeFt = 0;
         const multiBand = planeBands.length > 1;
@@ -563,6 +626,17 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             spanIn,
             depthIn,
             pitchIn12: roofPitchIn12,
+            ...(cutThisPlane && cornerSplitsIn.length > 0
+              ? {
+                  forcedWidthsIn: planDeckRunWidths(
+                    edgeLengthIn,
+                    cornerSplitsIn,
+                    floorRoofPanelMinimumWidthIn(false),
+                    FLOOR_ROOF_PANEL_WIDTH_IN,
+                    depthIn,
+                  ),
+                }
+              : {}),
           });
           if (plan.refusal !== null) {
             roofRefusal = plan.refusal;
@@ -584,12 +658,37 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
           const bandLowHeightFt = plane.lowHeightFt + (bandBaseFt * roofPitchIn12) / 12;
           const bandOriginX = originX + upX * bandBaseFt;
           const bandOriginY = originY + upY * bandBaseFt;
+          /* The cut itself: how far the building reaches up this band's slope
+             at every panel's two edges, in PLAN. A rectangle returns every
+             panel full-span and square, so nothing moves on one. */
+          const bandCuts = cutThisPlane
+            ? clipRoofBandPanels(footprint, {
+                runAxis,
+                runOriginFt,
+                runSign,
+                eaveAcrossFt,
+                upSign,
+                bandBaseIn: bandBaseFt * IN_PER_FT,
+                bandRunIn: bandRunFt * IN_PER_FT,
+                panelWidthsIn: plan.instances.map((inst) => inst.widthIn),
+              })
+            : [];
           for (const [i, planned] of plan.instances.entries()) {
+          const bandCut = bandCuts[i];
+          /* ⚠ **PLAN inches become SLOPE inches here and nowhere else.** A
+             panel is the hypotenuse over the ground it covers, so a chamfer that
+             takes 12in of ground takes 12.65in off the panel at 4:12. Handing the
+             plan figure straight to the panel builder would cut every mitred roof
+             panel short, by more the steeper the roof. */
+          const mitreIn = bandCut?.isMitred
+            ? roofBandCutToMitre(bandCut, bandRunFt * IN_PER_FT, slopePerRunFt)
+            : undefined;
           const options: FloorRoofPanelOptions = {
             kind: "roof",
             widthIn: planned.widthIn,
             depthIn,
             lengthIn: spanIn,
+            ...(mitreIn ? { mitreIn } : {}),
             /* A roof panel never carries one: *"their weight should be on
                both the inner and outer wyth of the wall panel."* */
             structuralGirtEnds: [],
@@ -598,7 +697,14 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             pitchIn12: roofPitchIn12,
             bearingSeatDepthIn: depthIn,
           };
-          roofCoverageSqFt += (planned.widthIn / IN_PER_FT) * (bandRunFt * slopePerRunFt);
+          /* ⚠ **THE TRAPEZOID'S AREA, NOT THE RECTANGLE'S**, the line that stops
+             the roof overclaiming exactly as the floor's own does. Measured on the
+             16ft Octagon, the floor read 256 sq ft against the building's 212.1
+             before its cut landed; a roof over a bounding box is the same 20.7%
+             over, and that number reaches the price. */
+          roofCoverageSqFt += bandCut
+            ? roofBandCutPlanAreaSqFt(bandCut, planned.widthIn) * slopePerRunFt
+            : (planned.widthIn / IN_PER_FT) * (bandRunFt * slopePerRunFt);
           /* The inset is where the row STARTS, so a panel's distance into the
              building is its distance along the plan plus that inset. */
           const alongFt = (roofGableEndInsetIn + planned.atIn) / IN_PER_FT;

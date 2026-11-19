@@ -161,6 +161,7 @@ export const MONEY_CLASSIFICATION = {
   // the walls were panelized, which the panel layout already tells them.
   tilingBasis: "not-money",
   gableEndsFullHeight: "not-money",
+  roofCutToFootprint: "not-money",
   wallBracePattern: "not-money",
   /* A permanent project id and a set of opaque join keys. Neither is a price
      and neither names a client — which is the point of the Tip4urTime export

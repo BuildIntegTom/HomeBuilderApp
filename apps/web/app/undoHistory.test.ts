@@ -63,9 +63,14 @@ describe("what counts as the document", () => {
     // Review Log would call provisional a set of numbers a shop is already
     // building to. The two have to move together or not at all, and the ledger
     // cannot move, so neither does this.
-    expect(all.length).toBe(84);
-    // ...75 -> 76 document keys. (The two Tip4urTime keys above are not.)
-    expect(DOCUMENT_KEYS.length).toBe(76);
+    // 84 -> 85 on 2026-11-18: `roofCutToFootprint`, whether the roof is cut
+    // to the building or laid across its bounding box (his 2026-11-15 ask,
+    // with the overhang kept as his option). Classified `document`: it
+    // changes the shape of every roof panel on a chamfered plan, the panel
+    // count, and the coverage area that feeds the price.
+    expect(all.length).toBe(85);
+    // ...76 -> 77 document keys. (The two Tip4urTime keys above are not.)
+    expect(DOCUMENT_KEYS.length).toBe(77);
   });
 
   it("where the user is standing is NOT the document", () => {

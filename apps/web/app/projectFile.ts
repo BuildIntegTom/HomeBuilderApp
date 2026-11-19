@@ -176,6 +176,21 @@ export interface ProjectState {
    */
   gableEndsFullHeight?: boolean;
   /**
+   * ⚠ **Cut the roof to the building rather than laying it across the
+   * bounding box — his ask of 2026-11-15, built 2026-11-18.**
+   *
+   * > *"can we have the roof be basically cut to fit the raised octagon
+   * > gable perimeter?"* ... *"i do like the simple overhang as an
+   * > option."*
+   *
+   * OPTIONAL, and a file saved before it existed loads as **true** — the
+   * same choice `gableEndsFullHeight` above made and for the same reason:
+   * a silent second default kept only inside old files is worse than one
+   * visible change. ⚠ On a RECTANGLE the two settings draw the same
+   * roof, so only an octagon or a courtyard reopens differently.
+   */
+  roofCutToFootprint?: boolean;
+  /**
    * ⚠ Which pattern the wall brace overlay lays on every standard panel
    * (B15). The union is spelled out rather than imported for the same
    * reason `shapeTool` below is: this is a FILE SCHEMA, and importing a

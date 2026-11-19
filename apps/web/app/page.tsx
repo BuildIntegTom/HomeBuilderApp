@@ -1321,6 +1321,13 @@ export default function LayoutEditor() {
    * above it; flip only the second and the building is open at both ends.
    */
   const [gableEndsFullHeight, setGableEndsFullHeight] = useState(true);
+  /* ⚠ **Default ON, matching the FLOOR deck.** The floor has been cut to
+     the building since 2026-11-16 and a roof laid across its bounding box
+     over a cut floor is two answers to one question. His *"i do like the
+     simple overhang as an option"* is why the other answer is still here
+     rather than why it is the default. On a rectangle the two are the same
+     roof. */
+  const [roofCutToFootprint, setRoofCutToFootprint] = useState(true);
   /* ⚠ **B15 — which pattern the wall brace overlay lays.** It really is
      one setting for the whole building: the overlay pairs panels along a
      wall, and two walls on different patterns would meet at a corner with
@@ -2862,6 +2869,7 @@ export default function LayoutEditor() {
       thicknessIn,
       densityLbFt3,
       gableEndsFullHeight,
+      roofCutToFootprint,
       wallBracePattern,
       wallHeightFt,
       maxPanelHeightIn,
@@ -3053,6 +3061,7 @@ export default function LayoutEditor() {
        one now re-draws it the new way — the alternative is a silent
        second default that nobody can see in the UI. */
     setGableEndsFullHeight(s.gableEndsFullHeight ?? true);
+    setRoofCutToFootprint(s.roofCutToFootprint ?? true);
     /* ⚠ A file saved before the overlay had a control was drawn with the
        only pattern it had. */
     setWallBracePattern(s.wallBracePattern ?? "superbrace");
@@ -8905,8 +8914,9 @@ export default function LayoutEditor() {
         (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined),
       roofEaveHeightFt: gableEaveHeightIn / 12,
       roofGableEndInsetIn: gableEndsFullHeight ? thicknessIn : 0,
+      roofCutToFootprint,
     }),
-    [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight],
+    [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight, roofCutToFootprint],
   );
 
   const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
@@ -14755,6 +14765,26 @@ export default function LayoutEditor() {
                 "their inside faces. One kit, no trusses from anyone else."
               : "Roof panels run right out to both exterior edges of the floor plan, over the top of the gable ends, " +
                 "which stop under them."}
+          </p>
+          <label>
+            <input
+              type="checkbox"
+              checked={roofCutToFootprint}
+              onChange={(e) => setRoofCutToFootprint(e.target.checked)}
+            />{" "}
+            Cut the roof to the building
+          </label>
+          <p className={styles.note}>
+            {roofCutToFootprint
+              ? "Every roof panel is cut by a plumb plane following the floor plan, so the roof's outline is the " +
+                "building's: an elongated octagon over an octagon. The cuts are dual bevels in the shop — a panel " +
+                "already carries a plumb tall end and a cut-back eave, and this is a third plane through the same " +
+                "board. No new part is added at the cut, and the floor deck has been cut this way since November."
+              : "The roof is laid across the building's bounding box and overhangs wherever the plan is not a " +
+                "rectangle. Simpler, and every roof panel is square-ended."}
+          </p>
+          <p className={styles.note}>
+            On a rectangle these two draw the same roof — only a chamfered or courtyard plan has anything to cut.
           </p>
         </>
       )}
