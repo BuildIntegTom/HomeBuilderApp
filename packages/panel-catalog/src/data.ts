@@ -42,14 +42,15 @@ export const standardPanelHeightIn: CatalogValue<number> = {
  * the PEAK (the roof's underside), not to the top of the panels, because that
  * is the number he gave and the one a section drawing shows.
  *
- * ⚠ **IT IS 48in PAST `panelHeightInRange.maxIn`, AND THAT CONFLICT IS REAL.**
- * That range caps a panel at 144in — itself his own raise, from the
- * manufacturer's 118⅛in, *"so the app's existing 120in/10ft wall-height
- * default stays valid"*. His 16ft exemption therefore builds panels the
- * catalog's own height range says cannot be built: a 36ft Multiplex's purlin
- * walls come out as single panels 14'-2⅝" tall. Obeyed as given — it is
- * recent, explicit and about a load path — and reported in the Review Log on
- * every building it happens to, rather than quietly widening the range.
+ * ⚠ **IT WAS 48in PAST `panelHeightInRange.maxIn`, AND HE SETTLED THAT BY
+ * RAISING THE RANGE, 2026-11-18.** For one day the two disagreed: this said
+ * 16ft and the range said 144in, so a 36ft Multiplex's purlin walls came out
+ * as single panels 14'-2⅝" tall that the catalog said could not be built.
+ * Asked which won he answered "16 ft wins... so 16ft is a nice new max height
+ * for all panels" and the range moved to 192in. **The two are now the same
+ * number for the same reason, and must move together.** The Review Log line
+ * that reported the disagreement is kept, silent, as the thing that notices
+ * if they ever part again.
  */
 export const interiorBearingWallOnePanelPeakLimitIn: CatalogValue<number> = {
   value: 16 * 12,
@@ -113,11 +114,45 @@ export const panelWidthInRange: CatalogRange = {
   note: "Mfr spec sheet gives 400-850mm (15¾\"-33½\") for Standard/Braced/Column/Inclined panel width. Tommy raised the max to 48in so the app's existing 40in standard-width default (and Square Bale Panels' fixed 39in) stay valid — the mfr's own 33.5in max is not enforced here.",
 };
 
+/**
+ * ⚠ **THE MAX IS 16FT AS OF 2026-11-18, AND IT IS THE SAME NUMBER AS
+ * `interiorBearingWallOnePanelPeakLimitIn` ON PURPOSE.**
+ *
+ * > *“16 ft wins. i would like to build a 20' throw compression table, to be
+ * > able to make up to 18ft long roof and floor panels (if engioneering
+ * > allows it). so 16ft is a nice new max height for all panels”*
+ * > — Tommy, 2026-11-18
+ *
+ * Asked which of two of his own numbers won — the 16ft one-panel rule he gave
+ * for a roof-bearing dividing wall, or this range's 144in — he raised THIS one,
+ * and widened the answer past the wall he was asked about: **all panels**.
+ * So the two constants now agree, which is why the Review Log line that
+ * reported the disagreement is silent. It is kept rather than deleted,
+ * because it is the thing that notices if either number ever moves again.
+ *
+ * ⚠ **It is a SHOP CAPACITY, and the shop does not have it yet.** The 20ft
+ * throw compression table is something he intends to build, and the 18ft
+ * panel LENGTH it would serve is already this app's limit
+ * (`MAX_PANEL_LENGTH_IN`). His own *“if engineering allows it”* rides on the
+ * whole line, so this is a design ceiling he has chosen, not a capability
+ * anybody has measured.
+ *
+ * ⚠ **Raising it widens the WALL HEIGHT field too**, which is the same
+ * control: `maxPanelHeightIn` is clamped to this range and the wall-height
+ * input shows it as its hint. He said *“for all panels”*, so that is the ask
+ * rather than a side effect.
+ */
 export const panelHeightInRange: CatalogRange = {
   minIn: 15.75,
-  maxIn: 144,
+  maxIn: 16 * 12,
   status: "confirmed",
-  note: "Mfr spec sheet gives 400-3000mm (15¾\"-118⅛\") for Standard/Braced/Column/Inclined panel height (i.e. wall height). Tommy raised the max to 144in (12ft) so the app's existing 120in/10ft wall-height default stays valid — the mfr's own 118.125in max is not enforced here.",
+  note:
+    "Mfr spec sheet gives 400-3000mm (15¾\"-118⅛\") for Standard/Braced/Column/Inclined panel height " +
+    "(i.e. wall height). Tommy raised the max to 144in (12ft) in 2026 so the app's 120in/10ft wall-height " +
+    "default stayed valid, then to 192in (16ft) on 2026-11-18: \"16 ft wins... so 16ft is a nice new max " +
+    "height for all panels\". That is a design ceiling he has chosen against a 20ft throw compression table " +
+    "he intends to build — \"if engioneering allows it\" — not a capability anybody has measured, and the " +
+    "manufacturer's own 118.125in max is not enforced here.",
 };
 
 /**

@@ -5,6 +5,7 @@ import {
   columnMinWidthIn,
   fabricationMinPanelWidthIn,
   cornerPanelWidthIn,
+  interiorBearingWallOnePanelPeakLimitIn,
   panelHeightInRange,
   panelThicknessInRange,
   panelWidthInRange,
@@ -39,7 +40,20 @@ describe("panel size-limit ranges", () => {
 
   it("panelHeightInRange's min matches the mfr spec sheet, max is Tommy's raised ceiling", () => {
     expect(panelHeightInRange.minIn).toBeCloseTo(15.75, 3);
-    expect(panelHeightInRange.maxIn).toBe(144);
+    /* ⚠ **192in since 2026-11-18, raised from 144 by him** when the 16ft
+       rule he gave for a roof-bearing dividing wall turned out to contradict
+       this: "16 ft wins... so 16ft is a nice new max height for all panels".
+       It is a design ceiling against a 20ft throw compression table he intends
+       to build, not a capacity anybody has measured. */
+    expect(panelHeightInRange.maxIn).toBe(192);
+  });
+
+  it("⚠ and it is the SAME number as the bearing wall's one-panel limit, on purpose", () => {
+    /* They were 48in apart for one day and he closed the gap by moving this
+       one. Nothing in the app can now ask for a panel taller than the catalog
+       allows — and if either number moves alone, the Review Log entry that
+       reported the original disagreement speaks again. */
+    expect(panelHeightInRange.maxIn).toBe(interiorBearingWallOnePanelPeakLimitIn.value);
   });
 
   it("columnMinWidthIn matches the mfr spec sheet (424mm) and a COLUMN's real built width satisfies it", () => {

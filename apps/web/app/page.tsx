@@ -13744,12 +13744,19 @@ export default function LayoutEditor() {
        > break it down to 10 ft wall with another section above it"*
 
        — exempts a bearing wall under a 16ft peak from the project's own max
-       panel height, and 16ft is 4ft past `panelHeightInRange.maxIn`, which is
-       also his (*"Tommy raised the max to 144in"*). So a wall can come out as
-       a single panel the catalog's own height range says cannot be built. His
-       rule is obeyed, because it is recent, explicit and about a load path —
-       and the panels it produces are named here, at their real heights, on
-       every building where it bites. */
+       panel height, and for one day that was 4ft past `panelHeightInRange.maxIn`,
+       which is also his.
+
+       ⚠ **HE SETTLED IT BY RAISING THE RANGE, 2026-11-18**: *"16 ft wins...
+       so 16ft is a nice new max height for all panels"*. The two constants are
+       the same number now, so **this entry cannot fire** — the one-panel gate
+       is measured to the PEAK, which is the panel top plus the plate, so a
+       single panel is always at least 2¼in inside the limit.
+
+       ⚠ **Kept anyway, silent, because it is the thing that notices if they
+       part again.** It is ten lines and it is the only reader that compares
+       the two; deleting it would mean the next person to move either number
+       finds out from a shop. */
     const overTall = builds.filter((b) => b.courseMaxHeightIn === Number.POSITIVE_INFINITY && b.panelTopIn > panelHeightInRange.maxIn);
     if (overTall.length > 0) {
       const heights = overTall.map((b) => `${b.wallId} at ${formatLengthIn(b.panelTopIn, unitSystem)}`).join(", ");

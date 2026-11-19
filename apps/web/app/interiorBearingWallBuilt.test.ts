@@ -154,12 +154,23 @@ describe("⚠ his 16ft rule decides whether it is one panel or courses", () => {
     }
   });
 
-  it("⚠ and that one panel is past the CATALOG's own panel height maximum, which the Review Log reports", () => {
-    /* Both numbers are his: 144in (`panelHeightInRange.maxIn`, raised from the
-       manufacturer's 118⅛in) and the 16ft peak. They disagree, and a purlin
-       wall is where. Pinned so the conflict cannot stop being reported by
-       accident. */
-    expect(byWallId["BRG-W"]!.panelTopIn).toBeGreaterThan(panelHeightInRange.maxIn);
+  it("⚠ and it is INSIDE the catalog's own panel height maximum, because he raised that too", () => {
+    /* ⚠ **This asserted the OPPOSITE for one day.** His 16ft rule produced
+       panels past `panelHeightInRange.maxIn` (144in), which is also his, and
+       the Review Log reported each one. Asked which number won he answered
+       "16 ft wins... so 16ft is a nice new max height for all panels" and the
+       range moved to 192in. The two are the same number now, so no bearing
+       wall can be built taller than the catalog allows: the one-panel gate is
+       measured to the PEAK, which is the panel top plus the plate, so a single
+       panel is always at least the plate's 2¼in inside the limit. */
+    expect(byWallId["BRG-W"]!.panelTopIn).toBeLessThanOrEqual(panelHeightInRange.maxIn);
+    for (const build of Object.values(byWallId)) {
+      if (build.courseMaxHeightIn !== Number.POSITIVE_INFINITY) continue;
+      expect({ wall: build.wallId, within: build.panelTopIn <= panelHeightInRange.maxIn }).toEqual({
+        wall: build.wallId,
+        within: true,
+      });
+    }
   });
 
   it("⚠ the limit is measured to the PEAK, which decides a 2.25in-wide band of buildings", () => {
