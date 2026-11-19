@@ -8471,7 +8471,49 @@ export default function LayoutEditor() {
     // conservative choice — ensures adequate rise) rather than averaging or
     // picking arbitrarily, and flags it so the editor can show a caveat.
     const steepestSide = sides.reduce((a, b) => (b.riseIn / b.runIn > a.riseIn / a.runIn ? b : a));
-    const pitchIn12 = (steepestSide.riseIn * 12) / steepestSide.runIn;
+    /**
+     * ⚠ **THE PITCH IS MEASURED OVER THE BUILDING'S RUN, NOT ALONG THE GABLE
+     * WALL — fixed 2026-11-18, on his own report.**
+     *
+     * > *"i may be outdated on this, but at some point i noticed the shed roof
+     * > of an octagon goes up till its tallest gable panels - and they are way
+     * > taller than the rest of the dual bevel tilted gable panels. thats how
+     * > it is live right now on the small predesign"*
+     *
+     * He was not outdated. This divided the rise by `steepestSide.runIn`,
+     * which is measured **along the gable wall** off that wall's own tiles.
+     * On a box the gable wall IS the span and the two agree; on an octagon the
+     * gable "wall" is one FACET. Measured: a 16ft octagon's gable wall is
+     * **6.625ft** against a 16ft span, so a 64in rise read **9.66:12** where
+     * the roof is 4:12 — and the live 16ft Octagon tile was drawn at 6.8:12.
+     * Everything downstream takes this number, so the roof PLANES, the roof
+     * panel takeoff, the cross-tilted row and `decideRoofForm`'s own refusal
+     * were all built on it.
+     *
+     * ⚠ **`roofPitchFromRise.ts` already named this as a mistake made twice**:
+     * *"`acrossFt` is the building's span across the ridge, not a gable wall's
+     * own length... taking the wall instead is a mistake this app has already
+     * made twice."* This was the third place.
+     *
+     * ⚠ **And the run the ROOF actually uses settles it.** `simpleRoofPlanes`
+     * takes `runFt = roofSpanFt / (peaked ? 2 : 1)` and nothing else — it does
+     * not read the peak's position at all. So the run above is not merely a
+     * different measurement of the same thing; it is a measurement of a line
+     * the roof planes never use.
+     *
+     * `pitchFromStoredRiseFt` is the shared inverse the resize path and the
+     * default-roof path both already read, so all three now agree by
+     * construction rather than by three sums matching. It falls back to the
+     * per-side figure only where it cannot answer (no stored rise), which is
+     * exactly the old behaviour on the buildings where the two agreed anyway.
+     */
+    const spanPitchIn12 = pitchFromStoredRiseFt(
+      roofSpanFt(footprint),
+      roofFormFromProfilePositions(footprint.walls, gableEndWallIds, gableProfilePositionsInByWallId) === "shed",
+      roofProfilePointHeightsFt[0],
+      { standardWidthIn, heelHeightIn: effectiveHeelHeightIn, anchorMode: roofBearingAnchorMode, trussPlateInsetIn },
+    );
+    const pitchIn12 = spanPitchIn12 ?? (steepestSide.riseIn * 12) / steepestSide.runIn;
     const asymmetricNote =
       sides.length === 2 && Math.abs(sides[0]!.riseIn / sides[0]!.runIn - sides[1]!.riseIn / sides[1]!.runIn) > 0.01
         ? "This wall's roofline peak isn't centered — showing the steeper side's real pitch."
@@ -8486,7 +8528,23 @@ export default function LayoutEditor() {
     if (!ridge || ridge.runIn <= 0) return null;
 
     return { spanIn: wallWidthIn, runIn: ridge.runIn, pitchIn12, asymmetricNote };
-  }, [footprint, roofProfileType, trueGableEndWallIds, gableTilesByWallId, roofProfilePointHeightsFt, gableProfilePositionsInByWallId, gableEaveHeightIn]);
+  }, [
+    footprint,
+    roofProfileType,
+    trueGableEndWallIds,
+    gableTilesByWallId,
+    roofProfilePointHeightsFt,
+    gableProfilePositionsInByWallId,
+    gableEaveHeightIn,
+    /* The seat context's four fields, spread rather than passed as the
+       `roofPitchSeatContext` object: that is a plain literal rebuilt every
+       render, so depending on it would defeat this memo entirely. */
+    gableEndWallIds,
+    standardWidthIn,
+    effectiveHeelHeightIn,
+    roofBearingAnchorMode,
+    trussPlateInsetIn,
+  ]);
 
   /* The ridge beam's run and its columns, for the plan view. Derived here
      rather than in the canvas so the 2D and 3D cannot disagree about where
