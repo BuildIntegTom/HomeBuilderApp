@@ -263,6 +263,38 @@ is cut, what sets the radius) was answering the wrong question.
     in the plan, with reasons: `I` reads as `1` on a shop label, and a name
     that says what a wall DOES goes stale when the roof changes.
 
+17. **Roof bracing built into the panel, instead of structural sheathing.**
+    ⚠ **RESEARCHED AND PLANNED 2026-11-18, NOT STARTED.** His idea:
+    *"why not also build in the roof bracing??? ... the structural value of
+    plywoo sheathing is absolute over kill or at least let in diagonal 2x4
+    bracing - just as the super carrot is - would structurally check out
+    fine."* It comes out of his own vapour-open roof problem: thin OSB,
+    Adhero, a 1½in vented gap, then structural sheathing.
+
+    ⚠ **FIRST, A MEASURED FACT: a roof panel has NO plywood on its large
+    faces and this app models NO roof diaphragm at all.** Checked, not
+    assumed — the only plywood in a 48in x 18ft roof panel is two end
+    plates and three girt webs. So this is not replacing plywood; it is the
+    first in-plane element a roof panel would ever have, and it deletes the
+    site-applied layer that is doing the whole job today.
+
+    **The research backs the instinct**: SIPA/FPL testing finds panelized
+    diaphragm strength is governed by the JOINT FASTENERS, not the skin
+    (415-1,180 plf by screw spacing; doubling screws bought 60%; segment
+    count did not matter). And 475's own roof case study says the second
+    sheathing over a vented gap is mostly a shingle substrate and code
+    comfort. ⚠ **Against it**: diagonal lumber is the weakest recognised
+    system (300 plf 2006 IBC cap) and let-in bracing could not be grouped
+    with the IRC's other methods because test data did not support it.
+
+    ⚠ **Two design findings.** One X per panel is useless — a diagonal in a
+    48in x 18ft panel sits ~76deg off the short axis. It wants to be a
+    horizontal TRUSS (joists as chords, 4-5 diagonals near 45deg). And the
+    panel-to-panel JOINT governs: a diagonal delivers a node force where a
+    skin delivers distributed flow, so the connection gets harder, not
+    easier. Five strides and four questions for him in
+    `Claude outputs/roof-bracing-instead-of-sheathing-2026-11-18.md`.
+
 13. **B34 — Multiplex.** ✅ **EVERY STRIDE BUILT — 1, 2, 3, 3b, 3c, 4 AND 5.**
     **Stride 3b: a wall that carries the roof is BUILT up to it — 2026-11-18.** It
     used to be tiled at the story height under a ridge a full rise above
