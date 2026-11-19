@@ -263,38 +263,6 @@ is cut, what sets the radius) was answering the wrong question.
     in the plan, with reasons: `I` reads as `1` on a shop label, and a name
     that says what a wall DOES goes stale when the roof changes.
 
-17. **Roof bracing built into the panel, instead of structural sheathing.**
-    ⚠ **RESEARCHED AND PLANNED 2026-11-18, NOT STARTED.** His idea:
-    *"why not also build in the roof bracing??? ... the structural value of
-    plywoo sheathing is absolute over kill or at least let in diagonal 2x4
-    bracing - just as the super carrot is - would structurally check out
-    fine."* It comes out of his own vapour-open roof problem: thin OSB,
-    Adhero, a 1½in vented gap, then structural sheathing.
-
-    ⚠ **FIRST, A MEASURED FACT: a roof panel has NO plywood on its large
-    faces and this app models NO roof diaphragm at all.** Checked, not
-    assumed — the only plywood in a 48in x 18ft roof panel is two end
-    plates and three girt webs. So this is not replacing plywood; it is the
-    first in-plane element a roof panel would ever have, and it deletes the
-    site-applied layer that is doing the whole job today.
-
-    **The research backs the instinct**: SIPA/FPL testing finds panelized
-    diaphragm strength is governed by the JOINT FASTENERS, not the skin
-    (415-1,180 plf by screw spacing; doubling screws bought 60%; segment
-    count did not matter). And 475's own roof case study says the second
-    sheathing over a vented gap is mostly a shingle substrate and code
-    comfort. ⚠ **Against it**: diagonal lumber is the weakest recognised
-    system (300 plf 2006 IBC cap) and let-in bracing could not be grouped
-    with the IRC's other methods because test data did not support it.
-
-    ⚠ **Two design findings.** One X per panel is useless — a diagonal in a
-    48in x 18ft panel sits ~76deg off the short axis. It wants to be a
-    horizontal TRUSS (joists as chords, 4-5 diagonals near 45deg). And the
-    panel-to-panel JOINT governs: a diagonal delivers a node force where a
-    skin delivers distributed flow, so the connection gets harder, not
-    easier. Five strides and four questions for him in
-    `Claude outputs/roof-bracing-instead-of-sheathing-2026-11-18.md`.
-
 13. **B34 — Multiplex.** ✅ **EVERY STRIDE BUILT — 1, 2, 3, 3b, 3c, 4 AND 5.**
     **Stride 3b: a wall that carries the roof is BUILT up to it — 2026-11-18.** It
     used to be tiled at the story height under a ridge a full rise above
@@ -435,6 +403,95 @@ is cut, what sets the radius) was answering the wrong question.
     three of the eight Feng Shui colours (white, grey, black) cannot be printed
     on a white sheet. Recommendations for all of it in that doc; **his call**.
 
+
+17. **Roof bracing in the panel, full-plane patterns, and the Reference
+    Points page.** ⚠ **GREEN-LIT 2026-11-18, FIVE PHASES.**
+    ✅ **PHASE 1 BUILT THE SAME DAY.**
+    *"if this can work for 2, 3 and 4' roof panels lets freakin do it."*
+    Full plan, his six decisions verbatim and the three open questions in
+    `docs/plan-2026-11-18-roof-bracing-and-reference-points.md`; the
+    research behind it in
+    `Claude outputs/roof-bracing-instead-of-sheathing-2026-11-18.md`
+    (sections 0-4 stand; 5 and 6 are superseded by the plan).
+
+    ⚠ **A ROOF PANEL HAS NO PLYWOOD ON ITS LARGE FACES AND THIS APP MODELS
+    NO ROOF DIAPHRAGM AT ALL.** Measured, not assumed. So this is not
+    lumber replacing plywood: it is the FIRST in-plane element a roof panel
+    would have, and it deletes the site layer doing the whole job today.
+    His assembly, confirmed: **braced straw SIP, Mento, furring, metal
+    roof** — and no soffit, the roof vent drawing from the bottom of the
+    wall rainscreen, which makes those two cavities ONE path.
+
+    ⚠ **A FULL-PLANE X IS NOT WHAT THE WALLS DO.**
+    `applyWallBracingPattern` is a PAIR mechanism — the Carrot X spans two
+    panels and crosses ONE seam, in its own words *"every leg of an X runs
+    to the seam the two panels share."* His plane-wide X across twelve
+    panels crosses ELEVEN, and the research found the JOINT governs, not the
+    skin. Not a refusal — it is why his *"suggest adequate spacing measures
+    ... based on required loads"* and his full-plane ask are ONE feature.
+    His two pattern statements agree: one big X puts 2 segments in every
+    panel and a carrot in that region adds ~2, so **4 per panel** is his own
+    pattern's output, predicted right. Exterior face only.
+
+    ⚠ **AND HIS TWO FASTENER NUMBERS ARE ALREADY IN THE APP, SHOWN NOWHERE.**
+    `fastenerSpacingTable` (data.ts:1464) has carried his 16" exterior /
+    24" interior GRK 5/16"x4" panel-to-panel schedule all along; its one
+    consumer is the FOUNDATION schedule, so the connections that hold the
+    building up have never reached a screen. **There is no roof row at all.**
+    His first-hand restatement moves 2 of the 8 rows to `confirmed`.
+
+    **The Reference Points page is a GENERALISATION of B18's Shear
+    Derivation sheet**, whose rule he has now restated nine strides later:
+    *"this app should prime an engioneer ... and see how the estimated
+    values here were derrived"* against 2026-11-02's *"Id rather have a
+    pattern be described to an engineer with estimated values."* Its four
+    provenance tags (`code-constant`, `pending-BI-confirmation`,
+    `app-assumption`, `from-the-drawing`) are the page's vocabulary, and so
+    is its refusal: ⚠ **no engineer has ever looked at any of this** — *"this
+    app shouldnt be that"* — so nothing here may say a roof PASSES.
+
+    Phases, reordered so the derivation exists before anything leans on it:
+    ✅ **1** THE PAGE — **BUILT 2026-11-18**, below. **2** spacing derived
+    from load, **3** the full-plane pattern, **4** capacity + the per-seam
+    statement + a real refusal, **5** the assembly.
+
+    ✅ **PHASE 1, BUILT.** Every connection on one page, with its fastener,
+    its spacing, the live count off this building, its provenance tag and
+    **what force the app models across it**. On a Tiny House: **1 of 13
+    connections has a modelled force at all** and **6 carry a figure BI has
+    not confirmed**. His two panel-to-panel rows moved to `confirmed`, and
+    `FastenerSpacingRow` gained a PER-ROW status because one table-wide
+    status would now either understate those two or overstate the other six.
+
+    ⚠ **AND THE PAGE FOUND TWO PLACES THE APP DISAGREES WITH ITSELF**, both
+    true for weeks on two different screens, both found by READING THE PAGE
+    IN A BROWSER on the day it was built. (1) **How many braces this building
+    has**: the fastener tally says 88, the Shear Derivation sheet says 60 —
+    the tally counts every member whose ROLE is `brace` (a header's truss
+    webs included), the shear sheet reads only panels carrying a bracing
+    PATTERN. (2) **How a jack stud is fastened**: his own *"2 4in T25 #9
+    screws every 6in"* is what the app COUNTS, while the schedule says GRK
+    5/16"x4" at 24" o.c. and is counted nowhere — four a foot against one
+    every two feet, for what reads as the same connection. **Neither is
+    resolved; the page states both answers and who is asking.**
+
+    ⚠ Three more browser-only fixes: a duplicate brace row quoting a
+    different count from the tally line above it, a *Jack stud to panel* row
+    filed under a *Panel to panel* heading carrying a sentence about
+    diaphragm seams, and five copies of one paragraph burying the only line
+    that differed between the rows.
+    ⚠ Open: the plane proportion limit (one X vs bay Xs), a published
+    single-fastener lateral capacity, and the corner of the continuous
+    cavity.
+
+17b. **Long term: the app populates the WHOLE HOUSE's material list.** His
+    2026-11-18 direction: *"id like to long term build this app into
+    populating literally the entire house's material lists such as siding
+    and roof ect. and of course plaster as it is already."* A direction, not
+    a phase — every trade added is a new set of real-world costs, and the
+    shop-item table that was **13x too high and reached main** is the
+    standing warning. Item 17's phase 5 is its first instance. Written up in
+    the plan document above.
 
 ## D. Open questions that are not blocking anything
 

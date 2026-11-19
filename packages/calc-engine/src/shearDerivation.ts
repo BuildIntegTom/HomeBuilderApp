@@ -1,4 +1,6 @@
 import type { PanelMember } from "@building-integrity/panel-catalog";
+
+import type { DerivationStatus } from "./derivationStatus";
 import {
   NDS_COLUMN_C_SAWN_LUMBER,
   SPF_NO2_EMIN_PSI,
@@ -35,17 +37,17 @@ import {
  * that could disagree with the figure it explains would be worse than none.
  */
 
-/** Where a number came from, so the sheet can say so beside it. */
-export type DerivationInputStatus =
-  /** A published figure, cited, that Building Integrity has not yet confirmed
-   *  against the current NDS Supplement for its own species and grade. */
-  | "pending-BI-confirmation"
-  /** A value the code specifies outright — a code constant, not a choice. */
-  | "code-constant"
-  /** An explicit simplification this app makes, named rather than hidden. */
-  | "app-assumption"
-  /** Measured off the drawing: a real length, angle or section. */
-  | "from-the-drawing";
+/**
+ * Where a number came from, so the sheet can say so beside it.
+ *
+ * ⚠ **NOW AN ALIAS OF THE SHARED `DerivationStatus`** (2026-11-18, phase 1 of
+ * the roof-bracing item). This sheet defined the four tags first; the
+ * Reference Points page needed the same vocabulary plus `confirmed`, and two
+ * sheets handed to the same engineer must not label provenance differently.
+ * The union is a superset, so every value this sheet already produced still
+ * type-checks — it simply can also express "Building Integrity said so".
+ */
+export type DerivationInputStatus = DerivationStatus;
 
 export interface DerivationInput {
   label: string;

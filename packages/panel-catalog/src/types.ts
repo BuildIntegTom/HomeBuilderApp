@@ -58,6 +58,15 @@ export interface FastenerSpacingRow {
   connection: string;
   fastener: string;
   spacing: string;
+  /**
+   * ⚠ **PER-ROW, because the table is MIXED and used to claim it was not.**
+   * `fastenerTableStatus` once carried one status for all eight rows, on the
+   * grounds that they were all *"NFW reference points"*. On 2026-11-18 Tommy
+   * stated the two panel-to-panel spacings first-hand, which is the bar
+   * `confirmed` sets — so a single table-wide status would now either
+   * understate those two or overstate the other six.
+   */
+  status: CatalogStatus;
   note?: string;
 }
 

@@ -157,7 +157,14 @@ import {
   computeAssemblyPerm,
   computeBoardFeetByNominalSize,
   computeBracedPanelShearCapacityLb,
+  DERIVATION_STATUS_MEANINGS,
+  DERIVATION_STATUS_ORDER,
+  REFERENCE_POINT_GROUP_LABELS,
+  REFERENCE_POINT_GROUP_ORDER,
+  buildReferencePoints,
+  derivationStatusNeedsReview,
   deriveBuildingShear,
+  referencePointsInGroup,
   computeBuiltUpColumnBearingCapacityLb,
   computeCarbonRange,
   computeCO2eEquivalencies,
@@ -706,6 +713,30 @@ const PLAN_CANVAS_WIDTH_PX = 720;
 const PLAN_CANVAS_HEIGHT_PX = 480;
 
 const STRAW_BALE_WEIGHT_LB = 40;
+/**
+ * The schedule connections a foundation type's own load path claims, by id.
+ *
+ * ⚠ **MODULE SCOPE, TAKING THE ID, ON PURPOSE — and the lint gate is why.**
+ * The Reference Points sheet first asked this by reading `foundationFasteners`
+ * out of the component body. That made `foundationType` escape into an
+ * imported function the React Compiler cannot see through, so the value
+ * stopped being preservable and cost `preserve-manual-memoization` +1 in each
+ * of the two dep arrays spelled `[footprint, foundationType, pierSpacingFt]`
+ * — a rise that is neither a new `useMemo` nor a copied pattern, and so would
+ * have needed recording as an exception. Same family as the 2026-11-17 fix in
+ * `apps/web/AGENTS.md`: **if something needs a derived value, give it a pure
+ * function, not a closure over the component's own const.**
+ *
+ * ⚠ It reads the catalog INSIDE the function. A module-scope `const` reading
+ * `data.ts` throws at module evaluation under Turbopack; a function that reads
+ * it when called does not.
+ */
+function foundationFastenerConnections(foundationTypeId: string): string[] {
+  const type = foundationTypes.find((f) => f.id === foundationTypeId);
+  if (type === undefined) return [];
+  return foundationFastenerSchedule(type, fastenerSpacingTable).map((row) => row.connection);
+}
+
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
 const FT3_TO_M3 = 0.0283168;
@@ -11307,6 +11338,37 @@ export default function LayoutEditor() {
       : "");
 
   /**
+   * **THE REFERENCE POINTS SHEET — phase 1 of the roof-bracing item.**
+   *
+   * > *"there should be some good effort put into prepping all of this in a
+   * > nice tidy Reference Points page or something like that where a summary
+   * > of all the connections are shown and shown how theyre derrived."*
+   * > — Tommy, 2026-11-18
+   *
+   * ⚠ **DELIBERATELY NOT A `useMemo`.** It is a dozen object literals built
+   * from values already in scope, and `apps/web/AGENTS.md` has measured the
+   * trade repeatedly: a memo costs one `preserve-manual-memoization` per
+   * already-flagged value its dep array touches, and this one would touch
+   * two (`fastenerItemTotals`, `shearDerivation`). A render-time const costs
+   * nothing and nothing here is memo-gated on it.
+   *
+   * ⚠ **It asks `foundationFastenerConnections` rather than reading the
+   * component's own `foundationFasteners`**, for the lint reason recorded on
+   * that function. What this sheet needs is the NAMES of the connections the
+   * foundation claims, not the rows — and deciding "foundation or assembly" by
+   * exclusion is what keeps a row added to the catalog later from silently
+   * landing in neither group.
+   */
+  const referencePointsSheet = buildReferencePoints({
+    schedule: fastenerSpacingTable,
+    foundationConnections: foundationFastenerConnections(foundationTypeId),
+    panelFasteners: fastenerItemTotals.items.length > 0 ? { items: fastenerItemTotals.items } : null,
+    panelCount: panelsTotal,
+    shearBraceCount: shearDerivation?.braceCount ?? 0,
+    hasRoofPanels: panelCounts.roof > 0,
+  });
+
+  /**
    * The Shop Fabrication sheet for every unique floor and roof panel.
    *
    * ⚠ **This used to be the SECOND floor and roof plan, and it disagreed with
@@ -12606,12 +12668,15 @@ export default function LayoutEditor() {
       /* B18. A formal document in its own right — it is written to be handed
          to an engineer, which is the whole reason it exists. */
       { id: "shear-derivation", label: "Shear Derivation" },
+      /* Phase 1 of the roof-bracing item, 2026-11-18, and formal for the same
+         reason: it exists to be handed to an engineer. */
+      { id: "reference-points", label: "Reference Points" },
       ...relevantDetailPages,
     ],
     [relevantDetailPages],
   );
   const formalDocumentNoteIds = useMemo(
-    () => new Set(["detail-summary", "shear-derivation", ...relevantDetailPages.map((p) => p.id)]),
+    () => new Set(["detail-summary", "shear-derivation", "reference-points", ...relevantDetailPages.map((p) => p.id)]),
     [relevantDetailPages],
   );
   const [openNoteIds, setOpenNoteIds] = useState<Set<string>>(new Set());
@@ -19177,6 +19242,167 @@ export default function LayoutEditor() {
               </p>
             </>
           )}
+        </StickyNote>
+
+        {/* **REFERENCE POINTS — phase 1 of the roof-bracing item, 2026-11-18.**
+
+            > *"there should be some good effort put into prepping all of this
+            > in a nice tidy Reference Points page or something like that where
+            > a summary of all the connections are shown and shown how theyre
+            > derrived."*
+
+            ⚠ **Its job is to be honest about what is NOT here.** Every
+            connection the app knows about, with its fastener, its spacing, how
+            many this building has, where the number came from — and whether
+            any force is modelled across it. For twelve of the thirteen rows the
+            answer to that last one is no, and printing that is the whole point:
+            phase 2 of the item turns the spacings into calculations, and this
+            page is what makes the size of that job visible first.
+
+            ⚠ It inherits the Shear Derivation sheet's refusal, and Tommy
+            sharpened it on 2026-11-18: *"no there has definetely not been any
+            engioneer that has looked at this. this app shouldnt be that."* So
+            nothing on this page says a connection passes. */}
+        <StickyNote
+          id="reference-points"
+          label="Reference Points — every connection, and where its number came from"
+          isOpen={openNoteIds.has("reference-points")}
+          isFullscreen={fullscreenNoteId === "reference-points"}
+          cascadeIndex={noteOpenOrder.indexOf("reference-points")}
+          onClose={() => handleToggleNote("reference-points")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("reference-points")}
+          onPrint={() => handlePrintNote("reference-points")}
+        >
+          <p className={styles.note}>
+            ⚠ This page REPORTS. It does not approve. No engineer has reviewed any connection in this app, and
+            nothing below states that one is adequate — only what is specified, how many there are, and where each
+            number came from. {referencePointsSheet.modeledLoadCount} of {referencePointsSheet.points.length}{" "}
+            connections have a modelled force at all; {referencePointsSheet.needsReviewCount} carry a figure Building
+            Integrity has not confirmed or an assumption this app made
+            {referencePointsSheet.contradictions.length === 0
+              ? "."
+              : `, and ${referencePointsSheet.contradictions.length} are places where two parts of this app give different answers for the same connection.`}
+          </p>
+
+          <h3>What the tags mean</h3>
+          <table className={styles.table}>
+            <tbody>
+              {DERIVATION_STATUS_ORDER.map((status) => (
+                <tr key={status}>
+                  <td>[{status}]</td>
+                  <td>
+                    {DERIVATION_STATUS_MEANINGS[status]}
+                    {derivationStatusNeedsReview(status) ? (
+                      <>
+                        <br />
+                        <span className={styles.note}>⚠ Still wants an engineer or Building Integrity to supply it.</span>
+                      </>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {REFERENCE_POINT_GROUP_ORDER.map((group) => {
+            const points = referencePointsInGroup(referencePointsSheet, group);
+            if (points.length === 0) return null;
+            return (
+              <div key={group}>
+                <h3>{REFERENCE_POINT_GROUP_LABELS[group]}</h3>
+                {group !== "in-panel" ? null : (
+                  <p className={styles.note}>
+                    These are Tommy&apos;s own per-member fastening rules, stated first-hand and counted live off this
+                    building&apos;s real member lists. ⚠ The COUNTS are his; the per-screw WEIGHTS they are multiplied
+                    by are physics estimates, because no manufacturer publishes a per-screw weight. And they are
+                    counted so the panel has a WEIGHT — not because anything was checked against a load.
+                  </p>
+                )}
+                <table className={styles.table}>
+                  <tbody>
+                    {points.map((point) => (
+                      <tr key={point.id}>
+                        <td>
+                          <strong>{point.connection}</strong>
+                          <br />
+                          <span className={styles.note}>[{point.status}]</span>
+                        </td>
+                        <td>
+                          {point.fastener === "" ? null : (
+                            <>
+                              {point.fastener}
+                              <br />
+                            </>
+                          )}
+                          {point.spacing === "" ? null : (
+                            <>
+                              {point.spacing}
+                              <br />
+                            </>
+                          )}
+                          <span className={styles.note}>{point.countStatement}</span>
+                          <br />
+                          <span className={styles.note}>
+                            {point.load.modeled ? "Load: " : "⚠ "}
+                            {point.load.statement}
+                            {point.load.seeAlso === undefined ? null : ` ${point.load.seeAlso}`}
+                          </span>
+                          {point.note === "" ? null : (
+                            <>
+                              <br />
+                              <span className={styles.note}>{point.note}</span>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+
+          {referencePointsSheet.contradictions.length === 0 ? null : (
+            <>
+              <h3>⚠ Where this app disagrees with itself</h3>
+              <p className={styles.note}>
+                Both of these had been true for weeks, on two different screens, and nothing had put them side by
+                side. Neither is resolved here — the page states both answers and who is asking.
+              </p>
+              <table className={styles.table}>
+                <tbody>
+                  {referencePointsSheet.contradictions.map((clash) => (
+                    <tr key={clash.id}>
+                      <td>{clash.subject}</td>
+                      <td>
+                        {clash.a}
+                        <br />
+                        {clash.b}
+                        <br />
+                        <span className={styles.note}>{clash.why}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          <h3>⚠ What is NOT on this page</h3>
+          <p className={styles.note}>
+            Listed as rows rather than left out, because a page of connections with these missing would read as
+            complete.
+          </p>
+          <table className={styles.table}>
+            <tbody>
+              {referencePointsSheet.gaps.map((gap) => (
+                <tr key={gap.id}>
+                  <td>{gap.connection}</td>
+                  <td>{gap.why}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </StickyNote>
 
         {/* ⚠ **B19 — the right-click panel menu.** One instance for the whole

@@ -1466,48 +1466,67 @@ export const fastenerSpacingTable: FastenerSpacingRow[] = [
     connection: "Jack stud to panel",
     fastener: "GRK 5/16\"x4\" star drive washer head",
     spacing: "24\" o.c., interior & exterior",
+    status: "pending-BI-confirmation",
   },
   {
     connection: "Panel to panel, interior",
     fastener: "GRK 5/16\"x4\" star drive washer head",
     spacing: "24\" o.c., staggered \"stitching\"/zipper pattern",
+    status: "confirmed",
+    note: "Tommy, 2026-11-18, first-hand and in full: \"typically we are doing every 16\\\" of 5/16\\\" 4\\\" grk structural screws on the outside of the panel and 2' on the inside.\" The 2' is this row. ⚠ His \"typically we are doing\" describes Building Integrity's own standing practice, which is exactly what a fastener schedule is — it is not a hedge about the number, and the number and its unit are stated flat. That is the bar `confirmed` sets. What it does NOT do is tie the spacing to a load: see the Reference Points page, where this row reports that no force is modelled across the seam.",
   },
   {
     connection: "Panel to panel, exterior",
     fastener: "GRK 5/16\"x4\" star drive washer head",
     spacing: "16\" o.c., staggered",
-    note: "Building Integrity's resolved value — NFW's own two source docs conflicted at 6\" vs 18\".",
+    status: "confirmed",
+    note: "Tommy, 2026-11-18: \"typically we are doing every 16\\\" of 5/16\\\" 4\\\" grk structural screws on the outside of the panel\" — which is this row, stated first-hand, and it SETTLES a conflict this note used to record: NFW's own two source docs disagreed at 6\" vs 18\", and 16\" was carried here as Building Integrity's resolved value without his having said it. He has now said it. ⚠ Same caveat as the interior row: confirmed as a schedule, not derived from a load.",
   },
   {
     connection: "Corner connection",
     fastener: "GRK 5/16\"x5 1/8\" star drive washer head",
     spacing: "18\" o.c., 45deg toe screw; paired at cross piece, 1\" edge distance, 1 1/2\" between pair",
+    status: "pending-BI-confirmation",
   },
   {
     connection: "Pier to beam",
     fastener: "(4) Simpson SDS 1/4\"x4 1/2\"",
     spacing: "4 per connection",
+    status: "pending-BI-confirmation",
   },
   {
     connection: "Floor panel to beam",
     fastener: "GRK 3/8\"x7 1/4\" or 8\" RSS",
     spacing: "12\" o.c., 45deg toe screw",
+    status: "pending-BI-confirmation",
   },
   {
     connection: "Toe-up to floor panel",
     fastener: "16d nails",
     spacing: "12\" o.c. interior, 6\" o.c. exterior",
+    status: "pending-BI-confirmation",
   },
   {
     connection: "Wall panel to toe-up",
     fastener: "GRK 5/16\"x5 1/8\" star drive washer head",
     spacing: "18\" o.c., 45deg toe screw, min. 3 per panel at exterior",
+    status: "pending-BI-confirmation",
   },
 ];
 
+/**
+ * ⚠ **THE TABLE AS A WHOLE IS STILL PENDING, AND IT IS NO LONGER UNIFORM.**
+ *
+ * Six of the eight rows are NFW reference points nobody at Building Integrity
+ * has confirmed. Two — the panel-to-panel pair — Tommy stated himself on
+ * 2026-11-18 and now carry `confirmed` in their own `status`. The table-wide
+ * status stays `pending-BI-confirmation` because the majority still are, which
+ * keeps this entry in the Review Log where it belongs; **read the per-row
+ * `status` for any single connection**, not this one.
+ */
 export const fastenerTableStatus = {
   status: "pending-BI-confirmation" as const,
-  note: "All values are NFW reference points — confirm against Building Integrity's own engineering before treating as final.",
+  note: "Six of the eight rows are NFW reference points — confirm against Building Integrity's own engineering before treating as final. The two panel-to-panel rows are Tommy's own, stated 2026-11-18, and carry `confirmed` per-row. ⚠ No row in this table is tied to a LOAD: every spacing here is a stated schedule, not a figure derived from a force, and the Reference Points page says so beside each one.",
 };
 
 // --- Wall assembly layers (vapor permeability) -----------------------------------

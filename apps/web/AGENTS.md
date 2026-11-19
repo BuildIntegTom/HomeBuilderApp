@@ -228,6 +228,62 @@
   days that widening a type left its narrower neighbour behind, so: **after
   widening a field's type, check whether the old one is still imported.**
 
+- **2026-11-18, the Reference Points page: ZERO delta — after a +2 that was
+  attributed and then FIXED rather than recorded.** Final: **188 problems**,
+  every rule byte-identical (`preserve-manual-memoization` 83,
+  `no-unused-vars` 35, `refs` 29, `no-unescaped-entities` 15,
+  `set-state-in-effect` 12, `exhaustive-deps` 12, `immutability` 1,
+  `purity` 1).
+
+  ⚠ **THE FIND, AND IT IS THE 2026-11-17 RULE IN A NEW DISGUISE: a plain
+  render-time `const` can cost this budget, not just a `useMemo`.** The page's
+  sheet is deliberately NOT memoised — it is a dozen object literals built from
+  values already in scope, and a memo would have touched two already-flagged
+  values. That part worked. But the first run still came back **83 -> 85**, and
+  the source-line diff printed **one line, twice**:
+
+  ```
+  +2  [footprint, foundationType, pierSpacingFt],
+  ```
+
+  Nothing was added to either array. **`foundationType` BECAME a flagged
+  value**, and then cost one in each of the two dep arrays that touch it. The
+  cause: the sheet read `foundationFasteners` (a component const derived from
+  `foundationType`) and passed it into `buildReferencePoints`, an imported
+  function the compiler cannot see through — the same escape the 2026-11-14
+  gable-window entry found with `nextSlots`.
+
+  ⚠ **Fixed, not recorded as an exception, because it fit NEITHER case the
+  rule allows** — not a new `useMemo`, not a copied pattern. The derivation
+  became a module-scope pure function taking the plain `useState` id,
+  `foundationFastenerConnections(foundationTypeId)`, so `foundationType` never
+  escapes. Re-measured: **83, and every other rule on `page.tsx` identical to
+  HEAD.** Same prescription as 2026-11-17: **if something needs a derived
+  value, give it a pure function, not a closure over the component's own
+  const** — and now it is known to apply to a render-time const, not only to a
+  handler declared above the value.
+
+  ⚠ **The function reads the catalog INSIDE its body**, which is forced: a
+  module-scope `const` reading `data.ts` throws at module evaluation under
+  Turbopack (see the note further down this file). A module-scope FUNCTION that
+  reads it when called is fine.
+
+  ⚠ **And the single-file bisect settled the whole-app number without a second
+  20-minute run.** All 85 of that rule were in `page.tsx`, and nothing else in
+  `apps/web` had changed since the full run — so linting `page.tsx` alone at
+  HEAD, before the fix and after it gave all three columns at once. Worth
+  reaching for whenever the moved rule lives in one file.
+
+  ⚠ **The gate missed every real defect again, for the eighth time.** Three of
+  them, all found by READING THE PAGE IN A BROWSER: a duplicate brace row
+  quoting 232 screws directly beneath the tally line's 344 **for the same
+  screw**; a *Jack stud to panel* row filed under a *Panel to panel* heading
+  and carrying a sentence about diaphragm seams; and five copies of one
+  paragraph burying the only line that differed between the rows. `tsc`,
+  `vitest` and lint passed on all three. The narrow lesson is new: **a page
+  whose job is to be read is only testable by reading it** — none of the three
+  is expressible as a wrong number.
+
 - **2026-11-18, a stacked panel buys its own height's materials: ZERO delta.**
   **188 problems**, every rule byte-identical again. The change is six
   arguments inside one existing `useMemo` plus a `const` at the top of its
