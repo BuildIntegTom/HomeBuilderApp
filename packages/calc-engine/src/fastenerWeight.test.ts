@@ -5,7 +5,6 @@ import {
   GRK_4IN_WEIGHT_LB,
   GRK_6IN_WEIGHT_LB,
   PLYWOOD_NAIL_WEIGHT_LB,
-  T25_NO9_4IN_WEIGHT_LB,
   computeFastenerWeight,
   computeJackStudFastenerWeight,
 } from "./fastenerWeight";
@@ -91,16 +90,33 @@ describe("computeFastenerWeight", () => {
 });
 
 describe("computeJackStudFastenerWeight", () => {
-  it("counts 2 screws per 6in row along the jack sheet's height", () => {
+  it("⚠ follows THE ONE SCHEDULE: 16in o.c. exterior + 24in o.c. interior, GRK screws", () => {
+    /* Tommy, 2026-11-19: "might as well just have jack studs also get big
+       screws. just the one schedule." This supersedes his 2-every-6in T25 #9
+       rule, which was the only one the app counted while the catalog schedule
+       quoted a GRK for the same joint. */
     const result = computeJackStudFastenerWeight(120);
-    const expectedRows = Math.round(120 / 6);
-    expect(result.items[0]!.count).toBe(expectedRows * 2);
-    expect(result.items[0]!.unitWeightLb).toBeCloseTo(T25_NO9_4IN_WEIGHT_LB, 9);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]!.count).toBe(Math.round(120 / 16) + Math.round(120 / 24));
+    expect(result.items[0]!.unitWeightLb).toBeCloseTo(GRK_4IN_WEIGHT_LB, 9);
+    /* ⚠ The label is read by the Reference Points page to find this row. */
+    expect(result.items[0]!.label).toContain("jack sheet to panel");
+    expect(result.items[0]!.label).toContain("GRK");
+  });
+
+  it("⚠ counts far FEWER, far bigger screws than the rule it replaced", () => {
+    /* The direction matters: 2 screws every 6in is four a foot; this is one
+       every 16in outside and one every 24in inside. A change that quietly
+       raised the count would mean the new rule had been applied per face per
+       row rather than per face. */
+    const result = computeJackStudFastenerWeight(96);
+    expect(result.items[0]!.count).toBe(10);
+    expect(Math.round(96 / 6) * 2).toBe(32);
   });
 
   it("sums into totalWeightLb/Kg", () => {
     const result = computeJackStudFastenerWeight(120);
-    expect(result.totalWeightLb).toBeCloseTo(result.items[0]!.count * T25_NO9_4IN_WEIGHT_LB, 9);
+    expect(result.totalWeightLb).toBeCloseTo(result.items[0]!.count * GRK_4IN_WEIGHT_LB, 9);
     expect(result.totalWeightKg).toBeCloseTo(result.totalWeightLb * 0.453592, 6);
   });
 });

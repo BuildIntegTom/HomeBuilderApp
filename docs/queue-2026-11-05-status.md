@@ -406,6 +406,19 @@ is cut, what sets the radius) was answering the wrong question.
 
 17. **Roof bracing in the panel, full-plane patterns, and the Reference
     Points page.** ⚠ **GREEN-LIT 2026-11-18, FIVE PHASES.**
+    ✅ **PHASE 1 BUILT THE SAME DAY, AND PHASE 2'S BLOCKER ANSWERED ON
+    2026-11-19** — ICC-ES ESR-2442 gives one 5/16"x4" GRK screw **239/236 lbf**
+    (SG 0.42-0.50, 1½" side member, 2⅜" penetration) under an **884 lbf** steel
+    ceiling, cross-checked against the NDS yield-limit equations at 1.3-1.8x
+    lower exactly as the report says. ⚠ **Phase 2 still has no DEMAND figures**,
+    so it can state a capacity per spacing and compare spacings, not call one
+    adequate. ⚠ The lookup immediately **refused the brace end** (2⅜" needed,
+    1½" available): ~267 lbf at an end against a measured median 3,064 lbf
+    strut. See `fastenerCapacity.ts` and the plan doc's item 5.
+
+    ✅ **He also settled the jack-stud clash the page found**: *"might as well
+    just have jack studs also get big screws. just the one schedule."* One
+    schedule now, the GRK's; the T25 #9 rule is deleted.
     ✅ **PHASE 1 BUILT THE SAME DAY.**
     *"if this can work for 2, 3 and 4' roof panels lets freakin do it."*
     Full plan, his six decisions verbatim and the three open questions in

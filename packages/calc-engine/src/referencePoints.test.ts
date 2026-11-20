@@ -13,6 +13,7 @@ import type { ReferencePointFastenerTally } from "./referencePoints";
 import {
   REFERENCE_POINT_GROUP_LABELS,
   REFERENCE_POINT_GROUP_ORDER,
+  RETIRED_JACK_FASTENER_PATTERN,
   type ReferencePointScheduleRow,
   type ReferencePointsContext,
   buildReferencePoints,
@@ -20,14 +21,17 @@ import {
 } from "./referencePoints";
 
 const BRACE_LABEL = "4in GRK screw (brace members, 2 at each end)";
-const JACK_LABEL = "4in T25 #9 screw (6in o.c. rows, 2 each)";
+const JACK_LABEL = "4in GRK screw (jack sheet to panel, 16in o.c. exterior + 24in o.c. interior)";
 
 const SCHEDULE: ReferencePointScheduleRow[] = [
   {
     connection: "Jack stud to panel",
     fastener: 'GRK 5/16"x4" star drive washer head',
-    spacing: '24" o.c., interior & exterior',
-    status: "pending-BI-confirmation",
+    /* ⚠ THE ONE SCHEDULE, 2026-11-19. Was '24" o.c., interior & exterior'
+       with a `pending-BI-confirmation` and a rival T25 rule beside it. */
+    spacing: '16" o.c. exterior, 24" o.c. interior — the panel-to-panel schedule',
+    status: "confirmed",
+    note: "his own, 2026-11-19",
   },
   {
     connection: "Panel to panel, exterior",
@@ -126,7 +130,9 @@ describe("the Reference Points sheet", () => {
     const byConnection = new Map(buildReferencePoints(ctx()).points.map((p) => [p.connection, p.status]));
     expect(byConnection.get("Panel to panel, exterior")).toBe("confirmed");
     expect(byConnection.get("Panel to panel, interior")).toBe("confirmed");
-    expect(byConnection.get("Jack stud to panel")).toBe("pending-BI-confirmation");
+    /* ⚠ The jack stud joined them on 2026-11-19 — three of the catalog's
+       eight rows are now his own words rather than an NFW reference point. */
+    expect(byConnection.get("Jack stud to panel")).toBe("confirmed");
     expect(byConnection.get("Pier to beam")).toBe("pending-BI-confirmation");
   });
 
@@ -193,7 +199,8 @@ describe("the Reference Points sheet", () => {
   });
 
   it("counts only the statuses that need an engineer", () => {
-    expect(buildReferencePoints(ctx()).needsReviewCount).toBe(3);
+    /* Down from 3 on 2026-11-19: the jack-stud row moved to `confirmed`. */
+    expect(buildReferencePoints(ctx()).needsReviewCount).toBe(2);
     expect(
       buildReferencePoints(
         ctx({ schedule: SCHEDULE.map((r) => ({ ...r, status: "code-constant" as DerivationStatus })) }),
@@ -229,26 +236,41 @@ describe("⚠ where the app disagrees with itself", () => {
     expect(sheet.contradictions.some((c) => c.id === "contradiction-brace-count")).toBe(false);
   });
 
-  it("names the two different jack-stud rules, with his counted one first", () => {
-    const clash = buildReferencePoints(ctx()).contradictions.find((c) => c.id === "contradiction-jack-stud")!;
-    expect(clash.a).toContain("T25 #9");
-    expect(clash.a).toContain("360");
-    expect(clash.b).toContain('24" o.c.');
-    expect(clash.why).toContain("four a foot");
+  it("⚠ NO LONGER raises a jack-stud clash — he settled it, one schedule", () => {
+    /* Tommy, 2026-11-19: "might as well just have jack studs also get big
+       screws. just the one schedule." The contradiction this page raised on
+       2026-11-18 is resolved, so it must be GONE — a page that kept quoting
+       two answers after one was chosen would be worse than one that never
+       spotted the clash. */
+    const sheet = buildReferencePoints(ctx());
+    expect(sheet.contradictions.some((c) => c.id === "contradiction-jack-stud")).toBe(false);
   });
 
-  it("⚠ raises the jack-stud clash only when BOTH rules are present", () => {
-    const noJackTally = { ...TALLY, items: TALLY.items.filter((i) => i.label !== JACK_LABEL) };
-    expect(
-      buildReferencePoints(ctx({ panelFasteners: noJackTally })).contradictions.some(
-        (c) => c.id === "contradiction-jack-stud",
-      ),
-    ).toBe(false);
-    expect(
-      buildReferencePoints(
-        ctx({ schedule: SCHEDULE.filter((r) => r.connection !== "Jack stud to panel") }),
-      ).contradictions.some((c) => c.id === "contradiction-jack-stud"),
-    ).toBe(false);
+  it("⚠ the retired-screw guard actually matches the screw it retires", () => {
+    /* A pattern that matched nothing would make every assertion below pass
+       trivially — a guard quietly guarding nothing, which is the same class of
+       defect as the label patterns this page already pins. */
+    expect(RETIRED_JACK_FASTENER_PATTERN.test("4in T25 #9 screw (6in o.c. rows, 2 each)")).toBe(true);
+    expect(RETIRED_JACK_FASTENER_PATTERN.test('GRK 5/16"x4" star drive washer head')).toBe(false);
+  });
+
+  it("⚠ leaves no reference point anywhere still naming the retired T25 screw", () => {
+    /* The resolution has to reach every row, not just the contradictions
+       list. A stale "T25" surviving in a note or a tally label would mean the
+       shop could still be handed the superseded rule. */
+    const sheet = buildReferencePoints(ctx());
+    for (const point of sheet.points) {
+      expect(RETIRED_JACK_FASTENER_PATTERN.test(point.connection)).toBe(false);
+      expect(RETIRED_JACK_FASTENER_PATTERN.test(point.note)).toBe(false);
+      expect(RETIRED_JACK_FASTENER_PATTERN.test(point.load.statement)).toBe(false);
+    }
+  });
+
+  it("files the jack stud under the one schedule, as a confirmed row", () => {
+    const jack = buildReferencePoints(ctx()).points.find((p) => p.connection === "Jack stud to panel")!;
+    expect(jack.status).toBe("confirmed");
+    expect(jack.spacing).toContain('16" o.c. exterior');
+    expect(jack.spacing).toContain('24" o.c. interior');
   });
 
   it("gives every contradiction both sides and a reason", () => {
@@ -276,11 +298,13 @@ describe("⚠ the label patterns this page matches on", () => {
     expect(buildReferencePoints(ctx({ panelFasteners: { items: real.items } })).modeledLoadCount).toBe(1);
   });
 
-  it("the real jack-sheet label still matches, so the jack-stud clash is still raised", () => {
+  it("⚠ the real jack-sheet label is the GRK one now, and names no T25", () => {
+    /* The fixture label must track the builder's real one, and the builder's
+       must no longer mention the retired screw — otherwise the page would
+       print a rule the shop has been told to stop using. */
     const real = computeJackStudFastenerWeight(96);
     expect(real.items[0]!.label).toBe(JACK_LABEL);
-    const sheet = buildReferencePoints(ctx({ panelFasteners: { items: real.items } }));
-    expect(sheet.contradictions.some((c) => c.id === "contradiction-jack-stud")).toBe(true);
+    expect(RETIRED_JACK_FASTENER_PATTERN.test(real.items[0]!.label)).toBe(false);
   });
 });
 
@@ -354,5 +378,117 @@ describe("the provenance vocabulary", () => {
     const walked = REFERENCE_POINT_GROUP_ORDER.flatMap((g) => referencePointsInGroup(sheet, g));
     expect(walked).toHaveLength(sheet.points.length);
     expect(new Set(walked.map((p) => p.id)).size).toBe(sheet.points.length);
+  });
+});
+
+describe("what one screw can hold (2026-11-19)", () => {
+  /* > "can you find a number? surely on the internet somewhere this is
+     > referenced and you can cross reference that to some other stuff."
+     Until this landed, the page reported eight spacings and no capacity at
+     all, which is why phase 2 could not start. */
+  it("prints a citation to the current report, with its scope limit", () => {
+    const sheet = buildReferencePoints(ctx());
+    expect(sheet.capacitySource.id).toBe("ICC-ES ESR-2442");
+    expect(sheet.capacitySource.url).toContain("icc-es.org");
+    /* ⚠ The scope limit must travel with the numbers. A reader who takes the
+       report's nail-substitution table as cover for a braced wall has misread
+       it in the one way the report explicitly warns against. */
+    expect(sheet.capacitySource.scopeLimit).toContain("braced walls");
+  });
+
+  it("gives every capacity input a provenance tag and a note", () => {
+    for (const input of buildReferencePoints(ctx()).capacityInputs) {
+      expect(Object.keys(DERIVATION_STATUS_MEANINGS)).toContain(input.status);
+      expect(input.note.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("⚠ puts the brace's two end screws beside the strut, and calls the ends smaller", () => {
+    /* The finding: the Shear Derivation sheet reports a panel's capacity off
+       the strut, while the smaller number sits at its two ends. */
+    const sheet = buildReferencePoints(ctx({ braceAxialCapacityLb: 1300, braceEndPenetrationIn: 1.5 }));
+    const check = sheet.braceEndConnection!;
+    expect(check.screwsPerEnd).toBe(2);
+    expect(check.perEndLb).toBeCloseTo(check.perScrewLb * 2, 9);
+    /* ⚠ Pinned to the number, and to the penetration it was computed FROM.
+       Without this, passing a deeper penetration than the caller asked for
+       still satisfies "smaller than the strut" and the comparison would be
+       quietly flattering the connection. 133.47 lbf is the NDS mode IIIm value
+       for 1.5in into SPF, cross-checked by hand. */
+    expect(check.penetrationIn).toBe(1.5);
+    expect(check.governingMode).toBe("IIIm");
+    expect(check.perScrewLb).toBeCloseTo(133.47, 1);
+    expect(check.perEndLb).toBeCloseTo(266.93, 1);
+    expect(check.perEndLb).toBeLessThan(check.braceAxialCapacityLb);
+    expect(check.ratio).toBeLessThan(1);
+    /* ⚠ And never a verdict. */
+    expect(check.caveat).toContain("neither is a demand");
+    expect(check.statement).not.toMatch(/\b(pass|fail)/i);
+  });
+
+  it("⚠ rewrites the brace row's load statement, so the page cannot contradict itself", () => {
+    /* Before this, the brace row ended "What is NOT modelled is whether these
+       four screws can deliver that force into the frame." Leaving that beside
+       a section that now answers it is the exact defect this page exists to
+       catch. */
+    const before = buildReferencePoints(ctx()).points.find((p) => BRACE_LABEL === p.connection)!;
+    expect(before.load.statement).toContain("What is NOT modelled");
+
+    const after = buildReferencePoints(
+      ctx({ braceAxialCapacityLb: 1300, braceEndPenetrationIn: 1.5 }),
+    ).points.find((p) => BRACE_LABEL === p.connection)!;
+    expect(after.load.statement).not.toContain("What is NOT modelled");
+    expect(after.load.statement).toContain("the ENDS are the smaller number");
+    expect(after.load.statement).toContain("neither says the brace passes");
+  });
+
+  it("stays null when the caller has no brace to compare", () => {
+    expect(buildReferencePoints(ctx()).braceEndConnection).toBeNull();
+    expect(buildReferencePoints(ctx({ braceAxialCapacityLb: 1300 })).braceEndConnection).toBeNull();
+    expect(buildReferencePoints(ctx({ braceEndPenetrationIn: 1.5 })).braceEndConnection).toBeNull();
+  });
+
+  it("⚠ names the penetration it assumed as a gap, because the app cannot see it", () => {
+    const gap = buildReferencePoints(ctx()).gaps.find((g) => g.id === "gap-brace-end-penetration")!;
+    expect(gap.why).toContain("2 3/8in");
+    expect(gap.why).toContain("plywood");
+    expect(gap.why).toContain("Building Integrity");
+  });
+});
+
+describe("⚠ the page must not contradict itself about the jack stud", () => {
+  /* Found in the BROWSER on 2026-11-19, the eighth time running. The schedule
+     row read "Not counted by the app" a few lines under an in-panel row
+     reading "108 in this building" — for the same screw in the same joint,
+     now that both are the one schedule. That is the duplicate-brace-row
+     defect of phase 1 recurring. */
+  it("counts the schedule row when the in-panel tally already counts it", () => {
+    const sheet = buildReferencePoints(ctx());
+    const schedule = sheet.points.find(
+      (p) => p.group === "assembly" && p.connection === "Jack stud to panel",
+    )!;
+    const tally = sheet.points.find((p) => p.group === "in-panel" && /jack sheet/i.test(p.connection))!;
+    expect(schedule.countStatement).not.toContain("Not counted");
+    expect(schedule.countStatement).toContain("One schedule, one count");
+    /* And it must quote the SAME number the in-panel row does. */
+    const n = TALLY.items.find((i) => /jack sheet/i.test(i.label))!.count;
+    expect(schedule.countStatement).toContain(n.toLocaleString());
+    expect(tally.countStatement).toContain(n.toLocaleString());
+  });
+
+  it("still says 'not counted' for a schedule row nothing counts", () => {
+    const seam = buildReferencePoints(ctx()).points.find(
+      (p) => p.connection === "Panel to panel, exterior",
+    )!;
+    expect(seam.countStatement).toContain("Not counted by the app");
+  });
+
+  it("⚠ places the brace-end gap's wording ABOVE, where the capacity actually is", () => {
+    /* It read "The capacity below" while the capacity section renders before
+       the gaps. A page that tells an engineer to look the wrong way is a small
+       defect with the same cause as the big ones. */
+    const gap = buildReferencePoints(ctx()).gaps.find((g) => g.id === "gap-brace-end-penetration")!;
+    expect(gap.why).toContain("above");
+    expect(gap.why).not.toContain("capacity below");
   });
 });

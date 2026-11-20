@@ -184,8 +184,11 @@ function buildPlywoodJackStud(depthIn: number, heightIn: number): PanelMember[] 
       role: "jack_stud",
       qty: 1,
       notes:
-        "One of a pair (one each side of the rough opening) — screwed to the adjacent wall panel with 2x 4in " +
-        "T25 #9 screws every 6in.",
+        /* ⚠ ONE SCHEDULE, 2026-11-19 — Tommy: "might as well just have jack
+           studs also get big screws. just the one schedule." Supersedes the
+           2x 4in T25 #9 every 6in this note used to carry. */
+        "One of a pair (one each side of the rough opening) — screwed to the adjacent wall panel with 4in GRK " +
+        "5/16in structural screws on the panel-to-panel schedule: 16in o.c. to the exterior face, 24in o.c. to the interior.",
     },
   ];
 }

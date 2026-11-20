@@ -85,7 +85,11 @@ const FASTENER_DISPLAY_LABELS: Record<string, string> = {
   "3in GRK screw (girt bars, 8 each)": "3in 5/16in GRK Screws (girt bars)",
   "4in GRK screw (skins/girt webs, 8 each)": "4in 5/16in GRK Screws (skins/girt webs)",
   "6in GRK screw (braced-panel brace members, 4 each)": "6in 5/16in GRK Screws (braced-panel braces)",
-  "4in T25 #9 screw (6in o.c. rows, 2 each)": "#9 T25 Screws, 4in (jack studs, 6in o.c.)",
+  /* ⚠ 2026-11-19: the jack sheet moved onto the GRK schedule ("just the one
+     schedule"), so the T25 key is gone rather than left as a fallback — a stale
+     key here would simply never match and the row would print its raw label. */
+  "4in GRK screw (jack sheet to panel, 16in o.c. exterior + 24in o.c. interior)":
+    "4in 5/16in GRK Screws (jack sheet, 16in o.c. ext + 24in o.c. int)",
 };
 function fastenerDisplayLabel(label: string): string {
   return FASTENER_DISPLAY_LABELS[label] ?? label;

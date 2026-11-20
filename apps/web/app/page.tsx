@@ -161,6 +161,7 @@ import {
   DERIVATION_STATUS_ORDER,
   REFERENCE_POINT_GROUP_LABELS,
   REFERENCE_POINT_GROUP_ORDER,
+  type BuildingShearDerivation,
   buildReferencePoints,
   derivationStatusNeedsReview,
   deriveBuildingShear,
@@ -735,6 +736,32 @@ function foundationFastenerConnections(foundationTypeId: string): string[] {
   const type = foundationTypes.find((f) => f.id === foundationTypeId);
   if (type === undefined) return [];
   return foundationFastenerSchedule(type, fastenerSpacingTable).map((row) => row.connection);
+}
+
+/**
+ * A representative brace's axial capacity, for the Reference Points page's
+ * end-connection comparison.
+ *
+ * ⚠ **THE MEDIAN, DELIBERATELY — not the largest and not the smallest.** The
+ * page puts this beside what two screws at a brace end can hold. Feeding it
+ * the strongest brace in the building would make the connection look as bad as
+ * possible; feeding it the weakest would do the opposite. A page that picks
+ * the unflattering case on purpose is no more trustworthy than one that picks
+ * the flattering case, and this one is meant to be handed to an engineer.
+ *
+ * ⚠ Module scope and pure, for the same reason `foundationFastenerConnections`
+ * above is: a render-time `const` that reads a derived value and passes it into
+ * an imported function makes that value escape the React Compiler's view and
+ * costs `preserve-manual-memoization` in every dep array that touches it. See
+ * `apps/web/AGENTS.md`.
+ */
+function medianBraceAxialCapacityLb(derivation: BuildingShearDerivation | null): number | undefined {
+  if (derivation === null) return undefined;
+  const capacities = derivation.walls
+    .flatMap((wall) => wall.panels.flatMap((panel) => panel.braces.map((brace) => brace.axialCapacityLb)))
+    .sort((a, b) => a - b);
+  if (capacities.length === 0) return undefined;
+  return capacities[Math.floor(capacities.length / 2)];
 }
 
 const KG_TO_LB = 2.20462;
@@ -11366,6 +11393,14 @@ export default function LayoutEditor() {
     panelCount: panelsTotal,
     shearBraceCount: shearDerivation?.braceCount ?? 0,
     hasRoofPanels: panelCounts.roof > 0,
+    ...(medianBraceAxialCapacityLb(shearDerivation) !== undefined && {
+      braceAxialCapacityLb: medianBraceAxialCapacityLb(shearDerivation),
+      /* ⚠ An app assumption, stated here rather than defaulted inside the
+         sheet: a brace lies flat and bears on a 1 1/2in member, so that is the
+         solid sawn depth a 4in screw lands in. What sits behind that member is
+         a question about the real detail — see `gap-brace-end-penetration`. */
+      braceEndPenetrationIn: PLATE_2X4_THICKNESS_IN,
+    }),
   });
 
   /**
@@ -19277,11 +19312,19 @@ export default function LayoutEditor() {
             ⚠ This page REPORTS. It does not approve. No engineer has reviewed any connection in this app, and
             nothing below states that one is adequate — only what is specified, how many there are, and where each
             number came from. {referencePointsSheet.modeledLoadCount} of {referencePointsSheet.points.length}{" "}
-            connections have a modelled force at all; {referencePointsSheet.needsReviewCount} carry a figure Building
-            Integrity has not confirmed or an assumption this app made
+            connections {referencePointsSheet.modeledLoadCount === 1 ? "has" : "have"} a modelled force at all;{" "}
+            {referencePointsSheet.needsReviewCount}{" "}
+            {referencePointsSheet.needsReviewCount === 1 ? "carries" : "carry"} a figure Building Integrity has not
+            confirmed or an assumption this app made
+            {/* ⚠ The count really does reach 1: he settled the jack-stud clash on
+                2026-11-19 and this read "1 are places" in the browser the same
+                day. A page about precision cannot be ungrammatical about its own
+                tally. */}
             {referencePointsSheet.contradictions.length === 0
               ? "."
-              : `, and ${referencePointsSheet.contradictions.length} are places where two parts of this app give different answers for the same connection.`}
+              : referencePointsSheet.contradictions.length === 1
+                ? ", and 1 is a place where two parts of this app give different answers for the same connection."
+                : `, and ${referencePointsSheet.contradictions.length} are places where two parts of this app give different answers for the same connection.`}
           </p>
 
           <h3>What the tags mean</h3>
@@ -19385,6 +19428,53 @@ export default function LayoutEditor() {
                   ))}
                 </tbody>
               </table>
+            </>
+          )}
+
+          {/* **WHAT ONE SCREW CAN HOLD — 2026-11-19.**
+
+              > *"can you find a number? surely on the internet somewhere this
+              > is referenced and you can cross reference that to some other
+              > stuff. anything this app produces is an estimate because im not
+              > really sure how to make it official or have the liability for
+              > it."*
+
+              ⚠ Until this landed the page reported eight spacings and no
+              capacity at all, which is why phase 2 could not start: a spacing
+              cannot be derived from a load without knowing what ONE fastener is
+              good for. The figures are ICC-ES ESR-2442's — the evaluation
+              report a plans examiner would ask for — and they are
+              cross-checked against the NDS yield-limit equations, which is the
+              "cross reference that to some other stuff" he asked for. */}
+          <h3>What one screw can hold</h3>
+          <p className={styles.note}>
+            Source: <strong>{referencePointsSheet.capacitySource.id}</strong>, {referencePointsSheet.capacitySource.revised}{" "}
+            revision — {referencePointsSheet.capacitySource.url}
+            <br />
+            ⚠ {referencePointsSheet.capacitySource.scopeLimit}
+          </p>
+          <table className={styles.table}>
+            <tbody>
+              {referencePointsSheet.capacityInputs.map((input) => (
+                <tr key={input.label}>
+                  <td>{input.label}</td>
+                  <td>
+                    {input.value} {input.unit}
+                  </td>
+                  <td>
+                    [{input.status}]
+                    <br />
+                    <span className={styles.note}>{input.note}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {referencePointsSheet.braceEndConnection === null ? null : (
+            <>
+              <h4>⚠ The brace end — two screws against the strut they hold</h4>
+              <p className={styles.note}>{referencePointsSheet.braceEndConnection.statement}</p>
+              <p className={styles.note}>{referencePointsSheet.braceEndConnection.caveat}</p>
             </>
           )}
 
@@ -20018,7 +20108,7 @@ export default function LayoutEditor() {
                  since 2026-11-14. */
               !jackStudHasSheet(jackStudConfig)
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
-                : `Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in (${doorJackStudFastenerResult.items[0]!.count} screws, ${doorJackStudFastenerResult.totalWeightLb.toFixed(2)} lb, for this one sheet at the real RO height).`,
+                : `Plywood jack studs selected — screwed to the adjacent wall panel with 4in GRK 5/16in structural screws on the panel-to-panel schedule — 16in o.c. to the exterior face, 24in o.c. to the interior (${doorJackStudFastenerResult.items[0]!.count} screws, ${doorJackStudFastenerResult.totalWeightLb.toFixed(2)} lb, for this one sheet at the real RO height).`,
             ]}
             role={role}
           />
@@ -20116,7 +20206,7 @@ export default function LayoutEditor() {
                  since 2026-11-14. */
               !jackStudHasSheet(jackStudConfig)
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
-                : "Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in.",
+                : "Plywood jack studs selected — screwed to the adjacent wall panel with 4in GRK 5/16in structural screws on the panel-to-panel schedule — 16in o.c. to the exterior face, 24in o.c. to the interior.",
             ]}
             role={role}
           />
@@ -20669,7 +20759,8 @@ export default function LayoutEditor() {
                       &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
                       {jackStudHasSheet(jackStudConfig) ? (
                         <>
-                          Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
+                          Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in GRK 5/16in screws, on the
+                          panel-to-panel schedule of 16in o.c. to the exterior face and 24in o.c. to the interior (
                           {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening
                           gets 2 (one each side).
                         </>

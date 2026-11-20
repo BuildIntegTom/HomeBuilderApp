@@ -1,4 +1,12 @@
 import { type DerivationStatus, derivationStatusNeedsReview } from "./derivationStatus";
+import {
+  type BraceEndConnectionComparison,
+  ESR_2442,
+  FASTENER_CAPACITY_SCOPE_LIMIT,
+  braceEndConnectionComparison,
+  fastenerCapacityInputs,
+} from "./fastenerCapacity";
+import type { DerivationInput } from "./shearDerivation";
 
 /**
  * **THE REFERENCE POINTS PAGE — phase 1 of the roof-bracing item.**
@@ -48,7 +56,39 @@ import { type DerivationStatus, derivationStatusNeedsReview } from "./derivation
  * labels for that reason.
  */
 const BRACE_ITEM_PATTERN = /brace member/i;
-const JACK_ITEM_PATTERN = /T25 #9/i;
+
+/**
+ * ⚠ **THE JACK-STUD PATTERN IS GONE, AND SO IS THE CONTRADICTION IT FOUND.**
+ *
+ * This module shipped on 2026-11-18 matching `/T25 #9/i` to surface a clash:
+ * Tommy's own "2 4in T25 #9 screws every 6in" was the rule the app counted,
+ * while the catalog schedule quoted a GRK 5/16"x4" at 24" o.c. for the same
+ * joint and was counted nowhere. He settled it the next day — *"might as well
+ * just have jack studs also get big screws. just the one schedule."* — so
+ * there is now one rule, the schedule's, and the app counts it.
+ *
+ * The contradiction is **resolved, not suppressed**: the schedule row's own
+ * note records which rule superseded which and why the count fell, and a test
+ * asserts no reference point anywhere still mentions a T25. Deleting a
+ * contradiction without leaving that trail would make the page's one job —
+ * saying where a number came from — unverifiable for the next reader.
+ */
+export const RETIRED_JACK_FASTENER_PATTERN = /T25/i;
+
+/**
+ * ⚠ **THE SCHEDULE ROW AND THE IN-PANEL TALLY ARE NOW THE SAME CONNECTION.**
+ *
+ * Before 2026-11-19 they were two different rules, so two rows was right. Now
+ * that the jack sheet follows the schedule, a schedule row reading *"Not
+ * counted by the app"* sits a few lines under an in-panel row reading *"108 in
+ * this building"* — **for the same screw in the same joint.** That is the
+ * duplicate-brace-row defect of phase 1 recurring, in the one direction the
+ * page is least allowed to get wrong, and it was found in the browser again.
+ *
+ * So a schedule row whose connection the tally already counts says so and
+ * points at it, rather than claiming nothing counts it.
+ */
+const JACK_TALLY_PATTERN = /jack sheet to panel/i;
 
 /** Tommy, 2026-10-25: two screws at each end of every diagonal. */
 const SCREWS_PER_BRACE = 4;
@@ -139,6 +179,26 @@ export interface ReferencePointsSheet {
   needsReviewCount: number;
   /** How many have a modelled force. ⚠ Expected to be small. */
   modeledLoadCount: number;
+  /**
+   * **What one screw can hold, and where that came from.**
+   *
+   * ⚠ Added 2026-11-19 on his *"can you find a number?"*. Until then the page
+   * reported eight spacings and no capacity at all, which is why phase 2 could
+   * not start: a spacing cannot be derived from a load without knowing what
+   * one fastener is good for. The figures are ICC-ES ESR-2442's, cited, and
+   * cross-checked against the NDS yield-limit equations — see
+   * `fastenerCapacity`.
+   */
+  capacityInputs: DerivationInput[];
+  /** The report these are from, so the page can print the citation once. */
+  capacitySource: { id: string; revised: string; url: string; scopeLimit: string };
+  /**
+   * The brace end: two screws against the strut they hold. Null before
+   * anything is drawn, or when the caller has no brace to compare.
+   *
+   * ⚠ **Not a check.** Both numbers are capacities and neither is a demand.
+   */
+  braceEndConnection: BraceEndConnectionComparison | null;
 }
 
 /** One row of the catalog's fastener schedule, as this module needs it. */
@@ -184,6 +244,25 @@ export interface ReferencePointsContext {
   shearBraceCount: number;
   /** True once the building has roof panels, which sharpens the missing-roof gap. */
   hasRoofPanels: boolean;
+  /**
+   * One brace's axial capacity from the Shear Derivation sheet, for the
+   * end-connection comparison. Omit when nothing braced is drawn.
+   *
+   * ⚠ **The MEDIAN or a representative brace, not the largest.** Passing the
+   * strongest brace in the building would make the connection look worst, and
+   * a page that picks the unflattering case on purpose is as unreliable as one
+   * that picks the flattering case.
+   */
+  braceAxialCapacityLb?: number;
+  /**
+   * How deep a brace-end screw lands in solid sawn lumber.
+   *
+   * ⚠ **An app assumption the caller must state, not a default hidden here.**
+   * A brace lies flat on a 1 1/2in member; what is behind that member is a
+   * question about the real detail, and `gap-brace-end-penetration` says the
+   * app does not model it.
+   */
+  braceEndPenetrationIn?: number;
 }
 
 /**
@@ -200,6 +279,27 @@ function groupForScheduleRow(
   foundationConnections: readonly string[],
 ): ReferencePointGroup {
   return foundationConnections.includes(row.connection) ? "foundation" : "assembly";
+}
+
+/**
+ * How many of a schedule row's fasteners this building has — or why not.
+ *
+ * ⚠ **It must never say "not counted" about a connection the tally counts.**
+ * See `JACK_TALLY_PATTERN`.
+ */
+function scheduleRowCountStatement(
+  row: ReferencePointScheduleRow,
+  group: ReferencePointGroup,
+  items: readonly { label: string; count: number }[],
+): string {
+  if (group === "foundation") return "Occurs in this building's foundation load path.";
+  const counted = /^jack stud/i.test(row.connection)
+    ? items.find((item) => JACK_TALLY_PATTERN.test(item.label))
+    : undefined;
+  if (counted !== undefined) {
+    return `${counted.count.toLocaleString()} in this building — counted, because this is the same rule as the in-panel row "${counted.label}" above. One schedule, one count.`;
+  }
+  return "Not counted by the app. The schedule states a spacing; nothing counts the fasteners it implies.";
 }
 
 /**
@@ -238,6 +338,20 @@ function assemblyLoad(connection: string, panelCount: number): ReferencePointLoa
 export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePointsSheet {
   const points: ReferencePoint[] = [];
 
+  /* ⚠ Computed BEFORE the rows, because the brace row's load statement is the
+     one place on the page that changes when a capacity exists. Until
+     2026-11-19 it ended "What is NOT modelled is whether these four screws can
+     deliver that force into the frame"; leaving that sentence standing beside a
+     section that now answers it would be the page contradicting itself, which
+     is the exact defect it was built to catch. */
+  const braceEndConnection =
+    ctx.braceAxialCapacityLb !== undefined && ctx.braceEndPenetrationIn !== undefined
+      ? braceEndConnectionComparison({
+          braceAxialCapacityLb: ctx.braceAxialCapacityLb,
+          penetrationIn: ctx.braceEndPenetrationIn,
+        })
+      : null;
+
   /* --- Inside a panel ------------------------------------------------------
      These come off `computeFastenerWeight`, which counts them for WEIGHT.
      Worth being explicit about: the counts are real and live, and the reason
@@ -266,8 +380,13 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
         ? {
             modeled: true,
             statement:
-              "⚠ A force IS modelled for the BRACE — its axial capacity as a pin-ended strut, and the horizontal component of that. What is NOT modelled is whether these four screws can deliver that force into the frame.",
-            seeAlso: "Shear Derivation sheet — every NDS step from the cut length to the pounds.",
+              braceEndConnection === null
+                ? "⚠ A force IS modelled for the BRACE — its axial capacity as a pin-ended strut, and the horizontal component of that. What is NOT modelled is whether these four screws can deliver that force into the frame."
+                : `⚠ A force IS modelled for the BRACE — its axial capacity as a pin-ended strut, and the horizontal component of that. As of 2026-11-19 these screws have a capacity too: ${Math.round(braceEndConnection.perEndLb)} lbf at each end against ${Math.round(braceEndConnection.braceAxialCapacityLb)} lbf in the strut, so the ENDS are the smaller number by a factor of about ${(1 / Math.max(braceEndConnection.ratio, 1e-9)).toFixed(1)}. Neither figure is a demand and neither says the brace passes.`,
+            seeAlso:
+              braceEndConnection === null
+                ? "Shear Derivation sheet — every NDS step from the cut length to the pounds."
+                : "Shear Derivation sheet for the strut; the capacity section below for the screws.",
           }
         : {
             modeled: false,
@@ -286,10 +405,7 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
       connection: row.connection,
       fastener: row.fastener,
       spacing: row.spacing,
-      countStatement:
-        group === "foundation"
-          ? "Occurs in this building's foundation load path."
-          : "Not counted by the app. The schedule states a spacing; nothing counts the fasteners it implies.",
+      countStatement: scheduleRowCountStatement(row, group, items),
       status: row.status,
       note: row.note ?? "",
       load: assemblyLoad(row.connection, ctx.panelCount),
@@ -317,17 +433,9 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
     }
   }
 
-  const jackTally = items.find((item) => JACK_ITEM_PATTERN.test(item.label));
-  const jackSchedule = ctx.schedule.find((row) => /^jack stud/i.test(row.connection));
-  if (jackTally !== undefined && jackSchedule !== undefined) {
-    contradictions.push({
-      id: "contradiction-jack-stud",
-      subject: "How a jack stud is fastened to the panel beside it",
-      a: `${jackTally.label} — Tommy's own, "screwed to the adjacent wall using 2 4in T25 #9 screws every 6in", and the one the app actually COUNTS (${jackTally.count.toLocaleString()} in this building).`,
-      b: `${jackSchedule.fastener} at ${jackSchedule.spacing} — the schedule row, an NFW reference point nobody has confirmed, and counted nowhere.`,
-      why: "⚠ A different screw at a different spacing for what reads as the same connection, and the two are far apart: 2 screws every 6in is four a foot, against one every two feet. Either they are two different connections and the schedule should say so, or one of them is wrong.",
-    });
-  }
+  /* ⚠ The jack-stud contradiction that shipped here on 2026-11-18 is GONE
+     because he resolved it on 2026-11-19, not because it was dropped. See
+     `RETIRED_JACK_FASTENER_PATTERN`. */
 
   /* --- The gaps ------------------------------------------------------------ */
   const gaps: ReferencePointGap[] = [];
@@ -364,10 +472,35 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
     why: "The 28-screws-per-ring figure is Tommy's exactly and does not cover this lap, so a panel whose rings are cut is under-counted by however many screws it turns out to take.",
   });
 
+  gaps.push({
+    id: "gap-brace-end-penetration",
+    connection: "How much wood is behind a brace end screw",
+    why:
+      "⚠ The brace-end capacity above is computed on an ASSUMED penetration — the 1 1/2in of solid 2x4 or Blocking the brace bears on. " +
+      "Behind that sits 3/4in of plywood skin, giving 2 1/4in of material in all, which is 1/8in short of the 2 3/8in " +
+      "ESR-2442 Table 3 requires for this screw and ends in plywood rather than the sawn lumber the row was tested in. " +
+      "The app does not model whether the real detail doubles the plate, rakes the screw into a stud, or lets it protrude. " +
+      "That is a question for Building Integrity and it moves the brace-end number either way.",
+  });
+
   const needsReviewCount = points.filter((p) => derivationStatusNeedsReview(p.status)).length;
   const modeledLoadCount = points.filter((p) => p.load.modeled).length;
 
-  return { points, contradictions, gaps, needsReviewCount, modeledLoadCount };
+  return {
+    points,
+    contradictions,
+    gaps,
+    needsReviewCount,
+    modeledLoadCount,
+    capacityInputs: fastenerCapacityInputs(),
+    capacitySource: {
+      id: ESR_2442.id,
+      revised: ESR_2442.revised,
+      url: ESR_2442.url,
+      scopeLimit: FASTENER_CAPACITY_SCOPE_LIMIT,
+    },
+    braceEndConnection,
+  };
 }
 
 /** The points of one group, in the order they were built. */

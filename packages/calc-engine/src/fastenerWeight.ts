@@ -18,10 +18,12 @@ const LB_TO_KG = 0.453592;
  * - A 2in "plywood nail" is modeled on a standard 6d common nail's shank
  *   (0.113in diameter, ~2in length — a widely-published construction
  *   reference size).
- * - A "T25 #9" structural screw (jack sheet fastening, Tommy) is modeled on
- *   a #9 wood screw's ANSI major diameter (~0.177in), reduced ~20% for
- *   thread geometry (same ratio as the GRK 5/16in->0.25in reduction above)
- *   to a ~0.14in effective solid diameter.
+ * - ⚠ The "T25 #9" screw this file used to carry (jack sheet fastening) is
+ *   GONE as of 2026-11-19: Tommy moved the jack sheet onto the GRK schedule
+ *   ("just the one schedule"), so there is one fastener for that joint and
+ *   `computeJackStudFastenerWeight` uses the 4in GRK figure above. The #9
+ *   estimate is not kept "just in case" — an unused weight constant for a
+ *   screw the app no longer specifies is a number waiting to be mis-cited.
  * - A "3.5in #10" screw (ring girts, Tommy 2026-11-05) is modeled the same
  *   way one step up: a #10 wood screw's ANSI major diameter is ~0.190in, and
  *   the same 0.791 ratio the #9 above uses gives a ~0.15in effective solid
@@ -34,7 +36,6 @@ const STEEL_DENSITY_LB_PER_IN3 = 0.284;
 const GRK_EFFECTIVE_DIAMETER_IN = 0.25;
 const NAIL_DIAMETER_IN = 0.113;
 const NAIL_LENGTH_IN = 2;
-const T25_NO9_EFFECTIVE_DIAMETER_IN = 0.14;
 const NO10_EFFECTIVE_DIAMETER_IN = 0.15;
 
 function cylinderWeightLb(diameterIn: number, lengthIn: number): number {
@@ -46,7 +47,6 @@ export const PLYWOOD_NAIL_WEIGHT_LB = cylinderWeightLb(NAIL_DIAMETER_IN, NAIL_LE
 export const GRK_3IN_WEIGHT_LB = cylinderWeightLb(GRK_EFFECTIVE_DIAMETER_IN, 3);
 export const GRK_4IN_WEIGHT_LB = cylinderWeightLb(GRK_EFFECTIVE_DIAMETER_IN, 4);
 export const GRK_6IN_WEIGHT_LB = cylinderWeightLb(GRK_EFFECTIVE_DIAMETER_IN, 6);
-export const T25_NO9_4IN_WEIGHT_LB = cylinderWeightLb(T25_NO9_EFFECTIVE_DIAMETER_IN, 4);
 export const NO10_3_5IN_WEIGHT_LB = cylinderWeightLb(NO10_EFFECTIVE_DIAMETER_IN, 3.5);
 
 const NAIL_SPACING_IN = 4;
@@ -154,24 +154,39 @@ export function computeFastenerWeight(members: PanelMember[]): FastenerWeightRes
   return { items, totalWeightLb, totalWeightKg: totalWeightLb * LB_TO_KG };
 }
 
-const JACK_STUD_SCREW_ROW_SPACING_IN = 6;
-const JACK_STUD_SCREWS_PER_ROW = 2;
-
 /**
- * Fastener count/weight for one plywood jack sheet fastened to its
- * adjacent wall panel (Tommy: "screwed to the adjacent wall using 2 4in
- * T25 #9 screws every 6in") — same "round(length/spacing)" row-count
- * convention as the plywood nail spacing above, 2 screws per row.
+ * ⚠ **ONE SCHEDULE, 2026-11-19.** Tommy: *"might as well just have jack studs
+ * also get big screws. just the one schedule."*
+ *
+ * This replaced his earlier jack-stud rule — *"screwed to the adjacent wall
+ * using 2 4in T25 #9 screws every 6in"* — which was the only one the app ever
+ * counted, while the catalog's fastener schedule quoted a GRK 5/16"x4" for the
+ * same joint and was counted nowhere. The Reference Points page put the two
+ * side by side on the day it was built and he settled it in favour of the
+ * schedule. So the jack sheet is now fastened exactly like a panel-to-panel
+ * seam: one column of screws to each face, at that face's own spacing.
+ *
+ * ⚠ **THE COUNT FALLS A LOT, AND THAT IS THE INTENDED DIRECTION.** Two screws
+ * every 6in is four a foot; this is one every 16in on the outside and one
+ * every 24in on the inside. On a 96in sheet that is 32 screws down to 10. Each
+ * one is far bigger (a 5/16in structural screw against a #9), which is the
+ * trade he is describing — so the panel's fastener WEIGHT drops too, and the
+ * jack-stud line on the shop sheets changes accordingly.
  */
+const JACK_STUD_EXTERIOR_SPACING_IN = 16;
+const JACK_STUD_INTERIOR_SPACING_IN = 24;
+
 export function computeJackStudFastenerWeight(heightIn: number): FastenerWeightResult {
-  const rowCount = Math.round(heightIn / JACK_STUD_SCREW_ROW_SPACING_IN);
-  const count = rowCount * JACK_STUD_SCREWS_PER_ROW;
+  /* Same round(length/spacing) convention as every other rule in this file. */
+  const exteriorCount = Math.round(heightIn / JACK_STUD_EXTERIOR_SPACING_IN);
+  const interiorCount = Math.round(heightIn / JACK_STUD_INTERIOR_SPACING_IN);
+  const count = exteriorCount + interiorCount;
   const items: FastenerLineItem[] = [
     {
-      label: "4in T25 #9 screw (6in o.c. rows, 2 each)",
+      label: `4in GRK screw (jack sheet to panel, ${JACK_STUD_EXTERIOR_SPACING_IN}in o.c. exterior + ${JACK_STUD_INTERIOR_SPACING_IN}in o.c. interior)`,
       count,
-      unitWeightLb: T25_NO9_4IN_WEIGHT_LB,
-      totalWeightLb: count * T25_NO9_4IN_WEIGHT_LB,
+      unitWeightLb: GRK_4IN_WEIGHT_LB,
+      totalWeightLb: count * GRK_4IN_WEIGHT_LB,
     },
   ];
   const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);

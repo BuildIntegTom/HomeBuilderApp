@@ -282,10 +282,39 @@ The research document's four questions are now down to three, and one is new.
 4. **OPEN — the proportion limit.** At what plane aspect ratio does one X become
    a row of bay Xs? A number, or a rule like *"no diagonal shallower than 30°
    off the eave"*.
-5. **OPEN — single-fastener capacity.** Phase 2 cannot derive a spacing without
-   a published lateral capacity for a GRK 5/16"×4" in the relevant mode. Either
-   he has the number, or it enters as `pending-BI-confirmation` with its source
-   cited and the page says so.
+5. ✅ **ANSWERED 2026-11-19 — single-fastener capacity.** *"can you find a
+   number? ... anything this app produces is an estimate because im not really
+   sure how to make it official or have the liability for it."* It entered as
+   `pending-BI-confirmation` with its source cited, exactly as this item
+   anticipated. **ICC-ES ESR-2442** (reissued Oct 2025, revised Mar 2026 — note
+   the copy GRK hosts is the lapsed Oct 2023 reissue), in
+   `packages/calc-engine/src/fastenerCapacity.ts`:
+   - **884 lbf** allowable steel shear, Table 1. A flat ceiling, never × C<sub>D</sub>.
+   - **Z = 239/236 lbf** (SG 0.42–0.50), 333/236 (0.50–0.55), 333/257
+     (0.55–0.67), Table 3, for a 1½" side member and 2⅜" penetration. ¾" side
+     member (a jack sheet) is the lower row: 168/133 · 168/133 · 214/178.
+   - **§4.1.5**: the allowable is the LESSER of the two. C<sub>D</sub> = 1.6 for
+     wind/seismic multiplies the wood value only.
+   - **Cross-referenced**, as he asked: `ndsYieldLimitZ` recomputes the same
+     connection through the NDS 12.3 yield-limit equations using nothing from
+     Table 3, and lands **1.3–1.8× LOWER** — which is what §4.1.4 says must
+     happen, since Table 3 is test-based. The calculated route is the
+     conservative floor and the only one that answers where Table 3 refuses.
+   - ⚠ **§4.3 excludes the PRESCRIPTIVE route for braced walls** (*"outside the
+     scope of this report"*) but not the engineered one. **Phase 4 must never
+     cite Table 4 for a braced wall.**
+   - ⚠ **It immediately refused the brace end.** Table 3 needs 2⅜" of
+     penetration; a brace lies flat on a 1½" member with ¾" of skin behind it.
+     Through the calculated route that is **133 lbf a screw, ≈267 lbf a brace
+     end, against a measured median 3,064 lbf strut — the ends are ~11½×
+     smaller.** Not a check, not a verdict; both are capacities.
+
+   **What phase 2 still does NOT have is the other half: DEMAND.** A spacing
+   derived from a load needs a load, and this app has no wind or seismic
+   demand figures — the same hole the Shear Derivation sheet refuses to paper
+   over. Phase 2 can now state a per-screw and per-foot CAPACITY for any
+   spacing, and compare spacings to each other; it cannot say a spacing is
+   adequate.
 6. **OPEN, small — the continuous cavity.** Wall rainscreen and roof vent as one
    path is an assembly decision with a detail at the corner. Phase 5 can model
    the layers without it; it cannot draw the corner without it.

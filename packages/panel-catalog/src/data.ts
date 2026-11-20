@@ -1465,8 +1465,9 @@ export const fastenerSpacingTable: FastenerSpacingRow[] = [
   {
     connection: "Jack stud to panel",
     fastener: "GRK 5/16\"x4\" star drive washer head",
-    spacing: "24\" o.c., interior & exterior",
-    status: "pending-BI-confirmation",
+    spacing: "16\" o.c. exterior, 24\" o.c. interior — the panel-to-panel schedule",
+    status: "confirmed",
+    note: "Tommy, 2026-11-19, settling the clash the Reference Points page found on the day it was built: \"might as well just have jack studs also get big screws. just the one schedule.\" ⚠ THIS SUPERSEDES his earlier jack-stud rule, which was 2x 4in T25 #9 screws every 6in — a different screw at a different spacing for the same joint, and the only one the app actually counted. There is now ONE schedule: the jack sheet is fastened on the same 16\"/24\" spacing as a panel-to-panel seam, one column of screws to each face, and the app counts THAT. The count drops sharply (four screws a foot becomes roughly one every 16in or 24in) while each screw gets far larger, which is what he is describing. ⚠ Its side member is 3/4in plywood, not the 1 1/2in a panel-to-panel seam presents, so it is a weaker connection per screw than the identical schedule elsewhere: ESR-2442 Table 3's 3/4in row (153–214 lbf), not its 1 1/2in row (239–333 lbf). ⚠ Nothing in the app checks either against a load.",
   },
   {
     connection: "Panel to panel, interior",
@@ -1517,16 +1518,17 @@ export const fastenerSpacingTable: FastenerSpacingRow[] = [
 /**
  * ⚠ **THE TABLE AS A WHOLE IS STILL PENDING, AND IT IS NO LONGER UNIFORM.**
  *
- * Six of the eight rows are NFW reference points nobody at Building Integrity
- * has confirmed. Two — the panel-to-panel pair — Tommy stated himself on
- * 2026-11-18 and now carry `confirmed` in their own `status`. The table-wide
- * status stays `pending-BI-confirmation` because the majority still are, which
- * keeps this entry in the Review Log where it belongs; **read the per-row
- * `status` for any single connection**, not this one.
+ * Five of the eight rows are NFW reference points nobody at Building Integrity
+ * has confirmed. Three — the panel-to-panel pair (2026-11-18) and the jack stud
+ * (2026-11-19) — Tommy stated himself and now carry `confirmed` in their own
+ * `status`. The table-wide status stays `pending-BI-confirmation` because the
+ * majority still are, which keeps this entry in the Review Log where it
+ * belongs; **read the per-row `status` for any single connection**, not this
+ * one.
  */
 export const fastenerTableStatus = {
   status: "pending-BI-confirmation" as const,
-  note: "Six of the eight rows are NFW reference points — confirm against Building Integrity's own engineering before treating as final. The two panel-to-panel rows are Tommy's own, stated 2026-11-18, and carry `confirmed` per-row. ⚠ No row in this table is tied to a LOAD: every spacing here is a stated schedule, not a figure derived from a force, and the Reference Points page says so beside each one.",
+  note: "Five of the eight rows are NFW reference points — confirm against Building Integrity's own engineering before treating as final. Three are Tommy's own: the two panel-to-panel rows (2026-11-18) and the jack stud (2026-11-19), each `confirmed` per-row. ⚠ Every spacing in this table is a stated schedule, not a figure derived from a force. What IS now derived is what one screw can hold — see the Reference Points page's capacity section, which cites ICC-ES ESR-2442 and recomputes it from the NDS as a cross-check.",
 };
 
 // --- Wall assembly layers (vapor permeability) -----------------------------------
