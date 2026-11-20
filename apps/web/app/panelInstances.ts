@@ -22,6 +22,7 @@ import {
   type BracePattern,
   type JackStudConfig,
 } from "@building-integrity/panel-catalog";
+import { gableWindowFit } from "./gableProfilePoints";
 
 /** Every real structural panel this app can name/count — header and sill
  * are derived from window/door slots (see allPanelInstances), not their
@@ -765,7 +766,24 @@ export function allPanelInstances(
              typed is worse than ignoring it here where the reason is written
              down. It no longer moves anything.
              ───────────────────────────────────────────────────────────── */
-          const windowHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+          /* ⚠ **THE PANEL COMES FIRST — Tommy, 2026-11-19.** This was the
+             third copy of the arithmetic (with the 3D view and the elevation),
+             and like both of them it gave the opening its full requested
+             height and let the gable panel above take the leftovers. On a shed
+             Tiny House that left 3.2in of panel at the tile's short edge:
+             *"theres an obvious gap. the tilted part should be flush with the
+             top of the roof line like all the other gable panels and the
+             window RO space should be under it."* `gableWindowFit` is the one
+             rule all three read now, and it measures the SHORT edge. */
+          const requestedRoHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+          const windowHeightIn =
+            gableEaveHeightIn !== undefined
+              ? gableWindowFit(
+                  tile.leftEdgeHeightIn - gableEaveHeightIn,
+                  tile.rightEdgeHeightIn - gableEaveHeightIn,
+                  requestedRoHeightIn,
+                ).roTopZIn
+              : requestedRoHeightIn;
           const roTopIn = gableEaveHeightIn !== undefined ? gableEaveHeightIn + windowHeightIn : undefined;
           pushInstance(
             direction,

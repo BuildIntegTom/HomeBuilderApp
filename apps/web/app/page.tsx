@@ -528,7 +528,8 @@ import {
   gableLocalTallerHeightIn,
   gableTileRoofTopLiftIn,
   gableProfilePointsForWall,
-  gableWindowCapHeightsIn,
+  GABLE_WINDOW_MIN_TILE_RISE_IN,
+  gableWindowFit,
   resolveGableProfilePoints,
   resolveHeelSeat,
   ROOF_PITCH_OPTIONS_IN12,
@@ -4682,10 +4683,15 @@ export default function LayoutEditor() {
       effectiveHeelHeightIn,
       roofBearingAnchorMode,
       isPeaked ? COLUMN_TOTAL_WIDTH_IN : undefined,
-      /* ⚠ A tile has to hold the whole window AND still be a panel above it,
-         or the window's head stands through its own roofline — which is what
-         seeding onto a 28in tile did on 2026-11-15. */
-      standardWindowHeightDefaultIn.value + GABLE_PANEL_MIN_HEIGHT_IN,
+      /* ⚠ **2026-11-19: this used to be `windowHeight + 1.5in` and the 1.5 was
+         two sheets of plywood.** A tile has to hold a real opening AND a real
+         panel above it; the old figure only guaranteed the panel could be
+         RETURNED by its builder, not built by anybody. His rule now — *"the
+         tilted part should be flush with the top of the roof line ... and the
+         window RO space should be under it"* — is a 16in panel at the tile's
+         SHORT edge, and the window shrinks to suit. See
+         `GABLE_WINDOW_MIN_TILE_RISE_IN`. */
+      GABLE_WINDOW_MIN_TILE_RISE_IN,
       /* ⚠ The same 0 the real row below is built with — the column panel runs
          full height to the peak. Omitted, the seeder took
          `computeGableTiledRow`'s 12in default and judged a ridge-column tile
@@ -14260,7 +14266,7 @@ export default function LayoutEditor() {
    */
   const gableWindowRooflineReviewEntries = useMemo(() => {
     if (!footprint) return [];
-    const breaches: { label: string; exceedsIn: number }[] = [];
+    const breaches: { label: string; exceedsIn: number; fits: boolean; builtIn: number }[] = [];
     for (const wall of footprint.walls) {
       const tiles = gableTilesByWallId[wall.id];
       if (!tiles) continue;
@@ -14282,38 +14288,49 @@ export default function LayoutEditor() {
            hold a window at all. Measuring here the way the seeder measures
            there keeps one rule, and it is the rule that matches the drawing:
            the elevation draws the window's head against the roofline too. */
-        const cap = gableWindowCapHeightsIn(
+        /* ⚠ **THIS ENTRY CHANGED ITS SUBJECT ON 2026-11-19, BECAUSE THE OLD
+           ONE CAN NO LONGER HAPPEN.** It used to report a window standing
+           THROUGH its own roofline. `gableWindowFit` now clamps the opening to
+           leave a real panel above it, in all three drawings, so no window can
+           reach that state and an entry watching for it would be a Review Log
+           line that reads as coverage while being unable to fire.
+
+           What a reviewer needs instead is the thing that DOES still happen:
+           **a window the app had to shorten.** Somebody asked for 48in and the
+           tile gave 26.9in — the drawing is right and the number is not the
+           one they typed, which is exactly the kind of silent substitution
+           this log exists to surface. */
+        const requestedIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+        const fit = gableWindowFit(
           tile.leftEdgeHeightIn - gableEaveHeightIn,
           tile.rightEdgeHeightIn - gableEaveHeightIn,
-          /* The truss plate is the sill, so the rough opening's top IS the
-             window's own height above the row's base — see the 3D view's
-             `roTopZIn`, which is this same expression. */
-          tile.windowHeightIn ?? standardWindowHeightDefaultIn.value,
-          GABLE_PANEL_MIN_HEIGHT_IN,
+          requestedIn,
         );
-        /* `exceedsRooflineIn === 0` is the LEGITIMATE no-cap case — a window
-           whose head lands exactly on its own roofline genuinely has no gable
-           material above it. Only a positive figure is a part that does not
-           fit. */
-        if (cap.kind !== "none" || !(cap.exceedsRooflineIn > 1e-6)) continue;
+        if (!fit.shrunk && fit.fits) continue;
         breaches.push({
           label: `Wall ${wallCompassDirection(wall, footprint)} at ${formatLengthIn(tile.xStartIn, unitSystem)}`,
-          exceedsIn: cap.exceedsRooflineIn,
+          exceedsIn: fit.fits ? requestedIn - fit.roTopZIn : requestedIn,
+          fits: fit.fits,
+          builtIn: fit.roTopZIn,
         });
       }
     }
     if (breaches.length === 0) return [];
+    const unbuildable = breaches.filter((b) => !b.fits);
     const worstIn = Math.max(...breaches.map((b) => b.exceedsIn));
     return [
       {
-        label: `⚠ ${breaches.length} gable window${breaches.length === 1 ? "" : "s"} stand${breaches.length === 1 ? "s" : ""} through ${breaches.length === 1 ? "its" : "their"} own roofline — up to ${formatLengthIn(worstIn, unitSystem)} proud`,
+        label: `⚠ ${breaches.length} gable window${breaches.length === 1 ? "" : "s"} ${breaches.length === 1 ? "is" : "are"} shorter than asked for — up to ${formatLengthIn(worstIn, unitSystem)} shorter`,
         status: "pending-BI-confirmation" as const,
         note:
-          `A gable window's rough opening is taller than the tile it sits in, so its head passes above the roof plane and there is no gable panel over it. ` +
-          `At: ${breaches.map((b) => `${b.label} (${formatLengthIn(b.exceedsIn, unitSystem)} proud)`).join(" · ")}. ` +
-          `⚠ This is a design that does not close, not a value that needs sourcing. Either the window is shorter, the tile is taller, or the window does not belong on that tile. ` +
-          `The app will not seed one into a tile that cannot hold it, so a window reported here was placed or kept by hand. ` +
-          `⚠ The two drawings do not agree about such a window, and this entry sides with the elevation. The elevation measures its head against the ROOF PLANE and draws it standing through. The 3D view measures against the gable panel's own top, which with full-height gable ends closes to the roof's top SURFACE — about 16 3/8in higher — so it finds a few inches of cap and builds a sliver there. Whether a cap made only of that closing material counts as a panel over a window has not been decided.`,
+          `Tommy, 2026-11-19: the gable panel over a window keeps 16in at its SHORT edge and the rough opening is whatever is left under it — "the tilted part should be flush with the top of the roof line like all the other gable panels and the window RO space should be under it with no sill". ` +
+          `So on a shallow tile the opening is SHORTENED rather than the panel being thinned, and the drawn window is not the height that was asked for. ` +
+          `At: ${breaches.map((b) => (b.fits ? `${b.label} (${formatLengthIn(b.builtIn, unitSystem)} built, ${formatLengthIn(b.exceedsIn, unitSystem)} short)` : `${b.label} (NO window fits at all)`)).join(" · ")}. ` +
+          `⚠ This is reported, not wrong: every one of these is flush with its roofline and has a buildable panel over it. What it is not is the window somebody typed. Either accept the shorter opening, move the window to a taller tile, or raise the roof. ` +
+          (unbuildable.length > 0
+            ? `⚠ ${unbuildable.length} of them cannot hold a window AT ALL — the tile's short edge leaves nothing under a 16in panel. The app will not seed one into such a tile, so those were placed or kept by hand and are drawn with no opening. `
+            : "") +
+          `⚠ The 16in panel minimum is his; the 24in minimum opening the SEEDER requires is this app's own figure, chosen as the building system's 24in module because he named no floor.`,
       },
     ];
   }, [footprint, gableTilesByWallId, gableEaveHeightIn, unitSystem]);

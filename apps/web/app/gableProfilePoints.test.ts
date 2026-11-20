@@ -7,6 +7,10 @@ import {
   resolveGableProfilePoints,
   gableTileRoofTopLiftIn,
   gableWindowCapHeightsIn,
+  GABLE_WINDOW_MIN_CAP_HEIGHT_IN,
+  GABLE_WINDOW_MIN_RO_HEIGHT_IN,
+  GABLE_WINDOW_MIN_TILE_RISE_IN,
+  gableWindowFit,
   resolveHeelSeat,
 } from "./gableProfilePoints";
 import {
@@ -346,5 +350,73 @@ describe("⚠ the gable cap above a gable window", () => {
        through it is a part that does not fit, and nobody reports that yet. */
     expect(gableWindowCapHeightsIn(60, 48, 60, MIN)).toEqual({ kind: "none", exceedsRooflineIn: 0 });
     expect(gableWindowCapHeightsIn(96, 84, 100, MIN)).toEqual({ kind: "none", exceedsRooflineIn: 4 });
+  });
+});
+
+describe("gableWindowFit — the panel comes first (Tommy, 2026-11-19)", () => {
+  /* > "gable windows on a shed rectangle (tiny house) seem to be like drawn
+     > right, but theres an obvious gap. the tilted part should be flush with
+     > the top of the roof line like all the other gable panels and the window
+     > RO space should be under it with no sill." */
+
+  it("⚠ measures the SHORT edge, which is the whole correction", () => {
+    /* The real Tiny House tile that produced the gap: 60.9in at its tall edge,
+       51.2in at its short one. Sized off the tall edge a 48in window leaves
+       12.9in / 3.2in — flush, but 3.2in is not a panel. */
+    const fit = gableWindowFit(60.9, 51.2, 48);
+    expect(fit.fits).toBe(true);
+    expect(fit.shrunk).toBe(true);
+    expect(fit.roTopZIn).toBeCloseTo(51.2 - GABLE_WINDOW_MIN_CAP_HEIGHT_IN, 9);
+    /* The SHORT edge gets exactly the minimum; the tall edge gets more. */
+    expect(Math.min(fit.capLeftIn, fit.capRightIn)).toBeCloseTo(GABLE_WINDOW_MIN_CAP_HEIGHT_IN, 9);
+    expect(Math.max(fit.capLeftIn, fit.capRightIn)).toBeCloseTo(60.9 - 35.2, 9);
+  });
+
+  it("⚠ never lets the short edge fall below the minimum, over the whole slope", () => {
+    /* A sweep rather than a case: every tile a 4:12 shed on a 16ft depth can
+       produce, at the real 18.4in tile width (a 1/3 fall across the tile). */
+    for (let tallIn = 1; tallIn <= 66.25; tallIn += 0.25) {
+      const shortIn = Math.max(0, tallIn - 18.4 / 3);
+      const fit = gableWindowFit(tallIn, shortIn, 48);
+      if (!fit.fits) {
+        expect(shortIn).toBeLessThanOrEqual(GABLE_WINDOW_MIN_CAP_HEIGHT_IN);
+        continue;
+      }
+      expect(Math.min(fit.capLeftIn, fit.capRightIn)).toBeGreaterThanOrEqual(
+        GABLE_WINDOW_MIN_CAP_HEIGHT_IN - 1e-9,
+      );
+      /* And the panel is always FLUSH: cap + opening is the roofline exactly. */
+      expect(fit.roTopZIn + fit.capLeftIn).toBeCloseTo(tallIn, 9);
+      expect(fit.roTopZIn + fit.capRightIn).toBeCloseTo(shortIn, 9);
+      expect(fit.roTopZIn).toBeGreaterThan(0);
+    }
+  });
+
+  it("leaves a tall tile's window at its full requested height", () => {
+    const fit = gableWindowFit(120, 110, 48);
+    expect(fit.shrunk).toBe(false);
+    expect(fit.roTopZIn).toBe(48);
+    expect(Math.min(fit.capLeftIn, fit.capRightIn)).toBeCloseTo(62, 9);
+  });
+
+  it("⚠ refuses a tile with no room under the panel, rather than returning 0", () => {
+    const fit = gableWindowFit(20, GABLE_WINDOW_MIN_CAP_HEIGHT_IN, 48);
+    expect(fit.fits).toBe(false);
+    expect(fit.why).toContain("No window fits here");
+  });
+
+  it("⚠ the seeder's threshold is the panel PLUS a real opening, not 1.5in", () => {
+    /* The old guard was `windowHeight + GABLE_PANEL_MIN_HEIGHT_IN`, and that
+       constant is two sheets of plywood with nothing between them. */
+    expect(GABLE_WINDOW_MIN_TILE_RISE_IN).toBe(
+      GABLE_WINDOW_MIN_RO_HEIGHT_IN + GABLE_WINDOW_MIN_CAP_HEIGHT_IN,
+    );
+    expect(GABLE_WINDOW_MIN_CAP_HEIGHT_IN).toBeGreaterThan(GABLE_PANEL_MIN_HEIGHT_IN);
+    /* A tile exactly at the threshold must actually fit a window at the
+       minimum opening — a threshold that admits a tile the fit then refuses
+       would be two rules disagreeing again. */
+    const edge = gableWindowFit(GABLE_WINDOW_MIN_TILE_RISE_IN, GABLE_WINDOW_MIN_TILE_RISE_IN, 48);
+    expect(edge.fits).toBe(true);
+    expect(edge.roTopZIn).toBeCloseTo(GABLE_WINDOW_MIN_RO_HEIGHT_IN, 9);
   });
 });

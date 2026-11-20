@@ -293,6 +293,122 @@ export function gableTileRoofTopLiftIn(
  * ⚠ No caller reports the breach into the Review Log yet. Flagged rather
  * than guessed at.
  */
+/**
+ * ⚠ **HOW TALL THE PANEL ABOVE A GABLE WINDOW MUST BE — Tommy, 2026-11-19.**
+ *
+ * > *"gable windows on a shed rectangle (tiny house) seem to be like drawn
+ * > right, but theres an obvious gap. the tilted part should be flush with the
+ * > top of the roof line like all the other gable panels and the window RO
+ * > space should be under it with no sill."*
+ *
+ * **The dependency used to run the wrong way.** The rough opening was fixed at
+ * the standard 48in window height and the gable panel above it took whatever
+ * was left — so on a shed Tiny House, whose whole gable row rises only 66in,
+ * the panel came out **12.9in at its tall edge and 3.2in at its short one**.
+ * Flush with the roofline, technically; not a panel. Lower down the slope a
+ * tile under 48in got **no panel at all** and the opening stood through the
+ * roof plane.
+ *
+ * ⚠ **THE OLD GUARD WAS THE REAL CULPRIT, AND IT WAS 1.5in.** A tile could
+ * hold a window once it cleared `windowHeight + GABLE_PANEL_MIN_HEIGHT_IN`,
+ * and that constant is `2 * SKIN_THICKNESS_IN` — **two sheets of plywood with
+ * nothing between them.** It is the right floor for "can `buildGablePanelMembers`
+ * physically return members", which is what it was written for, and the wrong
+ * one entirely for "is this a panel the shop would build".
+ *
+ * **So it is inverted now: the panel comes first.** Its SHORT edge gets
+ * `GABLE_WINDOW_MIN_CAP_HEIGHT_IN`, and the rough opening is what is left
+ * underneath — which is his sentence, in the order he said it.
+ */
+export const GABLE_WINDOW_MIN_CAP_HEIGHT_IN = 16;
+
+/**
+ * ⚠ **THE SMALLEST ROUGH OPENING WORTH SEEDING — AN APP ASSUMPTION, NOT HIS.**
+ *
+ * Asked what gives on a tile too short for a 48in window plus the panel, he
+ * chose *"shrink the window — every tile that **qualifies** gets a window, but
+ * they vary in height along the slope"*, over refusing outright and over
+ * shrinking to a named floor. So a window shrinks; but "qualifies" still needs
+ * a line, or a 20in tile would be seeded a 4in window.
+ *
+ * **24in is this building system's own module** — the floor and roof panel
+ * width, the narrow window width, the number everything else here is built on
+ * — so it is the least invented figure available. A window may still be
+ * hand-placed below it; this governs only what the seeder spawns.
+ */
+export const GABLE_WINDOW_MIN_RO_HEIGHT_IN = 24;
+
+/** What a tile must RISE AT ITS SHORT EDGE before the seeder may put a window
+ *  in it. ⚠ The short edge, not the tall one — see `gableWindowFit`. */
+export const GABLE_WINDOW_MIN_TILE_RISE_IN =
+  GABLE_WINDOW_MIN_RO_HEIGHT_IN + GABLE_WINDOW_MIN_CAP_HEIGHT_IN;
+
+export interface GableWindowFit {
+  /** False when the tile cannot carry a panel and any opening at all. */
+  fits: boolean;
+  /** The rough opening's top above the row's own base — equivalently, how far
+   *  the gable panel's bottom plate is raised onto its jack studs. */
+  roTopZIn: number;
+  /** The cap's own two edge heights, measured UP FROM `roTopZIn`. */
+  capLeftIn: number;
+  capRightIn: number;
+  /** True when the requested opening had to be reduced to keep the panel. */
+  shrunk: boolean;
+  requestedRoHeightIn: number;
+  why: string;
+}
+
+/**
+ * **The one place that decides where a gable window's head goes.**
+ *
+ * ⚠ **IT MEASURES THE SHORT EDGE, AND THAT IS THE WHOLE CORRECTION.** A gable
+ * tile is a trapezoid: its two roofline edges differ by the pitch across its
+ * own width. Sizing the opening off the TALL edge — which both the seeder and
+ * every consumer did — leaves the short edge short by exactly that difference,
+ * which on a 4:12 shed is a third of the tile's width. That is where the 3.2in
+ * sliver came from, and it is why a tile can pass a height guard and still
+ * produce a part nobody can build.
+ *
+ * ⚠ **IT REPLACES THREE COPIES OF THIS ARITHMETIC** — the 3D view, the
+ * elevation drawing and `panelInstances` each had their own, which is already
+ * on record as how the elevation came to draw a sill the fabrication data no
+ * longer had. A rule that lives in three places is a rule that will differ in
+ * three places.
+ */
+export function gableWindowFit(
+  leftLocalIn: number,
+  rightLocalIn: number,
+  requestedRoHeightIn: number,
+  minCapHeightIn: number = GABLE_WINDOW_MIN_CAP_HEIGHT_IN,
+): GableWindowFit {
+  const shortIn = Math.min(leftLocalIn, rightLocalIn);
+  const headroomIn = shortIn - minCapHeightIn;
+  if (!(headroomIn > 0)) {
+    return {
+      fits: false,
+      roTopZIn: 0,
+      capLeftIn: leftLocalIn,
+      capRightIn: rightLocalIn,
+      shrunk: false,
+      requestedRoHeightIn,
+      why: `This tile rises ${shortIn.toFixed(1)}in at its short edge, which leaves nothing under a ${minCapHeightIn}in gable panel. No window fits here.`,
+    };
+  }
+  const roTopZIn = Math.min(requestedRoHeightIn, headroomIn);
+  return {
+    fits: true,
+    roTopZIn,
+    capLeftIn: leftLocalIn - roTopZIn,
+    capRightIn: rightLocalIn - roTopZIn,
+    shrunk: roTopZIn < requestedRoHeightIn - 1e-9,
+    requestedRoHeightIn,
+    why:
+      roTopZIn < requestedRoHeightIn - 1e-9
+        ? `Rough opening shortened from ${requestedRoHeightIn.toFixed(1)}in to ${roTopZIn.toFixed(1)}in so the gable panel above it keeps ${minCapHeightIn}in at its short edge. The panel stays flush with the roofline; the opening is what is left under it.`
+        : `Rough opening at its full ${requestedRoHeightIn.toFixed(1)}in; the gable panel above keeps ${(shortIn - roTopZIn).toFixed(1)}in at its short edge.`,
+  };
+}
+
 export type GableWindowCap =
   | { kind: "cap"; leftIn: number; rightIn: number }
   | {

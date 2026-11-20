@@ -33,7 +33,7 @@ import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWal
 import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
-import { gableTileRoofTopLiftIn, gableWindowCapHeightsIn } from "./gableProfilePoints";
+import { gableTileRoofTopLiftIn, gableWindowCapHeightsIn, gableWindowFit } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff } from "./crossTiltTakeoff";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 import { computeDeckPanelTakeoff } from "./deckPanelTakeoff";
@@ -2117,9 +2117,14 @@ export default function Building3DView({
              the work; it is simply given a zero sill and asked to start at 0.
              ─────────────────────────────────────────────────────────── */
           const windowHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
-          /* The raised bottom plate's underside: the whole opening, measured
-             from the truss plate the row stands on. */
-          const roTopZIn = windowHeightIn;
+          /* ⚠ **THE PANEL COMES FIRST NOW — Tommy, 2026-11-19.** This used to
+             be `roTopZIn = windowHeightIn` flat, so the opening took its full
+             height and the gable panel above it got the leftovers, which on a
+             shed Tiny House was 3.2in at the tile's short edge. `gableWindowFit`
+             owns the decision for all three drawings: the panel keeps 16in at
+             its SHORT edge and the opening is what is left under it. */
+          const fit = gableWindowFit(leftLocalIn, rightLocalIn, windowHeightIn);
+          const roTopZIn = fit.roTopZIn;
           const lowerMembers = buildOpeningAssemblyMembers(
             tile.widthIn,
             thicknessIn,
@@ -2139,7 +2144,15 @@ export default function Building3DView({
              `gableWindowCapHeightsIn`, which owns that decision and is
              tested. A window whose head reaches its own roofline simply has
              no gable material above it. */
-          const cap = gableWindowCapHeightsIn(leftLocalIn, rightLocalIn, roTopZIn, GABLE_PANEL_MIN_HEIGHT_IN);
+          /* ⚠ Still asked, and now it should essentially never refuse: a
+             window that does not fit is refused by `gableWindowFit` above,
+             which measures the short edge. This stays as the fabrication-level
+             floor — can the builder physically return members — because the
+             two questions are genuinely different and the cheaper one is not
+             a substitute for the other. */
+          const cap = fit.fits
+            ? gableWindowCapHeightsIn(leftLocalIn, rightLocalIn, roTopZIn, GABLE_PANEL_MIN_HEIGHT_IN)
+            : ({ kind: "none", exceedsRooflineIn: 0 } as const);
           const capMembers =
             cap.kind === "none"
               ? []

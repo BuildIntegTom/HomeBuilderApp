@@ -191,9 +191,16 @@ export function seedGableWindowsForFootprint(
      *
      * ⚠ It could also seed "onto the column" (ordinal 5 above), which is not a
      * tile a window may occupy at all. Excluding it closes that too. */
+    /* ⚠ **THE SHORT EDGE, 2026-11-19 — this read `Math.max` and that was the
+       bug Tommy saw.** A gable tile is a trapezoid, and sizing a window off
+       its TALL edge leaves the short edge short by the pitch across the tile's
+       own width. On a 4:12 shed that is a third of the width: a tile passing
+       the guard at 60.9in had only 51.2in at its other end, so the panel above
+       the window came out 3.2in there — *"theres an obvious gap"*. The guard
+       has to ask about the edge that runs out first. */
     const risesIn = tiles
       .filter((t) => !t.isSafetyGap && !t.isColumn)
-      .map((t) => Math.max(t.leftHeightIn, t.rightHeightIn) - gableEaveHeightIn);
+      .map((t) => Math.min(t.leftHeightIn, t.rightHeightIn) - gableEaveHeightIn);
     const windows = seedGableWindows(risesIn, wallLengthIn, standardWidthIn, minTileRiseForWindowIn, randomFn);
     if (windows.length > 0) seeded[wallId] = windows;
   }

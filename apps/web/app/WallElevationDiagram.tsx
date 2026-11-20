@@ -47,7 +47,7 @@ function formatEighthsIn(valueIn: number): string {
 import { MemberElevationShapes } from "./MemberElevationShapes";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { combinedPanelLabel, type PanelInstance } from "./panelInstances";
-import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
+import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, gableWindowFit, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
   MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
@@ -2733,8 +2733,20 @@ export default function WallElevationDiagram({
                  opening starts at the row's own base, and the jack studs carry
                  the raised panel the whole way down.
                  ───────────────────────────────────────────────────────── */
-              const windowHeightIn = p.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+              /* ⚠ **ONE RULE FOR ALL THREE DRAWINGS, 2026-11-19.** This file
+                 had its own copy of the arithmetic — already on record as how
+                 the elevation came to draw a sill the fabrication data no
+                 longer had — and it sized the opening off the tile's TALL
+                 edge. `gableWindowFit` answers for the 3D view and
+                 `panelInstances` too, and it measures the SHORT edge. */
+              const requestedRoHeightIn = p.windowHeightIn ?? standardWindowHeightDefaultIn.value;
               const tileMaxLocalRiseIn = Math.max(p.leftHeightIn, p.rightHeightIn) - roofBaseHeightIn;
+              const fit = gableWindowFit(
+                p.leftHeightIn - roofBaseHeightIn,
+                p.rightHeightIn - roofBaseHeightIn,
+                requestedRoHeightIn,
+              );
+              const windowHeightIn = fit.roTopZIn;
               const g = computeOpeningGeometry(
                 false,
                 p.widthIn,
