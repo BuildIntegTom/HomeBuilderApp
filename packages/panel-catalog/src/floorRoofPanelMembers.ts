@@ -2006,23 +2006,44 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
  * short for its two edge panels, or left with a field too small to be a panel
  * and nothing to redistribute it into.
  */
-export function planFloorRoofPanelWidthsIn(runLengthIn: number, edgePanelWidthIn = FLOOR_ROOF_EDGE_PANEL_WIDTH_IN): number[] | null {
+export function planFloorRoofPanelWidthsIn(
+  runLengthIn: number,
+  edgePanelWidthIn = FLOOR_ROOF_EDGE_PANEL_WIDTH_IN,
+  /**
+   * ⚠ **THE FIELD MODULE IS AN ARGUMENT NOW — Tommy, 2026-11-19.** It was
+   * the `FLOOR_ROOF_PANEL_WIDTH_IN` constant, so the editor's Standard width
+   * dial moved the WALLS and left the decks at 24in, silently breaking his own
+   * 2026-10-23 stacking rule at every setting but 48. A deck field panel is
+   * half a wall panel — `deckFieldWidthForStandardWidthIn` — and the caller
+   * passes it. The default keeps every existing call byte-identical.
+   */
+  fieldPanelWidthIn = FLOOR_ROOF_PANEL_WIDTH_IN,
+): number[] | null {
   const fieldIn = runLengthIn - 2 * edgePanelWidthIn;
   if (fieldIn < 0) return null;
   if (fieldIn === 0) return [edgePanelWidthIn, edgePanelWidthIn];
 
-  /* ⚠ No closer panel any more. Four 24in panels are exactly 8ft, so the
-     module never drifts off the sheet and there is nothing to reset. The
-     whole field is one width until the run runs out. */
+  /* ⚠ No closer panel any more. The whole field is one width until the run
+     runs out.
+
+     ⚠ **THIS NO LONGER PROMISES THE 8FT SHEET MODULE, because the module is
+     no longer always 24in.** It used to read "four 24in panels are exactly
+     8ft, so the module never drifts off the sheet" — true at the 48in
+     standard width and false at two of the five he snapped the dial to on
+     2026-11-19. A field of 24, 16 or 12 (from 48, 32, 24) divides 96; 19.5
+     and 18 (from 39 and 36) do not, and there their sheathing seams drift off
+     the panel joints. The PANELS still stack under the walls at every
+     setting, which is the part he asked for; the sheets are the part that
+     pays, and the picker says so on the option itself. */
   const widths: number[] = [];
   let placedIn = 0;
   while (placedIn < fieldIn - 1e-9) {
-    const widthIn = Math.min(FLOOR_ROOF_PANEL_WIDTH_IN, fieldIn - placedIn);
+    const widthIn = Math.min(fieldPanelWidthIn, fieldIn - placedIn);
     widths.push(widthIn);
     placedIn += widthIn;
   }
 
-  const field = redistributeNarrowTail(widths);
+  const field = redistributeNarrowTail(widths, fieldPanelWidthIn);
   if (field === null) return null;
   return [edgePanelWidthIn, ...field, edgePanelWidthIn];
 }
@@ -2062,7 +2083,10 @@ export function divideOnEighthGrid(totalIn: number, count: number): number[] {
  * Returns the field widths, or null when there is nothing left to pool into
  * and the remainder still cannot be a panel.
  */
-function redistributeNarrowTail(field: readonly number[]): number[] | null {
+function redistributeNarrowTail(
+  field: readonly number[],
+  fieldPanelWidthIn = FLOOR_ROOF_PANEL_WIDTH_IN,
+): number[] | null {
   const last = field[field.length - 1];
   if (last === undefined || last >= FLOOR_ROOF_MIN_PANEL_WIDTH_IN - 1e-9) return [...field];
 
@@ -2078,7 +2102,7 @@ function redistributeNarrowTail(field: readonly number[]): number[] | null {
        by a maximum he never set. Measured: it refused every run from 45 7/8
        to 50 3/8 before this. Redistribution bottoms out just under 24in,
        because above that two panels are both over the minimum and win. */
-    for (let count = Math.max(1, Math.ceil(totalIn / FLOOR_ROOF_PANEL_WIDTH_IN - 1e-9)); count >= 1; count--) {
+    for (let count = Math.max(1, Math.ceil(totalIn / fieldPanelWidthIn - 1e-9)); count >= 1; count--) {
       if (totalIn / count < FLOOR_ROOF_MIN_PANEL_WIDTH_IN - 1e-9) continue;
       return [...keep, ...divideOnEighthGrid(totalIn, count)];
     }
@@ -2496,8 +2520,9 @@ export function buildFloorRoofPanelSchema(options: FloorRoofPanelOptions, pitchI
     {
       type: "deviation",
       text:
-        `Field panels are ${FLOOR_ROOF_PANEL_WIDTH_IN}in and the edge ones are as wide as the wall is thick. Four field panels ` +
-        "make exactly 8ft, so the sheathing above lands on a panel seam every sheet with no closer panel and no drift. " +
+        `Field panels are half the project's standard wall width (${FLOOR_ROOF_PANEL_WIDTH_IN}in at the ${2 * FLOOR_ROOF_PANEL_WIDTH_IN}in default) and the edge ones are as wide as the wall is thick. ` +
+        "Half, so a deck seam lands under either a wall panel's edge or its centre nailer and the load runs straight down — Tommy, 2026-10-23. " +
+        "⚠ At the default, four field panels make exactly 8ft and the sheathing lands on a panel seam every sheet with no drift; that holds wherever the field width divides 96in (24, 16, 12) and NOT at 19 1/2 or 18, which the 39in and 36in standard widths give. " +
         "This replaced a 19 3/16in module whose fifth panel had to be trimmed to 19in to get back onto 96in.",
     },
   ];

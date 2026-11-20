@@ -23,6 +23,43 @@ export const looseDensePackWidthIn: CatalogValue<number> = {
   note: "48\" (Tommy, 2026-10-23): \"floors default to 15.5\" edge panels, 2' wide panels everywhere else with 4' wall panels with a center nailer, as default\". Chosen so the load path runs straight down: a 4ft wall panel is exactly two 2ft floor/roof panels, so every floor seam lands under either a wall panel edge or its centre nailer, and every roof joist lands on a stud. Was 40\". NOTE: this also retires a Review Log item — Panel Set 1's wood BOM was always dimensioned for the 48\" panel, so computeStandardPanelWoodWeight() is accurate again at this default rather than approximate.",
 };
 
+/**
+ * ⚠ **THE STANDARD WIDTH IS A PICKER NOW, NOT A FREE NUMBER — Tommy,
+ * 2026-11-19: *"snap the dial to 48, 39, 36, 32, 24"*.**
+ *
+ * It used to be any value between the fabrication minimum and the catalog
+ * maximum, which let the dial land somewhere that quietly breaks the stacking
+ * rule he set on 2026-10-23 — *"2' wide panels everywhere else with 4' wall
+ * panels with a center nailer"* — the rule that makes a floor seam land under
+ * either a wall panel's edge or its centre nailer. A floor/roof field panel is
+ * **half** the standard width, so the load path runs straight down at every
+ * one of these settings rather than only at 48.
+ *
+ * ⚠ **39in IS THE SQUARE BALE PANEL'S OWN WIDTH** (`squareBalePanel.widthIn`
+ * — two 18in bales plus two 1.5in studs). It is the one entry here that is not
+ * a round module, and it is on the list so a loose-fill building can be tiled
+ * to the same width as a bale one.
+ *
+ * ⚠ **ONLY 48, 32 AND 24 KEEP THE 8FT PLYWOOD MODULE.** A deck's sheathing
+ * lands on panel joints when the field width divides 96in: 24, 16 and 12 do
+ * (from 48, 32, 24), and 19.5 and 18 (from 39 and 36) do not. At those two
+ * settings the deck panels still stack under the walls exactly as he asked —
+ * it is the sheet seams that drift, not the structure. Reported rather than
+ * prevented: the trade is his to make per building.
+ */
+export const standardPanelWidthOptionsIn: CatalogValue<readonly number[]> = {
+  value: [48, 39, 36, 32, 24],
+  status: "confirmed",
+  note: "Tommy, 2026-11-19, first-hand: \"snap the dial to 48, 39, 36, 32, 24\". 48 is the default and his 2026-10-23 standard; 39 matches the Square Bale panel's own width; 24 is the floor/roof field width, i.e. a building whose walls and decks share one module. ⚠ Only 48, 32 and 24 leave a deck field width that divides the 8ft plywood sheet.",
+};
+
+/** A floor or roof field panel is HALF a wall panel, which is what makes a
+ *  deck seam land under either a wall panel's edge or its centre nailer. One
+ *  expression so the relationship cannot drift apart again. */
+export function deckFieldWidthForStandardWidthIn(standardWidthIn: number): number {
+  return standardWidthIn / 2;
+}
+
 export const standardPanelHeightIn: CatalogValue<number> = {
   value: 120,
   status: "confirmed",

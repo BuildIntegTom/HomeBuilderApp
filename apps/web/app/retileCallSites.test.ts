@@ -52,6 +52,24 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
     stage: "—",
     why: "A bump-out changes the SHAPE — it adds walls and splits one. Re-deriving is correct; there is no prior array for the new walls.",
   },
+  /* ⚠ **NEW 2026-11-19, AND IT OVERTURNS A RULE THIS FILE USED TO ASSERT.**
+     The test below said "changing the standard panel width re-tiles nothing"
+     and warned that nothing should fix it. Tommy fixed it, deliberately, on
+     his own ask that the dial move floors, walls and roofs together: floors
+     and roofs are DERIVED and re-plan instantly, so leaving the walls behind
+     a pending-retile mark meant the building did not stack until Repanelize
+     was pressed — and an export taken in that window reached the shop
+     mismatched. Offered the pending mark, making the decks wait, blocking
+     export, or retiling at once, he chose **"width change retiles the walls
+     at once"**, knowing it discards hand-set widths. */
+  handleSetStandardWidthIn: {
+    calls: 2,
+    fate: "REDERIVES",
+    stage: "—",
+    why:
+      "Changing the MODULE is a re-derivation by nature: every panel on every wall is sized from it, so there is no prior array to preserve — the same argument Repanelize makes, reached by a different door. " +
+      "Two calls for the two storeys, like Repanelize, or half the building stays on the old module while the pending mark clears and claims it was all applied.",
+  },
   handleRepanelizeRequest: {
     calls: 2,
     fate: "REDERIVES",
@@ -210,7 +228,13 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        these six now exist because the app can make shapes it could not make a
        week ago, which is the opposite of the problem this file was written to
        catch. A seventh still needs explaining. */
-    expect(rederives.length).toBe(6);
+    /* ⚠ SEVEN since 2026-11-19 — `handleSetStandardWidthIn`, and this one is
+       NOT a new shape-changing gesture. It is an edit that was deliberately
+       given back its re-tile, on his instruction, because the alternative was
+       a building whose decks and walls were on different modules. That is the
+       explanation the sixth entry's note demanded of a seventh. An EIGHTH
+       still needs one. */
+    expect(rederives.length).toBe(7);
     expect(rederives.map(([h]) => h).sort()).toEqual([
       "commitFootprintShapeChange",
       "commitNewFootprint",
@@ -218,23 +242,59 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
       "handleDragWall",
       "handleKeepSplitRegion",
       "handleRepanelizeRequest",
+      "handleSetStandardWidthIn",
     ]);
   });
 });
 
-describe("tile-once Stage 1: what already does NOT re-tile", () => {
-  it("changing the standard panel width re-tiles nothing", () => {
-    // Found during the Stage 1 inventory, 2026-10-07, and recorded because it
-    // is surprising in BOTH directions: a user who changes the standard width
-    // sees existing walls keep their panels, which looks like a bug today —
-    // and is exactly right under tile-once. Nothing should "fix" it by adding
-    // a re-tile here; that would be work to undo.
+describe("⚠ the standard width DOES re-tile, since 2026-11-19", () => {
+  /* The Stage 1 inventory recorded on 2026-10-07 that it did not, and said
+     "nothing should fix it by adding a re-tile here; that would be work to
+     undo". It was fixed on purpose. Floors and roofs derive their module from
+     this same dial now (half a wall panel, so a deck seam lands under a wall
+     panel's edge or its centre nailer), and they re-plan instantly — so walls
+     sitting behind a pending mark meant the two disagreed, which is precisely
+     what he asked to eliminate. The assertion is INVERTED rather than deleted,
+     so the day somebody removes the re-tile they have to come back here. */
+  it("re-tiles both storeys from the one handler", () => {
     const src = readFileSync(PAGE, "utf8");
-    const setterCalls = [...src.matchAll(/setStandardWidthIn\s*\(/g)];
-    expect(setterCalls.length).toBeGreaterThan(0);
+    expect([...src.matchAll(/setStandardWidthIn\s*\(/g)].length).toBeGreaterThan(0);
     const sites = callSitesByHandler();
-    for (const handler of sites.keys()) {
-      expect(handler).not.toMatch(/StandardWidth/i);
-    }
+    const widthHandlers = [...sites.keys()].filter((h) => /StandardWidth/i.test(h));
+    expect(widthHandlers).toEqual(["handleSetStandardWidthIn"]);
+    expect(sites.get("handleSetStandardWidthIn")?.length).toBe(2);
+  });
+
+  it("⚠ passes the NEW width down explicitly, because setState has not re-rendered", () => {
+    /* Without the override the tiler reads `standardWidthIn` from a closure
+       that still holds the OLD value — it would re-tile the building to the
+       width it already had and report success, which is the quietest possible
+       way for this feature to do nothing. */
+    const src = readFileSync(PAGE, "utf8");
+    const handler = src.slice(src.indexOf("const handleSetStandardWidthIn"));
+    const body = handler.slice(0, handler.indexOf("\n  const handleSetWallHeightFt"));
+    /* ⚠ BOTH re-tiles and BOTH applies, counted — not merely "nextIn appears
+       somewhere". Dropping the override from the ground re-tile left three
+       other mentions of `nextIn` in the handler, so a `toContain` passed
+       while the ground storey silently re-tiled at the OLD width. */
+    expect([...body.matchAll(/^\s*nextIn,$/gm)]).toHaveLength(2);
+    expect(body).toContain('applyRetiledStory("ground", ground, leastAccessibleCorner, nextIn)');
+    expect(body).toContain('applyRetiledStory("second", second, leastAccessibleCorner, nextIn)');
+  });
+
+  it("⚠ discards hand-set widths, as he was told it would", () => {
+    /* A `lockedWidthIn` pin is re-forced on every re-tile by design, so a
+       hand-dragged width would otherwise survive a change of module — the
+       same trap Repanelize's own strip exists for. */
+    const src = readFileSync(PAGE, "utf8");
+    const handler = src.slice(src.indexOf("const handleSetStandardWidthIn"));
+    const body = handler.slice(0, handler.indexOf("\n  const handleSetWallHeightFt"));
+    /* ⚠ USED at both call sites, not merely DEFINED. Replacing
+       `discardAll(baseWallSlots)` with `baseWallSlots` left the helper's own
+       definition in the body, so a `toContain("discardLockedWidths")` passed
+       while every hand-set width on the ground storey survived the change of
+       module — the exact promise he was given when he chose this. */
+    expect(body).toContain("discardAll(baseWallSlots)");
+    expect(body).toContain('discardAll(wallSlotsForStory("second"))');
   });
 });

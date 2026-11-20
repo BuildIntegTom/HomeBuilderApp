@@ -332,6 +332,8 @@ import {
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
   looseDensePackWidthIn,
+  standardPanelWidthOptionsIn,
+  deckFieldWidthForStandardWidthIn,
   panelHeightInRange,
   panelTypes,
   fabricationMinPanelWidthIn,
@@ -763,6 +765,32 @@ function medianBraceAxialCapacityLb(derivation: BuildingShearDerivation | null):
     .sort((a, b) => a - b);
   if (capacities.length === 0) return undefined;
   return capacities[Math.floor(capacities.length / 2)];
+}
+
+/**
+ * ⚠ **Only the widths whose HALF divides an 8ft sheet keep the deck
+ * sheathing on panel joints.** 48, 32 and 24 give 24, 16 and 12 and do; 39
+ * and 36 give 19.5 and 18 and do not. At those two the decks still stack
+ * under the walls exactly as he asked — it is the sheet seams that drift,
+ * not the structure — so it is reported in the option list and not refused.
+ */
+const STANDARD_WIDTH_SHEET_NOTE =
+  "Only 48in, 32in and 24in leave a deck field width that divides the 8ft plywood sheet; at 39in and 36in the deck sheathing seams drift off the panel joints, though the panels themselves still stack.";
+
+/**
+ * The widths the picker offers: his five, plus whatever a STORED project is
+ * already on if that is not one of them.
+ *
+ * ⚠ **A select whose `value` is not among its options renders BLANK**, which
+ * on an older building would read as "no standard width" and would be
+ * overwritten by the first change to anything else. Carrying the stored value
+ * as a marked extra is how an old project keeps its own number until he
+ * chooses to move it.
+ */
+function standardWidthChoices(currentIn: number): number[] {
+  const options = [...standardPanelWidthOptionsIn.value];
+  if (!options.some((w) => Math.abs(w - currentIn) < 1e-9)) options.push(currentIn);
+  return options.sort((a, b) => b - a);
 }
 
 const KG_TO_LB = 2.20462;
@@ -3734,6 +3762,72 @@ export default function LayoutEditor() {
     });
   };
 
+  /**
+   * ⚠ **THE STANDARD WIDTH RETILES THE WALLS AT ONCE — Tommy, 2026-11-19.**
+   *
+   * > *"when we change the standard panel size in the editor... can we have
+   * > that effect floor, wall, and roof panels all the same? ... once panels
+   * > can get back on track then floors, walls, and roof are all stacked
+   * > structurally."*
+   *
+   * Floors and roofs are DERIVED — they re-plan the instant the dial moves.
+   * Walls are TILED, and under his tile-once rule they used to keep their old
+   * width behind a pending-retile mark until Repanelize was pressed. That left
+   * a window in which the decks were on the new module and the walls on the
+   * old one: **the building did not stack, which is the one thing he asked
+   * for**, and an export taken in that state would have reached the shop
+   * mismatched.
+   *
+   * Asked to choose, he took *"width change retiles the walls at once"* over
+   * keeping the pending mark, over making the decks wait, and over blocking
+   * export. ⚠ **So this DISCARDS hand-set panel widths on every wall**, the
+   * same way Repanelize does and for the same reason — a pinned width is a
+   * width in the old module. He chose that knowingly; `Ctrl+Z` is the way
+   * back, and the whole retile is one undo entry because it is one state
+   * commit.
+   *
+   * ⚠ **The new width is passed EXPLICITLY all the way down.** `setState` has
+   * not re-rendered yet when this runs, so `standardWidthIn` in scope is still
+   * the old value — both the tiler and the basis recorder would otherwise
+   * re-tile the building to the width it already had and report success.
+   */
+  const handleSetStandardWidthIn = (nextIn: number) => {
+    setStandardWidthIn(nextIn);
+    if (!footprint || nextIn === standardWidthIn) return;
+    /* ⚠ Same strip Repanelize does, and for the reason written there: a
+       `lockedWidthIn` pin is re-forced on every re-tile by design, so without
+       discarding it first a hand-dragged width survives a change of module. */
+    const discardAll = (slotsByWallId: Record<string, PanelSlot[]>): Record<string, PanelSlot[]> =>
+      Object.fromEntries(Object.entries(slotsByWallId).map(([id, slots]) => [id, discardLockedWidths(slots)]));
+    const ground = retilePreservingOpenings(
+      footprint,
+      leastAccessibleCorner,
+      primaryCornerIds,
+      discardAll(baseWallSlots),
+      wallRunStopsByWallId,
+      "ground",
+      undefined,
+      nextIn,
+    );
+    applyRetiledStory("ground", ground, leastAccessibleCorner, nextIn);
+    /* ⚠ The second storey too, or half the building stays on the old module
+       while the mark clears and says it was all applied — the same trap
+       Repanelize's own second-storey pass exists to avoid. */
+    if (secondStory) {
+      const second = retilePreservingOpenings(
+        footprint,
+        leastAccessibleCorner,
+        primaryCornerIds,
+        discardAll(wallSlotsForStory("second")),
+        wallRunStopsByWallId,
+        "second",
+        undefined,
+        nextIn,
+      );
+      applyRetiledStory("second", second, leastAccessibleCorner, nextIn);
+    }
+  };
+
   const handleSetWallHeightFt = (nextFt: number) => {
     const oldFt = wallHeightFt;
     setWallHeightFt(nextFt);
@@ -3820,12 +3914,22 @@ export default function LayoutEditor() {
     runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
     story: "ground" | "second" = "ground",
     remembered: Record<string, RunStopOpeningMemory> = unbuiltOpeningsByStoryAndWallId[story],
+    /**
+     * ⚠ **A width the CALLER supplies, for the one handler that re-tiles with
+     * a value React has not re-rendered with yet.** The Standard width picker
+     * re-tiles the walls in the same tick it sets the state (Tommy,
+     * 2026-11-19 — he chose "width change retiles the walls at once" over the
+     * pending-retile mark), and `standardWidthIn` in this closure is still the
+     * OLD value at that moment. Reading it would re-tile the building to the
+     * width it already had and report success. Every other caller omits this.
+     */
+    widthOverrideIn: number = standardWidthIn,
   ): RetileWithRunStopMemoryResult =>
     retilePreservingOpeningsPure(
       fp,
       leastAccessible,
       primary,
-      standardWidthIn,
+      widthOverrideIn,
       cornerWidthInForTiling,
       thicknessIn,
       oldSlotsByNewWallId,
@@ -3873,8 +3977,18 @@ export default function LayoutEditor() {
    * `handleSetLeastAccessibleCorner` both re-tile with a corner the state
    * has not caught up to yet, and recording the stale one would mark the
    * setting as pending the moment it was applied. */
-  const recordTilingBasis = (leastAccessibleUsed: string) => {
-    setTilingBasis({ ...liveTilingBasis, leastAccessibleCorner: leastAccessibleUsed });
+  /** ⚠ `widthOverrideIn` for the same reason `retilePreservingOpenings` takes
+   *  one: the Standard width picker re-tiles in the tick it sets the state, so
+   *  `liveTilingBasis` still holds the OLD width. Recording that basis after
+   *  tiling to the NEW width would leave the pending-retile mark showing on a
+   *  building that had just been retiled — the warning crying wolf, which is
+   *  how a real one stops being read. */
+  const recordTilingBasis = (leastAccessibleUsed: string, widthOverrideIn?: number) => {
+    setTilingBasis({
+      ...liveTilingBasis,
+      leastAccessibleCorner: leastAccessibleUsed,
+      ...(widthOverrideIn !== undefined && { standardWidthIn: widthOverrideIn }),
+    });
   };
 
   /* REPANELIZE R3 — the tiler, run deliberately.
@@ -3953,11 +4067,13 @@ export default function LayoutEditor() {
      * basis, which would mark a setting as pending the instant it was
      * applied. */
     leastAccessibleUsed: string,
+    /** See `recordTilingBasis` — only the Standard width picker passes it. */
+    widthOverrideIn?: number,
   ) => {
     if (story === "ground") setBaseWallSlots(result.slotsByWallId);
     else setWallSlotsForStory("second", () => result.slotsByWallId);
     setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, [story]: result.unbuiltOpeningsByWallId }));
-    recordTilingBasis(leastAccessibleUsed);
+    recordTilingBasis(leastAccessibleUsed, widthOverrideIn);
   };
 
 
@@ -8968,6 +9084,12 @@ export default function LayoutEditor() {
     () => ({
       footprint,
       depthIn: thicknessIn,
+      /* ⚠ **One dial for all three — Tommy, 2026-11-19.** A deck field panel
+         is half a wall panel, so the Standard width dial now moves floors and
+         roofs with the walls. Until this, it moved the walls alone and left
+         the decks at 24in, which silently broke his own 2026-10-23 stacking
+         rule at every setting but 48. */
+      fieldPanelWidthIn: deckFieldWidthForStandardWidthIn(standardWidthIn),
       roofForm: roofFormFromProfile,
       /* ⚠ A ring has no gable ends — they are blocked on it, so
          roofTrussLayoutContext is null and there is no pitch to read. It
@@ -8980,7 +9102,7 @@ export default function LayoutEditor() {
       roofGableEndInsetIn: gableEndsFullHeight ? thicknessIn : 0,
       roofCutToFootprint,
     }),
-    [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight, roofCutToFootprint],
+    [footprint, thicknessIn, standardWidthIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight, roofCutToFootprint],
   );
 
   const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
@@ -11392,6 +11514,10 @@ export default function LayoutEditor() {
    * exclusion is what keeps a row added to the catalog later from silently
    * landing in neither group.
    */
+  const standardWidthChoicesIn = standardWidthChoices(standardWidthIn);
+
+
+
   const referencePointsSheet = buildReferencePoints({
     schedule: fastenerSpacingTable,
     foundationConnections: foundationFastenerConnections(foundationTypeId),
@@ -15038,15 +15164,35 @@ export default function LayoutEditor() {
             project default with an obvious right answer at the boundary, and
             LengthInput redisplays the committed value, so the clamp is
             visible in the field the instant it happens. */}
-        <LengthInput
+        {/* ⚠ **A PICKER SINCE 2026-11-19, NOT A FREE NUMBER** — Tommy:
+            *"snap the dial to 48, 39, 36, 32, 24"*. The field was any value
+            between the fabrication minimum and the catalog maximum, and it
+            moved the WALLS alone; floors and roofs stayed on a hardcoded 24in
+            module. A deck field panel is half a wall panel now, so one choice
+            moves all three and his 2026-10-23 stacking rule holds at every
+            setting rather than only at the 48in default.
+
+            ⚠ **A STORED PROJECT'S OWN WIDTH IS NEVER SILENTLY REWRITTEN.** An
+            older building may hold 40in — the default before 2026-10-23 — or
+            anything else that was typed when this was a free field. It is
+            listed as an extra option, marked, and kept until he picks another:
+            snapping it on load would change a saved building's panel widths
+            without being asked. */}
+        <select
           value={standardWidthIn}
-          domain="in"
-          ariaLabel="Standard width in inches"
-          title={`Standard panel width: ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)}-${formatLengthIn(panelWidthInRange.maxIn, unitSystem)}. The ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} floor is what Building Integrity's shop can build, not the manufacturer's ${formatLengthIn(panelWidthInRange.minIn, unitSystem)}.`}
-          onCommit={(next) =>
-            setStandardWidthIn(Math.min(Math.max(next, fabricationMinPanelWidthIn.value), panelWidthInRange.maxIn))
-          }
-        />
+          aria-label="Standard width in inches"
+          title={`A deck field panel is half this, so floors and roofs move with it. ${STANDARD_WIDTH_SHEET_NOTE}`}
+          onChange={(e) => handleSetStandardWidthIn(Number(e.target.value))}
+        >
+          {standardWidthChoicesIn.map((w) => (
+            <option key={w} value={w}>
+              {formatLengthIn(w, unitSystem)}
+              {standardPanelWidthOptionsIn.value.includes(w) ? "" : " — not a standard size"}
+              {w === squareBalePanel.widthIn ? " (Square Bale)" : ""}
+              {96 % (w / 2) === 0 ? "" : " ⚠ deck sheets drift"}
+            </option>
+          ))}
+        </select>
       </label>
       <label>
         Thickness{" "}

@@ -89,9 +89,21 @@ export function floorRoofPanelMinimumWidthIn(hasStructuralGirt: boolean): number
   return hasStructuralGirt ? 2 * PLATE_2X4_WIDTH_IN : 2 * JOIST_2X6_THICKNESS_IN;
 }
 
-function roleOf(widthIn: number, index: number, count: number): FloorRoofPanelRole {
+/**
+ * ⚠ **IT HAS TO BE TOLD THE MODULE, NOT ASSUME 24in.** This compares a
+ * panel's width to the field module to name it, so with the module hardcoded
+ * a dial set to anything but 48 would make EVERY field panel come back as a
+ * "remainder" — a run of correctly-sized panels, every one of them labelled
+ * as the odd one out, on the shop sheets and in the takeoff.
+ */
+function roleOf(
+  widthIn: number,
+  index: number,
+  count: number,
+  fieldPanelWidthIn: number,
+): FloorRoofPanelRole {
   if (index === 0 || index === count - 1) return "edge";
-  if (Math.abs(widthIn - FLOOR_ROOF_PANEL_WIDTH_IN) < 1e-9) return "field";
+  if (Math.abs(widthIn - fieldPanelWidthIn) < 1e-9) return "field";
   if (Math.abs(widthIn - FLOOR_ROOF_RUN_CLOSER_WIDTH_IN) < 1e-9) return "closer";
   return "remainder";
 }
@@ -114,6 +126,14 @@ export interface FloorRoofPanelRunOptions {
    * panels on screen on any building not 15.5in thick.
    */
   depthIn?: number;
+  /**
+   * ⚠ **The field module — HALF the project's standard wall width** (Tommy,
+   * 2026-11-19, snapping that dial to 48/39/36/32/24). It is what keeps his
+   * 2026-10-23 rule true at every setting: a deck seam lands under either a
+   * wall panel's edge or its centre nailer. Left out, 24in, which is the
+   * answer at the 48in default and keeps every existing call unchanged.
+   */
+  fieldPanelWidthIn?: number;
   /** Roof only. Without it the panels carry no caps, because a cap's
    * geometry is the pitch. */
   pitchIn12?: number;
@@ -172,6 +192,7 @@ export interface FloorRoofPanelRunOptions {
  */
 export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorRoofPanelRunPlan {
   const edgeWidthIn = options.depthIn ?? FLOOR_ROOF_EDGE_PANEL_WIDTH_IN;
+  const fieldWidthIn = options.fieldPanelWidthIn ?? FLOOR_ROOF_PANEL_WIDTH_IN;
   const empty = {
     instances: [],
     firstSheetWidthIn: null,
@@ -186,7 +207,7 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
     return { ...empty, refusal: "This building has no run or span to lay panels across yet." };
   }
 
-  const widths = options.forcedWidthsIn ?? planFloorRoofPanelWidthsIn(options.runLengthIn, edgeWidthIn);
+  const widths = options.forcedWidthsIn ?? planFloorRoofPanelWidthsIn(options.runLengthIn, edgeWidthIn, fieldWidthIn);
   if (widths === null || widths.length === 0) {
     return {
       ...empty,
@@ -205,7 +226,7 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
       name: `${prefix}${index + 1}`,
       widthIn,
       atIn,
-      role: roleOf(widthIn, index, widths.length),
+      role: roleOf(widthIn, index, widths.length, fieldWidthIn),
     });
     atIn += widthIn;
   });

@@ -511,3 +511,40 @@ describe("⚠ which SIDE of the panel the cut lands on", () => {
     expect(takeoff.coverageSqFt.floor).toBeCloseTo(16 * 20 - (4 * 4) / 2, 1);
   });
 });
+
+describe("⚠ the standard width reaches the MITRED deck runs too (2026-11-19)", () => {
+  /* A cut-to-footprint roof does not use `planFloorRoofPanelWidthsIn` at all:
+     it forces its widths through `planDeckRunWidths`, which takes the module
+     as its own ceiling. That call site had the 24in constant hardcoded, so on
+     an octagon the roof would have stayed on the old module while every box
+     building followed the dial — the one shape where the feature silently
+     did nothing. */
+  const octagonAt = (fieldPanelWidthIn: number): DeckPanelTakeoffInput => ({
+    footprint: buildOctagonFootprint(32, 32),
+    depthIn: 15.5,
+    fieldPanelWidthIn,
+    roofForm: "shed",
+    roofPitchIn12: 4,
+    roofEaveHeightFt: 10,
+    roofGableEndInsetIn: 0,
+    roofCutToFootprint: true,
+  });
+
+  it("lays a mitred octagon's decks at the module it is given", () => {
+    const wide = computeDeckPanelTakeoff(octagonAt(24));
+    const narrow = computeDeckPanelTakeoff(octagonAt(12));
+    const widthsOf = (t: ReturnType<typeof computeDeckPanelTakeoff>, kind: "floor" | "roof") =>
+      t.instances.filter((i) => i.kind === kind).map((i) => Number(i.widthIn.toFixed(4)));
+
+    for (const kind of ["floor", "roof"] as const) {
+      const a = widthsOf(wide, kind);
+      const b = widthsOf(narrow, kind);
+      expect(a.length, `${kind} at 24in`).toBeGreaterThan(0);
+      /* A narrower module cuts more, narrower panels — on BOTH decks. */
+      expect(b.length, `${kind}: 12in module must make more panels`).toBeGreaterThan(a.length);
+      expect(Math.max(...b), `${kind}: 12in module must make narrower panels`).toBeLessThanOrEqual(
+        Math.max(...a),
+      );
+    }
+  });
+});

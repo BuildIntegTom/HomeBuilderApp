@@ -178,6 +178,17 @@ export interface DeckPanelTakeoffInput {
   /** The wall/panel depth, which is also a deck panel's depth AND how wide
    * the two edge panels of every run are. */
   depthIn: number;
+  /**
+   * ⚠ **The deck FIELD module — half the project's standard wall width**
+   * (Tommy, 2026-11-19, snapping that dial to 48/39/36/32/24). Omitted, 24in:
+   * the answer at the 48in default, so every existing caller is unchanged.
+   *
+   * It is what makes his 2026-10-23 rule hold at every setting rather than
+   * only at 48 — *"2' wide panels everywhere else with 4' wall panels with a
+   * center nailer"* — so a deck seam lands under either a wall panel's edge
+   * or its centre nailer whatever the dial says.
+   */
+  fieldPanelWidthIn?: number;
   roofForm: RoofForm;
   /** Withheld on a shape with no resolved pitch — then there is no roof plane
    * to lay anything on, and no roof panels, rather than guessed ones. */
@@ -323,6 +334,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
   const {
     footprint,
     depthIn,
+    fieldPanelWidthIn = FLOOR_ROOF_PANEL_WIDTH_IN,
     roofForm,
     roofPitchIn12,
     roofEaveHeightFt,
@@ -402,16 +414,17 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             runFt * IN_PER_FT,
             splitAtIn,
             floorRoofPanelMinimumWidthIn(true),
-            /* ⚠ His own floor module, 24in, as the CEILING for a segment — not
-               the 48in a wall panel uses. A segment is divided into as few
-               equal panels as fit under it, so the widths stay as near 24 as
-               a corner-bounded stretch allows. */
-            FLOOR_ROOF_PANEL_WIDTH_IN,
+            /* ⚠ His own floor module as the CEILING for a segment — half a
+               wall panel, not the whole one. A segment is divided into as few
+               equal panels as fit under it, so the widths stay as near the
+               module as a corner-bounded stretch allows. */
+            fieldPanelWidthIn,
             depthIn,
           )
         : undefined;
     const plan = planFloorRoofPanelRun({
       kind: "floor",
+      fieldPanelWidthIn,
       runLengthIn: runFt * IN_PER_FT,
       spanIn: spanFt * IN_PER_FT,
       depthIn,
@@ -622,6 +635,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
           const spanIn = bandRunFt * slopePerRunFt * IN_PER_FT;
           const plan = planFloorRoofPanelRun({
             kind: "roof",
+            fieldPanelWidthIn,
             runLengthIn: edgeLengthIn,
             spanIn,
             depthIn,
@@ -632,7 +646,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
                     edgeLengthIn,
                     cornerSplitsIn,
                     floorRoofPanelMinimumWidthIn(false),
-                    FLOOR_ROOF_PANEL_WIDTH_IN,
+                    fieldPanelWidthIn,
                     depthIn,
                   ),
                 }

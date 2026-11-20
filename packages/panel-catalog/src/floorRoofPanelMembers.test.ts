@@ -632,8 +632,17 @@ describe("the component schema a SketchUp exporter would read", () => {
     expect(text).toContain("this app's reading of");
     /* The closer panel's note went with the closer panel — four 24in field
        panels are exactly 8ft, so nothing has to be trimmed to get back onto
-       the sheet, and the "a little bigger" discrepancy it recorded is moot. */
-    expect(text).toContain("no closer panel and no drift");
+       the sheet, and the "a little bigger" discrepancy it recorded is moot.
+
+       ⚠ **2026-11-19: it may no longer claim that unconditionally.** The
+       field module is half the project's standard wall width now, and he
+       snapped that dial to 48/39/36/32/24 — so 39 and 36 give 19 1/2in and
+       18in fields, which do NOT divide 96in. The note states where the
+       no-drift claim holds instead of asserting it everywhere; a note that
+       kept promising it would be wrong on two of his five settings. */
+    expect(text).toContain("half the project's standard wall width");
+    expect(text).toContain("no drift");
+    expect(text).toContain("NOT at 19 1/2 or 18");
   });
 
   it("⚠ overallDimensions is the panel AS FABRICATED, not as installed", () => {

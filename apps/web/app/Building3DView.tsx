@@ -101,6 +101,7 @@ import {
   type WorldPlacedPanel,
   LEGACY_GIRT_STYLE,
   type GirtStyle,
+  deckFieldWidthForStandardWidthIn,
 } from "@building-integrity/panel-catalog";
 import PanelMembersGroup, { StrawFillProvider } from "./PanelMembersGroup";
 import { PANEL_TYPE_COLORS } from "./panelColors";
@@ -2433,13 +2434,19 @@ export default function Building3DView({
       computeDeckPanelTakeoff({
         footprint,
         depthIn: thicknessIn,
+        /* ⚠ Half the standard wall width — so the decks this view draws move
+           with the Standard width dial exactly as the walls do, and a deck
+           seam keeps landing under a wall panel's edge or its centre nailer.
+           Before 2026-11-19 this view planned its decks at a hardcoded 24in
+           while the walls followed the dial. */
+        fieldPanelWidthIn: deckFieldWidthForStandardWidthIn(standardWidthIn),
         roofForm,
         roofPitchIn12,
         roofEaveHeightFt,
         roofTallSideNorth,
         roofGableEndInsetIn,
       }),
-    [footprint, thicknessIn, roofForm, roofPitchIn12, roofEaveHeightFt, roofTallSideNorth, roofGableEndInsetIn],
+    [footprint, thicknessIn, standardWidthIn, roofForm, roofPitchIn12, roofEaveHeightFt, roofTallSideNorth, roofGableEndInsetIn],
   );
 
   const deckRenderData = useMemo(() => {
