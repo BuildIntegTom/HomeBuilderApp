@@ -44,6 +44,7 @@ export * from "./roofBandCut";
 export * from "./roofBearingLines";
 export * from "./roofPlaneBracing";
 export * from "./roofBracePanelSlices";
+export * from "./roofBraceSeamSnap";
 export * from "./simpleRoofPlanes";
 export * from "./pointInPolygon";
 export * from "./clipSegmentToPolygon";

@@ -200,13 +200,71 @@ export function roofBayBracingSegments(
   bayWidthIn: number,
   planeSlopeIn: number,
 ): RoofBraceSegment[] {
-  const left = bayLeftIn;
-  const right = bayLeftIn + bayWidthIn;
   const quarterW = bayWidthIn / 4;
-  const midX = left + bayWidthIn / 2;
+  return roofBayBracingSegmentsFromStations(
+    bayIndex,
+    [
+      bayLeftIn,
+      bayLeftIn + quarterW,
+      bayLeftIn + 2 * quarterW,
+      bayLeftIn + 3 * quarterW,
+      bayLeftIn + bayWidthIn,
+    ],
+    planeSlopeIn,
+  );
+}
+
+/**
+ * The five positions along the eave that the whole figure hangs off, in
+ * plane inches: the bay's two edges and the three stations between them.
+ *
+ * ⚠ **EVERY ENDPOINT IN THE FIGURE IS ONE OF THESE FIVE x VALUES**, which is
+ * what makes them worth naming. The X runs edge to edge, a carrot's apex
+ * stands on `x2` (or on an edge), and its feet land on `x1` or `x3`. Nothing
+ * else in the figure touches the eave direction. So a figure whose five
+ * stations are panel seams has no endpoint stranded part-way across a panel
+ * — which is exactly what `snapRoofBracingToSeams` is for.
+ */
+export type RoofBayStationsIn = readonly [number, number, number, number, number];
+
+/**
+ * The X and its carrots for one bay, from the bay's five stations.
+ *
+ * ⚠ **THE FEET STAY ON THE LEGS OF THE X, which is the whole reason this
+ * takes stations rather than offsets.** A carrot exists to hand its load to
+ * the main diagonal, so where its foot lands is structural: it has to be ON
+ * the leg. With evenly spaced stations the foot's height works out to a
+ * quarter or three quarters of the slope, as it always did. With stations
+ * snapped to panel seams the x moves, and the foot's height is **recomputed
+ * from the leg it sits on** rather than left at the quarter point — a foot
+ * left behind at `slope/4` would be floating beside the diagonal instead of
+ * delivering into it.
+ *
+ * ⚠ **WHAT THAT COSTS IS THE PARALLELISM, and it is the right thing to
+ * spend.** On even stations every carrot comes out parallel to a leg of the
+ * X, so Tommy's 30–45° band governs the whole figure. Snapped stations are
+ * not evenly spaced, so a carrot's angle drifts off its leg's by however far
+ * its station moved — reported per bay rather than assumed away. A few
+ * degrees of drift is a smaller price than a foot that misses the diagonal.
+ */
+export function roofBayBracingSegmentsFromStations(
+  bayIndex: number,
+  stationsIn: RoofBayStationsIn,
+  planeSlopeIn: number,
+): RoofBraceSegment[] {
+  const [x0, x1, x2, x3, x4] = stationsIn;
+  const span = x4 - x0;
+  if (!(span > 0)) {
+    throw new Error(
+      `A bracing bay from ${x0}in to ${x4}in has no width. Its five stations must be strictly increasing along the eave.`,
+    );
+  }
+
+  /* Height of the point where a leg of the X crosses a given x. Leg A climbs
+     left to right, leg B climbs right to left, so the two are mirrors. */
+  const onLegA = (xIn: number) => ((xIn - x0) / span) * planeSlopeIn;
+  const onLegB = (xIn: number) => ((x4 - xIn) / span) * planeSlopeIn;
   const midY = planeSlopeIn / 2;
-  const quarterY = planeSlopeIn / 4;
-  const threeQuarterY = (3 * planeSlopeIn) / 4;
 
   const seg = (
     x1In: number,
@@ -218,24 +276,24 @@ export function roofBayBracingSegments(
 
   return [
     /* The X itself: eave-left to ridge-right, and eave-right to ridge-left. */
-    seg(left, 0, right, planeSlopeIn, "x"),
-    seg(right, 0, left, planeSlopeIn, "x"),
+    seg(x0, 0, x4, planeSlopeIn, "x"),
+    seg(x4, 0, x0, planeSlopeIn, "x"),
 
-    /* Lower region — apex on the eave, feet up on both legs. */
-    seg(midX, 0, left + quarterW, quarterY, "carrot"),
-    seg(midX, 0, right - quarterW, quarterY, "carrot"),
+    /* Lower region — apex on the eave at x2, feet up on both legs. */
+    seg(x2, 0, x1, onLegA(x1), "carrot"),
+    seg(x2, 0, x3, onLegB(x3), "carrot"),
 
-    /* Upper region — apex at the ridge, feet down on both legs. */
-    seg(midX, planeSlopeIn, left + quarterW, threeQuarterY, "carrot"),
-    seg(midX, planeSlopeIn, right - quarterW, threeQuarterY, "carrot"),
+    /* Upper region — apex at the ridge above x2, feet down on both legs. */
+    seg(x2, planeSlopeIn, x1, onLegB(x1), "carrot"),
+    seg(x2, planeSlopeIn, x3, onLegA(x3), "carrot"),
 
     /* Left region — apex on the bay's left edge, feet across on both legs. */
-    seg(left, midY, left + quarterW, quarterY, "carrot"),
-    seg(left, midY, left + quarterW, threeQuarterY, "carrot"),
+    seg(x0, midY, x1, onLegA(x1), "carrot"),
+    seg(x0, midY, x1, onLegB(x1), "carrot"),
 
     /* Right region — the mirror of it. */
-    seg(right, midY, right - quarterW, quarterY, "carrot"),
-    seg(right, midY, right - quarterW, threeQuarterY, "carrot"),
+    seg(x4, midY, x3, onLegB(x3), "carrot"),
+    seg(x4, midY, x3, onLegA(x3), "carrot"),
   ];
 }
 

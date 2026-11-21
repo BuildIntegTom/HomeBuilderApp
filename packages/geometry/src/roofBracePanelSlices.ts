@@ -196,6 +196,27 @@ function assertBandsTilePlane(bands: readonly RoofBracePanelBand[], planeWidthIn
 }
 
 /**
+ * Every seam position along the eave, the plane's two ends included — so a
+ * run of `n` panels gives `n + 1` positions, 0 first and `planeWidthIn` last.
+ *
+ * ⚠ **This is the list the bracing figure snaps ONTO** (`snapRoofBracingToSeams`),
+ * which is why it is built here rather than there: the same accumulation that
+ * decides which panel a piece lands in decides where a station may sit, and
+ * two accumulations of the same widths are two chances to disagree by a
+ * thousandth of an inch. It validates the run on the way through, so a caller
+ * cannot snap onto a run that does not tile the plane.
+ */
+export function roofBracePanelSeamsIn(
+  bands: readonly RoofBracePanelBand[],
+  planeWidthIn: number,
+): number[] {
+  assertBandsTilePlane(bands, planeWidthIn);
+  const seams = bands.map((band) => band.atIn);
+  seams.push(planeWidthIn);
+  return seams;
+}
+
+/**
  * Which band a position on the eave falls in, by its own boundaries.
  *
  * The far end of the last band is inclusive, so a brace ending exactly at the
