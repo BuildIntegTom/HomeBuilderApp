@@ -1,3 +1,32 @@
+# LINE ENDINGS: this repo is LF, in the repository AND in the working tree.
+#
+# `eol=lf` takes precedence over core.autocrlf, so it holds whatever a
+# contributor has configured globally. That matters here because the tooling
+# writes LF unconditionally: bash heredocs, the patch scripts in the
+# scratchpad, and the OBJ exporter all join lines with a bare LF. With a CRLF
+# working tree, appending to a file left it HALF AND HALF, and nothing warned.
+#
+# Three ways that bit, all of them observed in this repo:
+#   1. Patch scripts matched NOTHING. They sniff a file's convention; a mixed
+#      file answers "CRLF" while the lines being targeted are LF.
+#   2. Files drifted. A script that picked CRLF rewrote the LF lines too,
+#      flipping a file a few lines at a time.
+#   3. An unreviewable commit. page.tsx once staged as 21,789 insertions /
+#      21,205 deletions for a 172-line change -- 21,315 carriage returns its
+#      parent did not have. A diff like that destroys review and git blame.
+#
+# A guard test (lineEndings.test.ts) fails on any tracked file that goes
+# mixed, so this is enforced rather than merely documented.
+* text=auto eol=lf
+
+# Shell scripts are LF or they do not run.
+*.sh text eol=lf
+
+# Windows batch files are the one thing that genuinely wants CRLF. None are
+# tracked today; this is here so the first one added is correct.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # The OBJ golden fixture is a byte-for-byte record of what the exporter
 # writes, and the exporter always joins lines with "\n". With core.autocrlf
 # on (the default on Windows), a checkout would rewrite it to CRLF and the
