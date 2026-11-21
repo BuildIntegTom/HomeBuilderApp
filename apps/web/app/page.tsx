@@ -167,6 +167,8 @@ import {
   derivationStatusNeedsReview,
   deriveBuildingShear,
   referencePointsInGroup,
+  SCHEDULE_CAPACITY_REFUSAL_LABELS,
+  scheduleCapacities,
   computeBuiltUpColumnBearingCapacityLb,
   computeCarbonRange,
   computeCO2eEquivalencies,
@@ -19691,6 +19693,97 @@ export default function LayoutEditor() {
               <p className={styles.note}>{referencePointsSheet.braceEndConnection.caveat}</p>
             </>
           )}
+
+          {/* **PHASE 2 — WHAT EACH SPACING IS WORTH, 2026-11-20.**
+
+              Phase 1 of the roof-bracing plan put every connection on this
+              page with its fastener and its spacing. This turns that table
+              into a calculation.
+
+              ⚠ **THE DIRECTION IS REVERSED FROM THE PLAN, AND THAT IS THE
+              HONEST VERSION.** The phase as written wanted *"the force
+              crossing it ... and the spacing that count implies"*. The force
+              does not exist — this app models no wind or seismic demand — so
+              the spacing is the INPUT and the capacity is the output. Nothing
+              here says a spacing is adequate, because nothing here knows.
+
+              ⚠ **IT IS RENDERED INLINE AND NOT MEMOISED ON PURPOSE.** Eleven
+              rows of arithmetic over a constant table; a `useMemo` would have
+              cost this file's rationed `preserve-manual-memoization` budget
+              for values already in scope and bought nothing. See AGENTS.md. */}
+          <h3>What each spacing is worth</h3>
+          <p className={styles.note}>
+            Fasteners per foot comes from the stated pitch; pounds per foot is that rate times what one fastener is
+            allowed to carry, at normal load duration and again at C<sub>D</sub> 1.6 for wind or seismic.{" "}
+            <strong>
+              ⚠ No row is compared with a load. The app models no demand, so every figure here is a capacity standing
+              on its own.
+            </strong>{" "}
+            A pitch is a rate, not a purchase: a run shorter than its own spacing still gets one fastener.
+          </p>
+          <table className={styles.table}>
+            <tbody>
+              {scheduleCapacities(fastenerSpacingTable).map((row) => (
+                <tr key={row.connection}>
+                  <td>
+                    <strong>{row.connection}</strong>
+                    <br />
+                    <span className={styles.note}>{row.fastener}</span>
+                  </td>
+                  <td>
+                    {row.figures.length === 0 ? (
+                      <span className={styles.note}>
+                        {row.perConnectionCount === null
+                          ? "no pitch stated"
+                          : `${row.perConnectionCount} per ${row.perConnectionUnit ?? "connection"}`}
+                      </span>
+                    ) : (
+                      row.figures.map((figure) => (
+                        <span key={figure.quoted}>
+                          {figure.quoted} — {figure.screwsPerFoot.toFixed(2)}/ft
+                          {figure.perFootLb === null ? null : (
+                            <>
+                              {" → "}
+                              <strong>{Math.round(figure.perFootLb)} lb/ft</strong>
+                              {" ("}
+                              {Math.round(figure.perFootWindSeismicLb ?? 0)} lb/ft at C<sub>D</sub> 1.6)
+                            </>
+                          )}
+                          <br />
+                        </span>
+                      ))
+                    )}
+                  </td>
+                  <td>
+                    {row.perScrew === null ? (
+                      <>
+                        <strong>
+                          no capacity — {SCHEDULE_CAPACITY_REFUSAL_LABELS[row.refusal!]}
+                        </strong>
+                        <br />
+                      </>
+                    ) : (
+                      <>
+                        <strong>{Math.round(row.perScrew.allowableLb)} lbf a screw</strong>
+                        {" / "}
+                        {Math.round(row.perScrewWindSeismic?.allowableLb ?? 0)} lbf at C<sub>D</sub> 1.6
+                        <br />
+                        <span className={styles.note}>{row.perScrew.route}</span>
+                        <br />
+                      </>
+                    )}
+                    <span className={styles.note}>{row.statement}</span>
+                    {row.caveats.map((caveat) => (
+                      <span key={caveat}>
+                        <br />
+                        <span className={styles.note}>{caveat}</span>
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
           <h3>⚠ What is NOT on this page</h3>
           <p className={styles.note}>

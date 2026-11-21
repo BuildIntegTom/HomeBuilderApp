@@ -19,3 +19,4 @@ export * from "./shearDerivation";
 export * from "./derivationStatus";
 export * from "./referencePoints";
 export * from "./fastenerCapacity";
+export * from "./scheduleCapacity";
