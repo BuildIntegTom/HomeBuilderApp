@@ -15,7 +15,7 @@ import {
   zoneFromSlot,
   type BoxBeamCoverage,
   type GableTiledPanel,
-  type GableWallJointSpan,
+  type GableWallJointSpan,
   type GableWindowReservation,
   type PanelSlot,
   type PanelSlotZone,
