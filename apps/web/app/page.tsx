@@ -172,6 +172,7 @@ import {
   computeCO2eEquivalencies,
   computeConcretePierVolume,
   computeFastenerWeight,
+  computeRoofPanelSeamFastenerWeight,
   computeInsulationWeight,
   computeJackStudFastenerWeight,
   computeMembraneCoverage,
@@ -11587,11 +11588,20 @@ export default function LayoutEditor() {
         heightIn: group.spanIn,
         densityKgM3,
         woodWeightKg,
-        /* ⚠ Honestly null, not 0: the schema carries `fasteners: []` and
-           nobody has given a nailing schedule for a floor or roof panel.
-           Reporting 0 would read as "no fasteners" for a panel that is
-           nailed together throughout. */
-        fastenerWeightKg: null,
+        /* ⚠ **A ROOF PANEL HAS A SCHEDULE NOW; A FLOOR PANEL STILL DOES
+           NOT.** Tommy gave the roof its first on 2026-11-20 — GRKs at 18in
+           o.c. on all the seams plus a truss screw at each, "so basically 4
+           per panel" — so a roof panel's screws are counted here and a floor
+           panel's stay honestly `null`.
+
+           ⚠ `null` is not 0 and the difference is the whole point: 0 reads as
+           "no fasteners" for a panel that is nailed together throughout,
+           where null reads as "nobody has said". A floor panel is still the
+           second. */
+        fastenerWeightKg:
+          group.options.kind === "roof"
+            ? computeRoofPanelSeamFastenerWeight(group.widthIn, group.spanIn).totalWeightKg
+            : null,
         /* Neither straw face is exposed — both lids are plywood-skinned
            and structural, so no plaster coat lands on this panel. */
         hasClayPlaster: false,

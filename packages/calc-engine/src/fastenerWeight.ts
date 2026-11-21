@@ -192,3 +192,78 @@ export function computeJackStudFastenerWeight(heightIn: number): FastenerWeightR
   const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
   return { items, totalWeightLb, totalWeightKg: totalWeightLb * LB_TO_KG };
 }
+
+/**
+ * ⚠ **A ROOF PANEL'S OWN SCREWS — the first fastener count a roof panel has
+ * ever had.**
+ *
+ * > *"it should also be perscribed that the roof panels need to have grk's 18"
+ * > on all the seams as well as a truss screw at each seam. so basically 4 per
+ * > panel."* — Tommy, 2026-11-20
+ *
+ * ⚠ **Why this could not be `computeFastenerWeight`.** That function is
+ * written over WALL-panel roles — plate and girt-bar length for the nailing,
+ * one count per plywood lid, one per girt bar. A roof panel is joists with no
+ * girt at all, so every rule in it reads zero and the sheet has correctly said
+ * "unmodeled" rather than "none" ever since. This is a per-SEAM rule on a
+ * panel's outline, which is a different shape of count, so it is its own
+ * function rather than another branch in there.
+ *
+ * ⚠ **"All the seams" is read as the panel's four edges**, and that reading is
+ * what makes his *"basically 4 per panel"* come out exactly right for the
+ * truss screws. If the eave edge turns out not to be a seam, BOTH counts
+ * change and this comment is where to start.
+ *
+ * ⚠ **Each edge is counted as its OWN run**, not as one perimeter divided by
+ * 18in. A 24in × 150in panel's short edges are under the spacing, and a
+ * perimeter count would silently let the two long edges pay for them; per-edge
+ * with a floor of one screw puts a fastener on every seam, which is what
+ * "on all the seams" says.
+ *
+ * ⚠ **A MITRED PANEL IS OVER-COUNTED, AND THE CALLER IS WHY.** On a roof
+ * cut to the building, the group's `spanIn` is the panel's ENVELOPE while its
+ * two long edges are different lengths — `cutLengthIn` is the long point and
+ * the short one is not carried as a field at all. Both long seams are
+ * therefore counted at the envelope, so a mitred panel gets a screw or two
+ * more than it needs. Deliberate rather than unnoticed: it errs HIGH on a
+ * count, so the shop is never short, and the honest fix is a short-edge
+ * length on the group rather than a fudge here.
+ */
+const ROOF_SEAM_GRK_SPACING_IN = 18;
+const ROOF_TRUSS_SCREWS_PER_PANEL = 4;
+
+/** ⚠ **Zero on purpose, and the label says so.** The truss screw's type,
+ * diameter and length have not been specified, so there is no cylinder to
+ * weigh. Carrying the COUNT with an unmodeled weight is better than dropping
+ * the screws from the sheet: a fitter needs to know four go in. The resulting
+ * total is LOW by four screws a panel — see `gap-ridge-truss-screw-spec`. */
+const TRUSS_SCREW_WEIGHT_LB = 0;
+
+export function computeRoofPanelSeamFastenerWeight(
+  widthIn: number,
+  lengthIn: number,
+): FastenerWeightResult {
+  const perEdge = (edgeIn: number) =>
+    Math.max(1, Math.round(edgeIn / ROOF_SEAM_GRK_SPACING_IN));
+  /* Two long edges up the slope, two short ones across it. */
+  const grkCount = 2 * perEdge(lengthIn) + 2 * perEdge(widthIn);
+
+  const items: FastenerLineItem[] = [
+    {
+      label: `4in GRK screw (roof panel seams, ${ROOF_SEAM_GRK_SPACING_IN}in o.c. on all four)`,
+      count: grkCount,
+      unitWeightLb: GRK_4IN_WEIGHT_LB,
+      totalWeightLb: grkCount * GRK_4IN_WEIGHT_LB,
+    },
+    {
+      label:
+        `Truss screw (1 per seam, ${ROOF_TRUSS_SCREWS_PER_PANEL} per panel) — ` +
+        `WEIGHT NOT MODELLED, type and length unspecified`,
+      count: ROOF_TRUSS_SCREWS_PER_PANEL,
+      unitWeightLb: TRUSS_SCREW_WEIGHT_LB,
+      totalWeightLb: ROOF_TRUSS_SCREWS_PER_PANEL * TRUSS_SCREW_WEIGHT_LB,
+    },
+  ];
+  const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
+  return { items, totalWeightLb, totalWeightKg: totalWeightLb * LB_TO_KG };
+}

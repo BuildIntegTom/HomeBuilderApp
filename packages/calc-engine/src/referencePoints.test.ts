@@ -543,12 +543,19 @@ describe("⚠ the page must not contradict itself about the jack stud", () => {
        withdrawal number exists). Both are real and both are narrow. */
     const withRoof = buildReferencePoints(ctx({ hasRoofPanels: true })).gaps;
 
-    const count = withRoof.find((g) => g.id === "gap-roof-fastener-count")!;
+    /* ⚠ `gap-roof-fastener-count` is RETIRED — the count was built the same
+       day the schedule arrived, so the roof half is answered. What is left is
+       the FLOOR panel, which has never had a rule at all. */
+    expect(withRoof.find((g) => g.id === "gap-roof-fastener-count")).toBeUndefined();
+    const count = withRoof.find((g) => g.id === "gap-floor-panel-fasteners")!;
     expect(count).toBeDefined();
     /* It must say which direction the omission errs in — a gap that does not
        is just an apology. */
-    expect(count.why).toContain("LOW by its own screws");
+    expect(count.why).toContain("LOW by four screws");
     expect(count.why).toContain("UNMODELED");
+    /* And it must credit the roof count that now exists, or a reader concludes
+       neither deck type is counted. */
+    expect(count.why).toContain("computeRoofPanelSeamFastenerWeight");
 
     const spec = withRoof.find((g) => g.id === "gap-ridge-truss-screw-spec")!;
     expect(spec).toBeDefined();
@@ -565,7 +572,7 @@ describe("⚠ the page must not contradict itself about the jack stud", () => {
        grows gaps about parts that do not exist — the duplicate brace row of
        phase 1 all over again. */
     const noRoof = buildReferencePoints(ctx({ hasRoofPanels: false })).gaps;
-    expect(noRoof.find((g) => g.id === "gap-roof-fastener-count")).toBeUndefined();
+    expect(noRoof.find((g) => g.id === "gap-floor-panel-fasteners")).toBeUndefined();
     expect(noRoof.find((g) => g.id === "gap-ridge-truss-screw-spec")).toBeUndefined();
   });
 

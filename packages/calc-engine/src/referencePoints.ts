@@ -501,16 +501,17 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
 
   if (ctx.hasRoofPanels) {
     gaps.push({
-      id: "gap-roof-fastener-count",
-      connection: "Every roof panel seam",
+      id: "gap-floor-panel-fasteners",
+      connection: "A floor panel's own fasteners",
       why:
-        "⚠ Roof panels now have a fastener SCHEDULE and still have no fastener COUNT. Tommy prescribed it on 2026-11-20 — " +
-        "GRKs at 18in o.c. on all the seams, plus a truss screw at each seam, \"so basically 4 per panel\" — and the schedule " +
-        "rows say so. What has not been built is the counting: `computeFastenerWeight` is written over WALL-panel roles " +
-        "(plate and girt-bar length), and a roof panel is joists with no girt at all, so its sheet reports fasteners as " +
-        "UNMODELED rather than zero. " +
-        "⚠ So every roof panel's weight is LOW by its own screws, and the shop packet prescribes a schedule it does not tally. " +
-        "That is the next piece of work, not a question — but until it lands, a roof panel's fastener line is a rule with no number.",
+        "⚠ A ROOF panel is counted now and a FLOOR panel is not. Tommy gave the roof a schedule on 2026-11-20 — GRKs at " +
+        "18in o.c. on all the seams plus a truss screw at each, \"so basically 4 per panel\" — and " +
+        "`computeRoofPanelSeamFastenerWeight` counts it, so a roof panel's sheet carries a real number for the first time. " +
+        "No equivalent has ever been stated for a FLOOR panel, so its sheet still reports fasteners as UNMODELED. " +
+        "⚠ `null`, not 0, and the difference is the point: 0 would read as \"no fasteners\" on a panel that is nailed " +
+        "together throughout, where null reads as \"nobody has said\". " +
+        "⚠ The roof count itself is LOW by four screws a panel, because the truss screw has no specified size to weigh — " +
+        "it is carried at zero with its label saying so rather than dropped, since a fitter needs to know four go in.",
     });
 
     gaps.push({
