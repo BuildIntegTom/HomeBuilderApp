@@ -279,9 +279,39 @@ The research document's four questions are now down to three, and one is new.
    shouldnt be that."* So nothing in this build may state that a roof passes.
    What it states is what was drawn, in the units an engineer's own demand
    calculation is already in. That is phase 1's whole job.
-4. **OPEN — the proportion limit.** At what plane aspect ratio does one X become
-   a row of bay Xs? A number, or a rule like *"no diagonal shallower than 30°
-   off the eave"*.
+4. ✅ **ANSWERED 2026-11-20 — the proportion limit.** *"i like keeping angles
+   between 30 and 45 degrees where possible."*
+
+   A BAND, not the single threshold this question anticipated, and **"where
+   possible" is load-bearing** — it makes this a preference with a tolerance
+   rather than a refusal. The geometry: a plane W wide along the ridge and H up
+   the slope, split into n bays, has a diagonal at `atan(n·H/W)`. **More bays
+   means a STEEPER diagonal**, which is the whole lever — there is no way to
+   make a diagonal shallower except by using fewer, wider bays.
+
+   So the rule is: take the smallest n whose angle reaches 30° (the flattest
+   option inside the band); if that angle also sits at or under 45°, it is the
+   answer.
+
+   ⚠ **AND THE BAND IS NOT ALWAYS REACHABLE, which this answer has to survive.**
+   Bay count is an integer, so the angle jumps, and two cases miss:
+
+   - **A plane too tall and narrow for any of it.** A 12ft-wide gable end at a
+     14.4ft slope is **50.2° at one X**, and adding bays only steepens it.
+     Nothing can bring it into the band; his *"where possible"* is exactly this
+     case, and the app must accept it and say so.
+   - **A plane that STRADDLES the band.** A 24x24 at a 4ft rise is **27.8° with
+     one X and 46.5° with two** — no integer bay count lands between 30 and 45.
+
+   Therefore: prefer an n inside the band; when none exists, take the n nearest
+   to it and **name the miss in the Review Log**, with the angle it settled for
+   and the angle one bay either side would have given. A preference the app
+   silently failed to honour would be worse than one it never had.
+
+   Measured against real templates: The Tank (48ft plane) wants **3 bays at
+   38.3°**, the Multiplex **2 bays at 37.1°**, a 60ft shed **3 bays at 40.0°**,
+   and a 16ft Tiny House **1 bay at 38.3°** — four of six inside the band on his
+   first statement of it.
 5. ✅ **ANSWERED 2026-11-19 — single-fastener capacity.** *"can you find a
    number? ... anything this app produces is an estimate because im not really
    sure how to make it official or have the liability for it."* It entered as
