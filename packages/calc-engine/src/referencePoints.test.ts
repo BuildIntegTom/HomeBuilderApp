@@ -310,18 +310,33 @@ describe("⚠ the label patterns this page matches on", () => {
 });
 
 describe("the gaps, which are rows and not omissions", () => {
-  it("⚠ always names the roof, because the schedule has no roof row at all", () => {
-    const roof = buildReferencePoints(ctx()).gaps.find((g) => g.id === "gap-roof");
+  it("⚠ NARROWS the roof gap to the eave, now that the seams have a schedule", () => {
+    /* ⚠ This assertion was INVERTED, not deleted. It used to read
+       `expect(roof.why).toContain("NO ROOF ROW AT ALL")`, which was true until
+       Tommy gave the roof its first schedule on 2026-11-20 — the seams, the
+       ridge truss screw and the triangle cap. Leaving it would have made the
+       page insist there is no roof row while the schedule three screens away
+       lists three. The gap is real but SMALLER: the eave end, where a roof
+       panel is fastened down to the wall, still has nothing. */
+    const gaps = buildReferencePoints(ctx()).gaps;
+    expect(gaps.find((g) => g.id === "gap-roof")).toBeUndefined();
+    const roof = gaps.find((g) => g.id === "gap-roof-to-wall")!;
     expect(roof).toBeDefined();
-    expect(roof!.why).toContain("NO ROOF ROW AT ALL");
+    expect(roof.why).not.toContain("NO ROOF ROW AT ALL");
+    expect(roof.why).toMatch(/eave/i);
   });
 
-  it("⚠ sharpens the roof gap when the building actually HAS roof panels", () => {
-    const withRoof = buildReferencePoints(ctx({ hasRoofPanels: true })).gaps.find((g) => g.id === "gap-roof")!;
-    const without = buildReferencePoints(ctx({ hasRoofPanels: false })).gaps.find((g) => g.id === "gap-roof")!;
+  it("⚠ sharpens the eave gap when the building actually HAS roof panels", () => {
+    const withRoof = buildReferencePoints(ctx({ hasRoofPanels: true })).gaps.find((g) => g.id === "gap-roof-to-wall")!;
+    const without = buildReferencePoints(ctx({ hasRoofPanels: false })).gaps.find((g) => g.id === "gap-roof-to-wall")!;
     expect(withRoof.why).not.toEqual(without.why);
-    expect(withRoof.why).toContain("This building HAS roof panels");
+    expect(withRoof.why).toContain("This building has roof panels");
     expect(without.why).toContain("no roof panels yet");
+    /* ⚠ Both readings must credit the schedule that now EXISTS, or a reader
+       of either one concludes the roof is wholly unspecified. */
+    for (const why of [withRoof.why, without.why]) {
+      expect(why).toMatch(/2026-11-20/);
+    }
   });
 
   it("names the roof diaphragm the app does not model", () => {
@@ -512,6 +527,46 @@ describe("⚠ the page must not contradict itself about the jack stud", () => {
       (p) => p.connection === "Panel to panel, exterior",
     )!;
     expect(seam.countStatement).toContain("Not counted by the app");
+  });
+
+  it("⚠ the ridge cap's FASTENING gap is gone — he answered it the same day", () => {
+    /* It existed for about an hour. Tommy gave the schedule on 2026-11-20:
+       glue and #10 T25 screws every 8in. A page still asking is a page
+       contradicting him, which is the defect this page exists to catch. */
+    const gaps = buildReferencePoints(ctx({ hasRoofPanels: true })).gaps;
+    expect(gaps.find((g) => g.id === "gap-ridge-cap-fastening")).toBeUndefined();
+  });
+
+  it("⚠ names the two gaps his schedule OPENS, and only where there IS a roof", () => {
+    /* His answer closed one question and opened two: the count (prescribed,
+       not tallied) and the truss screw's own spec (needed before any
+       withdrawal number exists). Both are real and both are narrow. */
+    const withRoof = buildReferencePoints(ctx({ hasRoofPanels: true })).gaps;
+
+    const count = withRoof.find((g) => g.id === "gap-roof-fastener-count")!;
+    expect(count).toBeDefined();
+    /* It must say which direction the omission errs in — a gap that does not
+       is just an apology. */
+    expect(count.why).toContain("LOW by its own screws");
+    expect(count.why).toContain("UNMODELED");
+
+    const spec = withRoof.find((g) => g.id === "gap-ridge-truss-screw-spec")!;
+    expect(spec).toBeDefined();
+    /* The geometry IS modelled and the gap must say so, or it reads as though
+       nothing was done with his instruction. */
+    expect(spec.why).toContain("3/4in at 4:12");
+    expect(spec.why).toContain("NDS 12.2.3");
+    /* And it must not let a future reader mistake a capacity for a check. */
+    expect(spec.why).toContain("NOT BE A CHECK");
+    /* The glue is counted nowhere and that is worth saying once. */
+    expect(spec.why).toContain("adhesive");
+
+    /* ⚠ Neither may appear on a building with no roof panels, or the page
+       grows gaps about parts that do not exist — the duplicate brace row of
+       phase 1 all over again. */
+    const noRoof = buildReferencePoints(ctx({ hasRoofPanels: false })).gaps;
+    expect(noRoof.find((g) => g.id === "gap-roof-fastener-count")).toBeUndefined();
+    expect(noRoof.find((g) => g.id === "gap-ridge-truss-screw-spec")).toBeUndefined();
   });
 
   it("⚠ places the brace-end gap's wording ABOVE, where the capacity actually is", () => {

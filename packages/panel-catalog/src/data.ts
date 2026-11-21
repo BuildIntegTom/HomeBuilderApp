@@ -1545,6 +1545,27 @@ export const fastenerSpacingTable: FastenerSpacingRow[] = [
     status: "pending-BI-confirmation",
   },
   {
+    connection: "Ridge beam triangle cap to beam",
+    fastener: "Construction adhesive + #10 T25 screw",
+    spacing: "8\" o.c., glued and screwed",
+    status: "pending-BI-confirmation",
+    note: "Tommy, 2026-11-20, first-hand: \"fasteneing schedule for triangle is glue and screw #10 t25 screws every 8\\\".\" ⚠ The SPACING, the SCREW GAUGE and the GLUE are his and are not in doubt; what is missing is the screw's LENGTH, which is the one field a shop cannot order from. That is the only reason this row is not `confirmed`, and one number closes it. ⚠ The app's weight estimate carries the 3.5in #10 already modelled for ring girts — a carry-over, not his figure. ⚠ GLUE IS NOT COUNTED ANYWHERE: no adhesive appears in the material totals or the price, so a glued joint reads as free. See the Reference Points page.",
+  },
+  {
+    connection: "Roof panel to roof panel, all seams",
+    fastener: "GRK structural screw",
+    spacing: "18\" o.c. along every seam",
+    status: "pending-BI-confirmation",
+    note: "Tommy, 2026-11-20: \"the roof panels need to have grk's 18\\\" on all the seams\". ⚠ THIS IS THE FIRST FASTENER RULE A ROOF PANEL HAS EVER HAD — until now the roof and floor sheets reported fasteners as UNMODELED rather than zero, because `computeFastenerWeight` is written over wall-panel roles (plates and girt bars) and a roof panel is joists with no girt at all. ⚠ The screw SIZE is not stated here; every other GRK row in this table is the 5/16\\\"x4\\\" RSS and that is what the app would carry, but he did not restate it for this joint. ⚠ \"All the seams\" is read as the panel's four edges, which is what makes his \"4 per panel\" come out right for the truss screws below — if the eave edge is not a seam, both counts change.",
+  },
+  {
+    connection: "Roof panel to ridge beam, at each seam",
+    fastener: "Truss screw — type and length not yet specified",
+    spacing: "1 per seam, \"so basically 4 per panel\"",
+    status: "pending-BI-confirmation",
+    note: "Tommy, 2026-11-20: \"as well as a truss screw at each seam. so basically 4 per panel. truss screws go through the beam not just the triangle so take that into account for pull up resistance engineering calculations.\" ⚠ THE PENETRATION IS THE POINT AND IT IS GEOMETRIC: the triangle cap is only (4.5/2) x pitch/12 deep — 3/4in at 4:12 — and tapers to NOTHING at both edges, so a screw stopping in the cap holds the roof down with at most 3/4in of thread. Through the cap into the beam it gains the 2x12's 11 1/4in, and withdrawal is roughly linear in thread penetration (NDS 12.2.3), so this is most of the capacity rather than a refinement. ⚠ NO CAPACITY IS COMPUTED: the truss screw's own diameter and length have not been specified, and `withdrawalPerInchLb` has nothing to multiply without a diameter. ⚠ And UPLIFT IS STILL NOT A CHECK — the app has no wind or seismic uplift DEMAND, so even a complete screw spec would give a capacity with nothing to compare it against.",
+  },
+  {
     connection: "Wall panel to toe-up",
     fastener: "GRK 5/16\"x5 1/8\" star drive washer head",
     spacing: "18\" o.c., 45deg toe screw, min. 3 per panel at exterior",
@@ -1555,17 +1576,25 @@ export const fastenerSpacingTable: FastenerSpacingRow[] = [
 /**
  * ⚠ **THE TABLE AS A WHOLE IS STILL PENDING, AND IT IS NO LONGER UNIFORM.**
  *
- * Five of the eight rows are NFW reference points nobody at Building Integrity
- * has confirmed. Three — the panel-to-panel pair (2026-11-18) and the jack stud
- * (2026-11-19) — Tommy stated himself and now carry `confirmed` in their own
- * `status`. The table-wide status stays `pending-BI-confirmation` because the
- * majority still are, which keeps this entry in the Review Log where it
- * belongs; **read the per-row `status` for any single connection**, not this
- * one.
+ * Eight of the eleven rows are pending. FIVE are NFW reference points nobody at
+ * Building Integrity has confirmed; THREE are Tommy's own words of 2026-11-20
+ * (the ridge cap, the roof seams and the roof truss screw) that are pending for
+ * a different and much narrower reason — **the rule is his and only the screw
+ * SIZE is missing**, which is one number each rather than an open question. The
+ * other three — the panel-to-panel pair (2026-11-18) and the jack stud
+ * (2026-11-19) — he stated in full and they carry `confirmed`. The table-wide
+ * status stays `pending-BI-confirmation`; **read the per-row `status` for any
+ * single connection**, not this one.
+ *
+ * ⚠ **A PENDING ROW IS NOT ALWAYS THE SAME KIND OF PENDING**, and the three
+ * added on 2026-11-20 are the reason this note now says so. "Nobody has ever
+ * confirmed this" and "he specified it but did not give the length" are both
+ * `pending-BI-confirmation`, and an engineer reading the tag alone cannot tell
+ * them apart. Each row's own note says which it is.
  */
 export const fastenerTableStatus = {
   status: "pending-BI-confirmation" as const,
-  note: "Five of the eight rows are NFW reference points — confirm against Building Integrity's own engineering before treating as final. Three are Tommy's own: the two panel-to-panel rows (2026-11-18) and the jack stud (2026-11-19), each `confirmed` per-row. ⚠ Every spacing in this table is a stated schedule, not a figure derived from a force. What IS now derived is what one screw can hold — see the Reference Points page's capacity section, which cites ICC-ES ESR-2442 and recomputes it from the NDS as a cross-check.",
+  note: "Eight of the eleven rows are pending, for two different reasons. Five are NFW reference points nobody at Building Integrity has confirmed. Three are Tommy's own schedule of 2026-11-20 — the ridge cap, the roof seams and the roof truss screw — pending only because the screw SIZE is missing, which is one number each. Three more are his in full and carry `confirmed`: the two panel-to-panel rows (2026-11-18) and the jack stud (2026-11-19). ⚠ Roof panels had NO fastener rule at all before 2026-11-20, and their sheets still report fasteners as unmodeled — the schedule now exists, the COUNT does not. ⚠ Every spacing in this table is a stated schedule, not a figure derived from a force. What IS now derived is what one screw can hold — see the Reference Points page's capacity section, which cites ICC-ES ESR-2442 and recomputes it from the NDS as a cross-check.",
 };
 
 // --- Wall assembly layers (vapor permeability) -----------------------------------

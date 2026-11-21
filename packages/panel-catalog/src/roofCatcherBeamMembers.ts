@@ -50,6 +50,15 @@ export const ROOF_CATCHER_BEAM_MAX_SPAN_IN = 144;
  */
 export const ROOF_CATCHER_BEAM_CAP_BASE_IN = ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN;
 
+/** His 2026-11-20 schedule for holding the cap down: glue plus #10 T25
+ * screws at this spacing. ⚠ The screw's LENGTH is not specified.
+ *
+ * ⚠ Declared HERE and not in `fastenerCapacity.ts`, although the capacity
+ * module owns the rest of the fastener schedule: calc-engine imports
+ * panel-catalog, so the dependency only runs one way and a constant the
+ * MEMBER NOTE needs has to live on this side of it. */
+export const RIDGE_CAP_SCREW_SPACING_IN = 8;
+
 export interface RoofCatcherBeamCap {
   /** Across the ridge — the beam's own built-up width. */
   baseIn: number;
@@ -142,7 +151,12 @@ export function buildRoofCatcherBeamMembers(spanIn: number, pitchIn12 = 0): Pane
       `Triangle cap — a tapered rip from a ${cap.nominalSize}, ${cap.baseIn}in across the beam rising ` +
       `${cap.riseIn.toFixed(3)}in to the ridge centreline, both faces cut at the roof's ${pitchIn12}:12. ` +
       `It gives each roof panel's plumb-cut end a full bearing face instead of the line contact a square ` +
-      `beam top leaves. ⚠ The stock is the smallest board the section fits in, not a specified one — pending ` +
+      `beam top leaves. ` +
+      `GLUED AND SCREWED to the beam: construction adhesive plus #10 T25 screws at ${RIDGE_CAP_SCREW_SPACING_IN}in o.c. ` +
+      `(Tommy, 2026-11-20). ⚠ The screw's LENGTH is not specified and the glue is counted in no material total or price. ` +
+      `⚠ A roof panel's own truss screw must pass THROUGH this cap and into the beam — the cap is only ` +
+      `${cap.riseIn.toFixed(3)}in deep here and tapers to nothing at both edges, so a screw stopping in it would hold the ` +
+      `roof down with almost no thread. ⚠ The stock is the smallest board the section fits in, not a specified one — pending ` +
       `Building Integrity confirmation.`,
   });
   return plies;

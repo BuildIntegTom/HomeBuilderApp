@@ -95,7 +95,11 @@ describe("the fastener schedule's per-row provenance", () => {
     expect(fastenerTableStatus.status).toBe("pending-BI-confirmation");
     const pending = fastenerSpacingTable.filter((r) => r.status === "pending-BI-confirmation");
     expect(pending).toHaveLength(fastenerSpacingTable.length - 3);
-    expect(fastenerTableStatus.note).toContain("Five of the eight");
+    /* ⚠ Was "Five of the eight". Three roof rows arrived on 2026-11-20, so
+       the count moved and a stale count in a status note is exactly what
+       this file exists to stop. */
+    expect(fastenerTableStatus.note).toContain("Eight of the eleven");
+    expect(fastenerTableStatus.note).toContain("the COUNT does not");
   });
 
   it("⚠ the table-wide note says no row is tied to a LOAD", () => {
@@ -107,12 +111,43 @@ describe("the fastener schedule's per-row provenance", () => {
     expect(fastenerTableStatus.note).toContain("ESR-2442");
   });
 
-  it("⚠ THERE IS STILL NO ROOF ROW, and this test is the reminder", () => {
-    /* Not a defect to fix here — the roof schedule is phase 3/4 of the
-       roof-bracing item. This asserts the Reference Points page is telling the
-       truth when it reports the gap, and it will fail the day a roof row is
-       added, which is exactly when the page's wording needs revisiting. */
+  it("✅ THE ROOF HAS A SCHEDULE NOW — and this test is why the page got corrected", () => {
+    /* ⚠ This assertion was INVERTED, not deleted, and it did exactly the job
+       it was written for. It used to read `expect(roofRows).toEqual([])` with
+       the note: "it will fail the day a roof row is added, which is exactly
+       when the page's wording needs revisiting."
+
+       It failed on 2026-11-20 when Tommy gave the roof its first schedule, and
+       the revisiting it forced was real: `gap-roof` on the Reference Points
+       page still said "THE SCHEDULE HAS NO ROOF ROW AT ALL", which had just
+       become false. That gap is now narrowed to the eave. A reminder that
+       fires once and gets inverted is a reminder that worked. */
     const roofRows = fastenerSpacingTable.filter((r) => /roof|ridge|rafter/i.test(r.connection));
-    expect(roofRows).toEqual([]);
+    expect(roofRows).toHaveLength(3);
+    expect(roofRows.map((r) => r.connection).sort()).toEqual([
+      "Ridge beam triangle cap to beam",
+      "Roof panel to ridge beam, at each seam",
+      "Roof panel to roof panel, all seams",
+    ]);
+  });
+
+  it("⚠ every roof row is PENDING only for its screw SIZE, and says which", () => {
+    /* The rule in each of the three is Tommy's own, first-hand, 2026-11-20 —
+       so these are not the same kind of pending as the five NFW rows nobody
+       has ever confirmed. Each note has to make that distinction itself,
+       because the `status` tag cannot. */
+    const roofRows = fastenerSpacingTable.filter((r) => /roof|ridge/i.test(r.connection));
+    for (const row of roofRows) {
+      expect(row.status).toBe("pending-BI-confirmation");
+      expect(row.note).toContain("2026-11-20");
+      /* It must quote him, so the rule's provenance is on the row itself. */
+      expect(row.note).toMatch(/Tommy, 2026-11-20/);
+    }
+    /* ⚠ And the one that matters most must carry his uplift instruction,
+       because it is the only place a reader learns WHY the screw has to reach
+       the beam rather than stopping in the cap. */
+    const truss = roofRows.find((r) => r.connection.includes("at each seam"))!;
+    expect(truss.note).toContain("3/4in at 4:12");
+    expect(truss.note).toContain("NDS 12.2.3");
   });
 });

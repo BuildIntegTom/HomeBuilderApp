@@ -11,6 +11,7 @@ import {
   ROOF_CATCHER_BEAM_PLY_THICKNESS_IN,
   ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN,
   roofCatcherBeamCapGeometry,
+  RIDGE_CAP_SCREW_SPACING_IN,
 } from "./roofCatcherBeamMembers";
 import { overlappingMemberPairs } from "./memberPrism";
 import { memberLocalCornersIn } from "./panelMemberHelpers";
@@ -207,6 +208,26 @@ describe("the triangle cap (2026-11-20)", () => {
       expect(cap.actualDimsIn.lengthIn).toBe(spanIn);
       expect(cap.position.xIn).toBe(0);
     }
+  });
+
+  it("⚠ carries his glue-and-screw schedule, and the truss screw's warning", () => {
+    /* > "fasteneing schedule for triangle is glue and screw #10 t25 screws
+       > every 8"... truss screws go through the beam not just the triangle"
+       Tommy, 2026-11-20. The member note is what a fitter reads, so both
+       halves belong on it: how the cap is held down, and the warning that a
+       roof panel's own screw must not stop in it. */
+    expect(RIDGE_CAP_SCREW_SPACING_IN).toBe(8);
+    const cap = buildRoofCatcherBeamMembers(96, 4).find((m) => m.memberId === "roof_catcher_beam_cap")!;
+    expect(cap.notes).toContain("#10 T25");
+    expect(cap.notes).toContain("8in o.c.");
+    expect(cap.notes).toContain("adhesive");
+    /* ⚠ The two things nobody has said, said out loud on the part itself. */
+    expect(cap.notes).toContain("LENGTH is not specified");
+    expect(cap.notes).toContain("counted in no material total");
+    /* ⚠ And the reason the cap cannot be the whole anchorage, with the real
+       depth at this pitch in it rather than a generality. */
+    expect(cap.notes).toContain("0.750in deep here");
+    expect(cap.notes).toContain("tapers to nothing");
   });
 
   it("⚠ names the stock as unconfirmed, because nobody specified it", () => {

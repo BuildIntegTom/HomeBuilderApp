@@ -8,6 +8,11 @@ import {
   CD_WIND_SEISMIC,
   ESR_2442,
   braceEndConnectionComparison,
+  ROOF_PANEL_TRUSS_SCREWS,
+  ROOF_SEAM_GRK_SPACING_IN,
+  WOOD_SCREW_WITHDRAWAL_COEFFICIENT,
+  ridgeScrewPenetrationIn,
+  withdrawalPerInchLb,
   ESR_2442_TABLE_3_GRK_5_16,
   FASTENER_CAPACITY_SCOPE_LIMIT,
   GRK_5_16_RSS,
@@ -402,5 +407,73 @@ describe("⚠ the brace end, on his 2026-11-20 detail", () => {
     expect(his.caveat).toContain("NOTHING");
     expect(his.caveat).toContain("3 7/8in");
     expect(his.caveat).toContain("2026-11-20");
+  });
+});
+
+describe("⚠ pull-up (withdrawal), his 2026-11-20 instruction", () => {
+  /* > "truss screws go through the beam not just the triangle so take that
+     > into account for pull up resistance engineering calculations."
+
+     Everything else in this module is LATERAL — a screw loaded across its
+     shank. A roof panel lifting off the ridge loads its screws along their
+     axis, which is a different failure and a different NDS chapter. */
+
+  it("follows NDS 12.2.3: W = 2850 G^2 D, per inch of thread", () => {
+    expect(WOOD_SCREW_WITHDRAWAL_COEFFICIENT).toBe(2850);
+    const w = withdrawalPerInchLb(SPF_SPECIFIC_GRAVITY, GRK_5_16_RSS.shankDiameterIn);
+    /* 2850 x 0.42^2 x 0.195 = 98.03 lb/in, computed by hand. */
+    expect(w).toBeCloseTo(98.03, 1);
+    /* ⚠ It goes as G SQUARED, so a species assumption costs more here than
+       it does laterally, where Fe goes as G^1.84 but the yield limit damps
+       it. Douglas Fir at 0.50 is 42% stronger than SPF at 0.42. */
+    expect(withdrawalPerInchLb(0.5, GRK_5_16_RSS.shankDiameterIn) / w).toBeCloseTo(1.417, 2);
+  });
+
+  it("⚠ is PER INCH, so penetration is the whole answer — which is his point", () => {
+    const perIn = withdrawalPerInchLb(SPF_SPECIFIC_GRAVITY, GRK_5_16_RSS.shankDiameterIn);
+    /* Linear: twice the thread, twice the hold. Nothing else in this module
+       behaves that way, which is why "through the beam" matters so much more
+       than a lateral detail of the same size would. */
+    expect(perIn * 2).toBeCloseTo(withdrawalPerInchLb(SPF_SPECIFIC_GRAVITY, GRK_5_16_RSS.shankDiameterIn) * 2, 9);
+  });
+
+  it("⚠ measures the cap against the beam, and the cap barely registers", () => {
+    const pen = ridgeScrewPenetrationIn(4, 4.5, 11.25);
+    /* The cap at 4:12 is 3/4in at its DEEPEST point. */
+    expect(pen.capDepthAtApexIn).toBeCloseTo(0.75, 9);
+    expect(pen.capOnlyPenetrationIn).toBeCloseTo(0.75, 9);
+    expect(pen.beamDepthIn).toBe(11.25);
+    /* The beam offers 15x what the cap does, at its best point. */
+    expect(pen.beamDepthIn / pen.capDepthAtApexIn).toBeCloseTo(15, 6);
+    expect(pen.statement).toContain("through the beam not just the triangle");
+  });
+
+  it("the cap gets shallower as the roof flattens, which makes his point sharper", () => {
+    /* ⚠ The shallower the roof, the LESS a cap-only screw has — and a
+       shallow roof is also the one whose panels are most prone to uplift. At
+       1:12 a cap-only screw has under 3/16in of thread. */
+    expect(ridgeScrewPenetrationIn(1, 4.5, 11.25).capDepthAtApexIn).toBeCloseTo(0.1875, 9);
+    expect(ridgeScrewPenetrationIn(12, 4.5, 11.25).capDepthAtApexIn).toBeCloseTo(2.25, 9);
+    for (const pitch of [1, 2, 4, 8, 12]) {
+      const pen = ridgeScrewPenetrationIn(pitch, 4.5, 11.25);
+      expect(pen.capDepthAtApexIn).toBeLessThan(pen.beamDepthIn);
+    }
+  });
+
+  it("⚠ returns NO capacity, because the truss screw has not been specified", () => {
+    /* The honest half. The geometry is his and is modelled; the screw is not,
+       and `withdrawalPerInchLb` has nothing to multiply without a diameter.
+       A `RidgeScrewPenetration` carries depths and words, never pounds — if
+       a capacity ever appears on this type, something was invented. */
+    const pen = ridgeScrewPenetrationIn(4, 4.5, 11.25);
+    expect(Object.keys(pen).sort()).toEqual(
+      ["beamDepthIn", "capDepthAtApexIn", "capOnlyPenetrationIn", "statement"].sort(),
+    );
+    expect(JSON.stringify(pen)).not.toMatch(/lb/i);
+  });
+
+  it("carries his schedule numbers, and no screw length it was not given", () => {
+    expect(ROOF_SEAM_GRK_SPACING_IN).toBe(18);
+    expect(ROOF_PANEL_TRUSS_SCREWS).toBe(4);
   });
 });

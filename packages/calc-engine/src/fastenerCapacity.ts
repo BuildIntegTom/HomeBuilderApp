@@ -657,3 +657,100 @@ export function fastenerCapacityInputs(): DerivationInput[] {
     },
   ];
 }
+
+/* ===================================================================== *
+ *  PULL-UP (WITHDRAWAL) — his 2026-11-20 instruction                     *
+ * ===================================================================== */
+
+/**
+ * ⚠ **WHY WITHDRAWAL IS SUDDENLY A QUESTION, AND IT IS HIS.**
+ *
+ * > *"fasteneing schedule for triangle is glue and screw #10 t25 screws every
+ * > 8". it should also be perscribed that the roof panels need to have grk's
+ * > 18" on all the seams as well as a truss screw at each seam. so basically 4
+ * > per panel. truss screws go through the beam not just the triangle so take
+ * > that into account for pull up resistance engineering calculations."*
+ * > — Tommy, 2026-11-20
+ *
+ * Everything this module held until now was LATERAL — a screw loaded across
+ * its shank, in shear. A roof panel lifting off its ridge loads its screws
+ * along their axis, in WITHDRAWAL, which is a different failure, a different
+ * NDS chapter and a different number. Uplift was not modelled at all.
+ *
+ * ⚠ **AND HIS POINT IS GEOMETRIC BEFORE IT IS STRUCTURAL.** The triangle cap
+ * is only `(4.5 / 2) x pitch/12` deep — **3/4in at 4:12**, tapering to NOTHING
+ * at both its edges. A screw that stopped inside the cap would have at most
+ * 3/4in of thread holding the roof down, and near the cap's feather edge it
+ * would have essentially none. Carrying on into the beam buys the 2x12's
+ * 11 1/4in. That is the whole reason he said *"through the beam not just the
+ * triangle"*, and it is why the penetration below is measured from the beam's
+ * top face rather than from the cap's.
+ */
+/* ⚠ `RIDGE_CAP_SCREW_SPACING_IN` is NOT declared here. It lives in
+   panel-catalog's `roofCatcherBeamMembers.ts`, because the cap's own member
+   note prints it and calc-engine imports panel-catalog rather than the other
+   way round. One spacing, one home — the B9 fault was a single subtraction
+   existing twice, and a schedule number is worth the same care. */
+export const ROOF_SEAM_GRK_SPACING_IN = 18;
+/** His "basically 4 per panel" — one at each of a roof panel's seams. */
+export const ROOF_PANEL_TRUSS_SCREWS = 4;
+
+/**
+ * NDS 12.2.3, wood screws: `W = 2850 G^2 D` pounds **per inch of thread
+ * penetration** into the main member, where D is the unthreaded shank
+ * diameter.
+ *
+ * ⚠ **A REFERENCE value, not an allowable** — it still takes the adjustment
+ * factors, and `allowableLateralLoadLb`'s steel ceiling does NOT apply to it
+ * (that is a shear limit). For the app's own GRK at SPF this is about
+ * **98 lb per inch**, so the inch or two of penetration a detail buys or
+ * loses is the whole answer.
+ *
+ * ⚠ **ESR-2442 HAS ITS OWN WITHDRAWAL TABLE AND IT IS NOT TRANSCRIBED HERE.**
+ * Where a report tabulates a tested value it governs over a calculation (the
+ * same §4.1.4 rule the lateral side records), so this is the CROSS-CHECK
+ * route, exactly as `ndsYieldLimitZ` is for lateral. Treat it as a floor to
+ * reason with, not as the published answer.
+ */
+export const WOOD_SCREW_WITHDRAWAL_COEFFICIENT = 2850;
+
+export function withdrawalPerInchLb(specificGravity: number, shankDiameterIn: number): number {
+  return WOOD_SCREW_WITHDRAWAL_COEFFICIENT * specificGravity ** 2 * shankDiameterIn;
+}
+
+export interface RidgeScrewPenetration {
+  /** How deep the cap is where the screw crosses its apex. */
+  capDepthAtApexIn: number;
+  /** What the beam offers below the cap — the 2x12's own depth. */
+  beamDepthIn: number;
+  /** ⚠ The honest reading of "stopped in the cap": the cap's own depth, and
+   * less than that anywhere off the apex. */
+  capOnlyPenetrationIn: number;
+  /** Why the difference matters, in words, for the sheet to print. */
+  statement: string;
+}
+
+/**
+ * The two depths his instruction is about, so the difference can be stated
+ * rather than asserted. ⚠ **It does NOT return a capacity**: the truss screw's
+ * own diameter and length have not been specified, and without a diameter
+ * `withdrawalPerInchLb` has nothing to multiply. See
+ * `gap-ridge-truss-screw-spec`.
+ */
+export function ridgeScrewPenetrationIn(
+  pitchIn12: number,
+  capBaseIn: number,
+  beamDepthIn: number,
+): RidgeScrewPenetration {
+  const capDepthAtApexIn = (capBaseIn / 2) * (pitchIn12 / 12);
+  return {
+    capDepthAtApexIn,
+    beamDepthIn,
+    capOnlyPenetrationIn: capDepthAtApexIn,
+    statement:
+      `A truss screw stopping inside the triangle cap would have at most ${capDepthAtApexIn.toFixed(3)}in of thread at the ` +
+      `cap's apex and less at every other point across it, tapering to nothing at its two edges. Carried on into the beam it ` +
+      `gains that beam's ${beamDepthIn}in. ⚠ Withdrawal is roughly linear in thread penetration (NDS 12.2.3), so this is not a ` +
+      `refinement — it is most of the capacity. Tommy, 2026-11-20: "truss screws go through the beam not just the triangle".`,
+  };
+}

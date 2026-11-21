@@ -40,9 +40,14 @@ import type { DerivationInput } from "./shearDerivation";
  * was drawn and where each number came from.
  *
  * ⚠ **THE GAPS ARE ROWS, NOT OMISSIONS.** `gaps` carries the connections the
- * app does NOT model — including the one that matters most for the item this
- * page is phase 1 of: **there is no roof connection in the schedule at all.**
- * A page that simply left those out would read as complete.
+ * app does NOT model. A page that simply left them out would read as complete.
+ *
+ * ⚠ **AND THEY HAVE TO BE RETIRED WHEN THEY ARE ANSWERED.** This comment used
+ * to say *"there is no roof connection in the schedule at all"*, which stopped
+ * being true on 2026-11-20 when Tommy gave the roof its first schedule. A gap
+ * left standing after its answer arrives is the page contradicting itself,
+ * which is the exact defect it was built to catch — and `gap-roof` below had
+ * to be narrowed on the same day for the same reason.
  */
 
 /**
@@ -443,11 +448,17 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
   const gaps: ReferencePointGap[] = [];
 
   gaps.push({
-    id: "gap-roof",
-    connection: "Anything to do with the roof",
+    id: "gap-roof-to-wall",
+    connection: "A roof panel down to the wall it lands on",
     why: ctx.hasRoofPanels
-      ? "⚠ THE SCHEDULE HAS NO ROOF ROW AT ALL — not roof-panel-to-roof-panel, not roof-panel-to-wall, not the ridge. This building HAS roof panels, so every one of those connections is being built to no stated schedule. It is the hole the roof-bracing item exists to fill."
-      : "⚠ The schedule has no roof row at all — not roof-panel-to-roof-panel, not roof-panel-to-wall, not the ridge. This building has no roof panels yet, so nothing is unspecified in it today; draw a roof and that stops being true.",
+      ? "⚠ NARROWED on 2026-11-20, and it used to say the schedule had NO roof row at all. Tommy has now given three: " +
+        "the seams between roof panels (GRK at 18in o.c.), the truss screw at each seam into the ridge beam, and the " +
+        "triangle cap itself (glue and #10 T25 at 8in). What is STILL unstated is the other end — how a roof panel is " +
+        "fastened DOWN to the wall, truss plate or box beam it bears on at the eave. This building has roof panels, so that " +
+        "joint is being built to no stated schedule, and it is the one that carries the roof's weight into the wall."
+      : "⚠ The schedule says nothing about how a roof panel is fastened down to the wall it bears on at the eave. " +
+        "This building has no roof panels yet, so nothing is unspecified in it today; draw a roof and that stops being true. " +
+        "(The seams, the ridge truss screw and the triangle cap DO have a schedule as of 2026-11-20.)",
   });
 
   gaps.push({
@@ -487,6 +498,39 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
       "Any thickening of what the screw crosses first — an engineered stud at 1 5/8in, a skin it must also pass, a head left proud — " +
       "drops this connection out of the tested row and onto the calculated route. That is a question for Building Integrity.",
   });
+
+  if (ctx.hasRoofPanels) {
+    gaps.push({
+      id: "gap-roof-fastener-count",
+      connection: "Every roof panel seam",
+      why:
+        "⚠ Roof panels now have a fastener SCHEDULE and still have no fastener COUNT. Tommy prescribed it on 2026-11-20 — " +
+        "GRKs at 18in o.c. on all the seams, plus a truss screw at each seam, \"so basically 4 per panel\" — and the schedule " +
+        "rows say so. What has not been built is the counting: `computeFastenerWeight` is written over WALL-panel roles " +
+        "(plate and girt-bar length), and a roof panel is joists with no girt at all, so its sheet reports fasteners as " +
+        "UNMODELED rather than zero. " +
+        "⚠ So every roof panel's weight is LOW by its own screws, and the shop packet prescribes a schedule it does not tally. " +
+        "That is the next piece of work, not a question — but until it lands, a roof panel's fastener line is a rule with no number.",
+    });
+
+    gaps.push({
+      id: "gap-ridge-truss-screw-spec",
+      connection: "The truss screw holding a roof panel down to the ridge beam",
+      why:
+        "⚠ Tommy's 2026-11-20 instruction is understood and its GEOMETRY is modelled: the triangle cap is only " +
+        "(4.5/2) x pitch/12 deep — 3/4in at 4:12, tapering to nothing at both edges — so a screw stopping in the cap holds " +
+        "the roof with at most 3/4in of thread, where one carried into the beam gains the 2x12's 11 1/4in. Withdrawal is " +
+        "roughly linear in thread penetration (NDS 12.2.3), so that difference is most of the capacity. " +
+        "⚠ WHAT IS MISSING IS THE SCREW: no type, diameter or length has been given, and `withdrawalPerInchLb` has nothing " +
+        "to multiply without a diameter. Two numbers would close it. " +
+        "⚠ AND EVEN THEN IT WOULD NOT BE A CHECK: the app models no wind or seismic UPLIFT demand, so a withdrawal capacity " +
+        "would sit beside nothing, exactly as the brace's axial capacity does. " +
+        "⚠ ESR-2442's own withdrawal table is NOT transcribed here; the NDS formula is the cross-check route, not the " +
+        "published answer. " +
+        "⚠ The cap is also GLUED (construction adhesive, his word), and no adhesive is counted in any material total or price, " +
+        "so a glued joint currently reads as free.",
+    });
+  }
 
   const needsReviewCount = points.filter((p) => derivationStatusNeedsReview(p.status)).length;
   const modeledLoadCount = points.filter((p) => p.load.modeled).length;

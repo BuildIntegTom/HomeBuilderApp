@@ -1443,6 +1443,48 @@ describe("⚠ plywood is the OUTER layer of every lid (his rule, re-stated 2026-
     });
   }
 
+  it("⚠ the 2x4 layer behind the sheet is SOLID — it IS the blocking, his word", () => {
+    /* Asked on 2026-11-20 whether "2x4 structural vertical blocking inboard of
+       that part of the lid" meant discrete blocks at a spacing or the
+       continuous layer already there, Tommy answered: **the solid layer IS
+       the blocking — nothing to add.**
+
+       So the contiguity is now a decision, not an accident, and this pins it.
+       Without it, someone reading "blocking" later could space these out at
+       16in o.c. — a change that LOOKS like a cleanup (it removes ~9ft of 2x4
+       a panel) and would quietly remove bearing under whatever lands on the
+       panel's end. */
+    for (const widthIn of [12, 24, 36, 47.5]) {
+      const members = buildFloorRoofPanelMembers({
+        kind: "floor",
+        widthIn,
+        depthIn: 11.25,
+        lengthIn: 144,
+        structuralGirtEnds: ["start", "end"],
+      });
+      for (const atEnd of ["start", "end"] as const) {
+        const faces = members
+          .filter((m) => m.memberId.startsWith(`lid-${atEnd}-face-`))
+          .map((m) => ({ from: m.position.xIn, to: m.position.xIn + m.actualDimsIn.widthIn }))
+          .sort((a, b) => a.from - b.from);
+        expect(faces.length).toBeGreaterThan(0);
+        /* Starts at the panel's edge, ends at its far edge, and every board
+           touches the next with no gap. */
+        expect(faces[0]!.from).toBeCloseTo(0, 9);
+        expect(faces[faces.length - 1]!.to).toBeCloseTo(widthIn, 9);
+        for (let i = 1; i < faces.length; i++) {
+          expect(faces[i]!.from).toBeCloseTo(faces[i - 1]!.to, 9);
+        }
+        /* And each one runs the whole depth of the panel — "vertical" in the
+           installed orientation, which is what makes it blocking rather than
+           a skin stiffener. */
+        for (const m of members.filter((x) => x.memberId.startsWith(`lid-${atEnd}-face-`))) {
+          expect(m.actualDimsIn.lengthIn).toBeCloseTo(11.25, 9);
+        }
+      }
+    }
+  });
+
   it("⚠ the 2x4s really are INBOARD of the sheet, not merely level with it", () => {
     /* The assertions above use >= and <=, which a lid built as one flush
        sandwich would satisfy. His rule is an ORDER: sheet out, lumber behind
