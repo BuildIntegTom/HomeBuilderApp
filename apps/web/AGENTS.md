@@ -827,3 +827,58 @@ This version has breaking changes — APIs, conventions, and file structure may 
   carrying it. It became `DeckPanelTakeoffGroup.cutLengthIn` and then a line on
   the fabrication sheet. **An unused import is sometimes a missing feature;
   check which before silencing it.**
+- **⚠ LINE ENDINGS: this repo is LF, in the repository AND in the working
+  tree, and `.gitattributes` now enforces it.** `* text=auto eol=lf`, with a
+  guard test (`apps/web/app/lineEndings.test.ts`) that fails on any tracked
+  file that goes mixed. Before that rule existed, `core.autocrlf=true` gave a
+  CRLF working tree while every tool here writes LF unconditionally — bash
+  heredocs, the scratchpad patch scripts, the OBJ exporter — so appending to
+  a file left it **HALF AND HALF, with no warning at all.**
+
+  Three ways it bit, all measured rather than imagined:
+
+  1. **Patch scripts matched ZERO anchors.** They sniff the convention
+     (`nl = "\r\n" if "\r\n" in s else "\n"`); a mixed file answers CRLF
+     while the lines being targeted are LF. Two scripts in one hour.
+  2. **Files drifted.** A script that picked CRLF rewrote the LF lines too,
+     flipping a file a few lines at a time.
+  3. **An unreviewable commit.** `page.tsx` once staged as **21,789
+     insertions / 21,205 deletions for a 172-line change** — 21,315 carriage
+     returns its parent did not have. Normalising to LF before staging turned
+     the same change into 635/49. A diff like that destroys review and
+     `git blame`.
+
+  ⚠ **`git add --renormalize` DOES NOT FIX A CRLF-COMMITTED FILE, and that
+  is documented git behaviour, not a misconfiguration.** `text=auto`
+  deliberately leaves alone any file that was *committed* with CRLF, to avoid
+  churn. It staged **nothing** here. The one such file
+  (`WallElevationDiagram.tsx`, 3,013 CRLF lines in its blob) had to have its
+  bytes rewritten and committed as an ordinary change. If the guard ever
+  fails on a file whose BLOB is CRLF, renormalize will not help.
+
+  ⚠ **`git checkout-index -a -f` does not convert an existing working tree
+  either** — it skips files whose stat info looks current. A *fresh* checkout
+  of a deleted file does come out LF, which is how that was confirmed. To
+  convert in place, rewrite the bytes directly; the blobs are already LF, so
+  nothing changes in git.
+
+  ⚠ **AND `git status` WILL DISAGREE WITH `git diff` WHILE YOU DO IT.** After
+  rewriting 338 files to LF, `git status` listed every one as ` M` and
+  `git update-index --refresh` said "needs update" and exited 1 — while
+  `git diff --name-only` reported **0**. The size changed, so the cached stat
+  is stale, and changing `.gitattributes` forces a re-filter. **Trust the
+  index hash, not the status letter**: `git hash-object --path=<p> -- <p>`
+  against `git ls-files -s` settles it in one command. Here all 929 entries
+  hashed identically, and `git add -u` only refreshed the cache.
+
+  ⚠ **A doubled CR hides inside a mixed file and survives every gate.** Line
+  18 of `WallElevationDiagram.tsx` ended `\r\r\n` — a CRLF-aware script
+  writing `\r\n` onto a line that already ended in `\r`. In TypeScript a
+  `\r` is whitespace, so it compiled, linted and tested clean, and no editor
+  shows it. Found by counting bytes. The guard checks for it separately from
+  mixed-ness for that reason.
+
+  ⚠ **Do not stash or check out while a 15-minute lint run is in flight.**
+  Doing it once here swapped two files underneath ESLint and made the run
+  worthless; it had to be killed and repeated. Measure the gate on a tree
+  that is not moving.
