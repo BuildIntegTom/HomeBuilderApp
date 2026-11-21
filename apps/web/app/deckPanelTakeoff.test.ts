@@ -129,15 +129,94 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
     }
   });
 
-  it("⚠ a unique panel is a unique sheet: 61 panels on this building, a handful of parts", () => {
+  it("⚠ a unique panel is a unique sheet: 61 panels on this building, 24 parts", () => {
     const takeoff = computeDeckPanelTakeoff(input());
     expect(takeoff.instances.filter((i) => i.kind === "floor")).toHaveLength(21);
     /* Both roof planes are the same length, so their 20 panels are 20 of the
        same parts — and because the two planes produce identical options they
        collapse into the SAME groups rather than two parallel sets. */
     expect(takeoff.instances.filter((i) => i.kind === "roof")).toHaveLength(40);
-    expect(takeoff.groups.length).toBeLessThan(10);
     expect(takeoff.groups.filter((g) => g.kind === "roof").every((g) => g.instances.length % 2 === 0)).toBe(true);
+
+    /* ⚠ **"A HANDFUL OF PARTS" IS OVER, AND THE ROOF BRACING IS WHY — this
+       assertion was `< 10` and the building now makes 24.**
+
+       The 21 floor panels are still 4 parts. The 40 roof panels are 20, one
+       per position along a plane, because each carries a different slice of
+       one figure laid across the whole plane: a leg of the X climbs
+       continuously from eave corner to ridge corner, so the board in the
+       third panel is at a different height from the board in the fourth and
+       the two are not interchangeable. The two planes still pair up, which is
+       why every roof group holds an even number of copies.
+
+       Nothing is wrong with it — a braced diaphragm's panels genuinely are
+       not interchangeable — but it is 20 shop sheets for a roof that was 2,
+       and that is a consequence worth seeing move rather than discovering on
+       a printed packet. The lever that would shrink it is the panel module,
+       not the bracing: equal panels in equal bays make the figure repeat bay
+       for bay (see `roofBraceAssembly.test.ts`). */
+    expect(takeoff.groups.filter((g) => g.kind === "floor")).toHaveLength(4);
+    expect(takeoff.groups.filter((g) => g.kind === "roof")).toHaveLength(20);
+    expect(takeoff.groups).toHaveLength(24);
+  });
+
+  /* ⚠ **THE BRACING REACHES THE PANELS, which is the whole point of the
+     wiring and the one thing no package test could check.** */
+  it("⚠ hands every roof panel four brace boards, and no floor panel any", () => {
+    const takeoff = computeDeckPanelTakeoff(input());
+    for (const group of takeoff.groups) {
+      expect({ kind: group.kind, braces: group.braceMembers.length }).toEqual({
+        kind: group.kind,
+        braces: group.kind === "roof" ? 4 : 0,
+      });
+    }
+    /* Every board lies flat in the panel's outermost 1 1/2in — its exterior
+       face, which on a roof panel is the top — so the sheathing lies flat
+       over both the brace and the joists. */
+    for (const group of takeoff.groups.filter((g) => g.kind === "roof")) {
+      for (const member of group.braceMembers) {
+        expect(member.orientation).toBe("diagonal");
+        expect(member.position.rotationDeg).toBe(90);
+        expect(member.nominalSize).toBe("2x4");
+        expect(member.position.yIn).toBeCloseTo(group.options.depthIn - 0.75, 9);
+      }
+    }
+  });
+
+  /* ⚠ **AN UNBRACED PANEL'S KEY IS WHAT IT ALWAYS WAS.** The signature is
+     APPENDED and only when there is bracing, so every floor panel on every
+     building — and every panel of a mitred roof — keeps the key it had before
+     the bracing existed. A key is a React key and half of a `shop-fab-` DOM
+     id, and churning either for a panel that did not change is churn for
+     nothing. */
+  it("⚠ leaves an unbraced panel's group key untouched", () => {
+    const takeoff = computeDeckPanelTakeoff(input());
+    for (const group of takeoff.groups.filter((g) => g.kind === "floor")) {
+      expect(group.key).not.toContain("nobrace");
+      expect(group.key).not.toContain("carrot");
+      expect(group.key.endsWith("square")).toBe(true);
+    }
+    /* And a braced one really does carry it, or the key would be a lie. */
+    for (const group of takeoff.groups.filter((g) => g.kind === "roof")) {
+      expect(group.key).toContain("carrot");
+    }
+  });
+
+  it("⚠ reports one bracing entry per roof run, braced or refused", () => {
+    const takeoff = computeDeckPanelTakeoff(input());
+    const roofRuns = takeoff.runs.filter((r) => r.kind === "roof");
+    expect(takeoff.roofBracing).toHaveLength(roofRuns.length);
+    for (const report of takeoff.roofBracing) {
+      expect(report.refusal).toBeNull();
+      expect(report.snapped).toBe(true);
+      expect(report.boardCount).toBe(report.panelCount * 4);
+      /* His band, and the sentence that says what snapping spent. Never a
+         verdict: a sentence an engineer reads must not say pass or fail. */
+      expect(report.minMemberAngleDeg).toBeGreaterThan(0);
+      expect(report.maxMemberAngleDeg).toBeGreaterThanOrEqual(report.minMemberAngleDeg);
+      expect(report.why.length).toBeGreaterThan(40);
+      expect(report.why).not.toMatch(/(pass|fail)/i);
+    }
   });
 
   it("⚠ every panel name is unique, across both roof planes", () => {

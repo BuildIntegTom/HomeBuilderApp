@@ -93,7 +93,47 @@ describe("⚠ an OCTAGON is cut, and the cut reaches the coverage the price is b
        panels in ten being built to one shape when the floor was cut. */
     const keys = on.groups.filter((g) => g.options.kind === "roof").map((g) => g.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.length).toBeGreaterThan(off.groups.filter((g) => g.options.kind === "roof").length);
+    /* ⚠ **THE MITRE SPLITS PARTS A SHAPE ALONE WOULD GROUP — measured against
+       the panels' own widths and spans, not against the box roof's group
+       count.** That old comparison stopped measuring the mitre the moment the
+       roof bracing was wired in: a box roof is BRACED, so each of its panels
+       carries a different slice of the plane's figure and earns its own group,
+       while this octagon's roof is REFUSED bracing (the figure cannot yet be
+       clipped to a mitre). The cut roof therefore has FEWER groups than the box
+       one, for a reason that has nothing to do with cutting.
+
+       ⚠ And not every mitred panel is its own part: 10 roof panels make 7
+       groups here, because an octagon is symmetric across the span as well as
+       along the run, so some of its cuts really are the same cut. That
+       symmetry is the same one `mitreFromCut`'s doc comment warns can hide a
+       mirrored cut entirely. */
+    const shapes = new Set(roofOf(on).map((i) => `${i.widthIn.toFixed(3)}|${i.spanIn.toFixed(3)}`));
+    expect(keys.length).toBeGreaterThan(shapes.size);
+    expect(keys.length).toBe(7);
+    expect(roofOf(on)).toHaveLength(10);
+  });
+
+  /* ⚠ **AND THE OCTAGON'S ROOF IS BARE — stated here rather than left to be
+     discovered.** The bracing figure is laid on the run's full rectangle and a
+     mitred panel is pulled back out of it, so a board near a cut corner would
+     hang past the end of the building. Clipping each board to its own panel's
+     cut is unbuilt, so the run says it is unbraced and why, and the Review Log
+     prints that sentence. A box roof over the same footprint IS braced. */
+  it("⚠ is NOT braced, and says so, where a box roof is", () => {
+    expect(on.roofBracing.length).toBeGreaterThan(0);
+    for (const report of on.roofBracing) {
+      expect(report.refusal).not.toBeNull();
+      expect(report.refusal).toMatch(/NOT braced/);
+      expect(report.boardCount).toBe(0);
+    }
+    for (const group of on.groups.filter((g) => g.kind === "roof")) {
+      expect(group.braceMembers).toEqual([]);
+    }
+    const boxBoards = off.roofBracing.reduce((n, r) => n + r.boardCount, 0);
+    expect(boxBoards).toBeGreaterThan(0);
+    for (const group of off.groups.filter((g) => g.kind === "roof")) {
+      expect(group.braceMembers).toHaveLength(4);
+    }
   });
 });
 

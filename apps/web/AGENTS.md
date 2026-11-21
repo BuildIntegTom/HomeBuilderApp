@@ -780,6 +780,29 @@
   packages have to agree about a shape, the test for that agreement belongs
   here, and `overlappingMemberPairs` is what makes it cheap to write.
 
+  ⚠ **AND WHEN THAT TEST HELPER TURNS OUT TO BE THE RECIPE, PROMOTE IT RATHER
+  THAN COPY IT.** The next stride wired this bracing into the building, and
+  the production code it needed was exactly the helper the test had grown:
+  clear band, figure, snap, slice, members, in that order. It moved to
+  `app/roofBracePlan.ts` and the test now calls it, so the app and the
+  assertions cannot brace a run differently. A second copy would have been
+  two recipes that agree today.
+
+- **A FEATURE CAN CHANGE WHAT COUNTS AS A UNIQUE PART, and two tests will
+  tell you by failing in ways that sound unrelated** (2026-11-21, roof
+  bracing). Adding plane-wide bracing put the brace geometry into the deck
+  panel group key — it had to, or a whole run would be fabricated from
+  whichever panel grouped first. Consequences, both found only by running the
+  suite: the 24x48 fixture's *"a handful of parts"* assertion went from under
+  10 to 24, and an OCTAGON test that compared the cut roof's group count
+  against the box roof's INVERTED, because the box roof is braced and the
+  mitred one is refused bracing. The second is the instructive one: that
+  assertion had been a proxy for *"the mitre splits parts"*, and a proxy
+  stops measuring what it was written for the moment something else moves the
+  same number. It now asserts the thing directly, against the panels' own
+  widths and spans. **When a test fails on a count rather than a value, ask
+  what the count was standing in for before you re-pin it.**
+
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately

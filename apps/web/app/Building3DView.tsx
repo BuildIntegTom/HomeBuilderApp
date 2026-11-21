@@ -811,11 +811,18 @@ function DeckOutlinePrism({
 }
 
 /** Enough to see the framing through, not so little it vanishes. */
-/** A deck panel's members as INSTALLED — the panel plus its eave cap, which
- * the takeoff keeps as its own field so a consumer can tell the two apart.
- * Shared by the 3D view and the export so neither can drop it. */
-function deckMembersWithCap(group: { members: PanelMember[]; capMembers: PanelMember[] }): PanelMember[] {
-  return group.capMembers.length === 0 ? group.members : [...group.members, ...group.capMembers];
+/** A deck panel's members as INSTALLED — the panel, its eave cap, and its
+ * share of the roof plane's bracing. The takeoff keeps all three as separate
+ * fields so a consumer can tell them apart, and neither of the two extras is
+ * derivable from the panel's own options. Shared by the 3D view and the export
+ * so neither can drop one. */
+function deckMembersAsInstalled(group: {
+  members: PanelMember[];
+  capMembers: PanelMember[];
+  braceMembers: PanelMember[];
+}): PanelMember[] {
+  if (group.capMembers.length === 0 && group.braceMembers.length === 0) return group.members;
+  return [...group.members, ...group.capMembers, ...group.braceMembers];
 }
 
 const ROOF_SEE_THROUGH_OPACITY = 0.25;
@@ -2517,8 +2524,8 @@ export default function Building3DView({
              sheet. */
           members:
             instance.facing !== undefined && instance.facing === seeThroughFacing
-              ? deckMembersWithCap(group).map((m) => ({ ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY }))
-              : deckMembersWithCap(group),
+              ? deckMembersAsInstalled(group).map((m) => ({ ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY }))
+              : deckMembersAsInstalled(group),
         },
       ];
     });

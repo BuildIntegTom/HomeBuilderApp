@@ -33,6 +33,7 @@ import {
   type FloorRoofPanelRunPlan,
   type PanelMember,
 } from "@building-integrity/panel-catalog";
+import { planRoofRunBracing, type RoofRunBracing } from "./roofBracePlan";
 
 const IN_PER_FT = 12;
 
@@ -145,6 +146,25 @@ export interface DeckPanelTakeoffGroup {
    * they are two fabricated parts, not one.
    */
   capMembers: PanelMember[];
+  /**
+   * ⚠ **THE ROOF PLANE BRACING this panel's share of — its own field, because
+   * it is NOT derivable from `options`.**
+   *
+   * Every other member on a deck panel follows from the panel's own width,
+   * span, depth, pitch and mitre. These boards do not: they are pieces of one
+   * figure laid across the WHOLE run, cut at the panel seams, so which pieces
+   * land in a given panel depends on where that panel sits in the run and on
+   * how wide its neighbours are. See `planRoofRunBracing`.
+   *
+   * They ARE part of the panel the shop builds — nailed flat on its exterior
+   * face before it ships — so the sheet, the cut list, the weight, the export
+   * and the 3D view all carry them. The field is separate only so that
+   * *"exactly what built `members`"* stays true of `options`.
+   *
+   * Empty on every floor panel, and on a roof run that refuses to be braced
+   * (see `DeckPanelTakeoff.roofBracing`).
+   */
+  braceMembers: PanelMember[];
   /** The panel's silhouette in (depth, span), for the box/membrane views. */
   sectionIn: { yIn: number; zIn: number }[];
   /**
@@ -161,10 +181,26 @@ export interface DeckPanelTakeoffGroup {
   instances: DeckPanelTakeoffInstance[];
 }
 
+/** One roof run's bracing, with the run it belongs to, for the Review Log. */
+export interface RoofRunBracingReport extends RoofRunBracing {
+  runIndex: number;
+  facing: CompassDirection | undefined;
+  /** How many panels across this run, and how many boards in all. */
+  panelCount: number;
+  boardCount: number;
+}
+
 export interface DeckPanelTakeoff {
   runs: DeckPanelTakeoffRun[];
   instances: DeckPanelTakeoffInstance[];
   groups: DeckPanelTakeoffGroup[];
+  /**
+   * ⚠ One entry per roof run, braced or refused — never an empty list standing
+   * in for "nothing to say". A run that cannot be braced says so in words, and
+   * a braced one carries what the snap spent, so the Review Log can print
+   * either. See `planRoofRunBracing`.
+   */
+  roofBracing: RoofRunBracingReport[];
   /** In words, not an empty list, when a deck cannot be panelised. */
   floorRefusal: string | null;
   roofRefusal: string | null;
@@ -219,6 +255,7 @@ const EMPTY: DeckPanelTakeoff = {
   runs: [],
   instances: [],
   groups: [],
+  roofBracing: [],
   floorRefusal: null,
   roofRefusal: null,
   coverageSqFt: { floor: 0, roof: 0 },
@@ -227,7 +264,7 @@ const EMPTY: DeckPanelTakeoff = {
 /** The girt signature, so two panels group together only if a shop would cut
  * them the same. A floor panel carrying a column's pair of girts is a
  * DIFFERENT part from its neighbour, and gets its own sheet. */
-function optionsKey(o: FloorRoofPanelOptions, role: FloorRoofPanelRole): string {
+function optionsKey(o: FloorRoofPanelOptions, role: FloorRoofPanelRole, braceSignature = "nobrace"): string {
   return [
     o.kind,
     role,
@@ -250,6 +287,21 @@ function optionsKey(o: FloorRoofPanelOptions, role: FloorRoofPanelRole): string 
           .map((v) => v.toFixed(3))
           .join("/")
       : "square",
+    /* ⚠ **THE BRACING IS PART OF THE IDENTITY, for the same reason the mitre
+       is.** Two roof panels of equal width and span carry different pieces of
+       the plane's figure depending on where in the run they sit — one holds a
+       leg of the X, its neighbour a carrot's foot — and a group builds ONE
+       member set for every copy. Left out, the whole run would be fabricated
+       from whichever panel happened to be grouped first. It is the pieces'
+       GEOMETRY, not the bay they came from: see `RoofRunPanelBracing`.
+
+       ⚠ **APPENDED, AND ONLY WHEN THERE IS BRACING**, so an unbraced panel's
+       key is byte-identical to the one it had before bracing existed. Every
+       floor panel on every building is such a panel, and so is every panel of
+       a mitred roof. A key is a React key and half of a `shop-fab-` DOM id,
+       and there is no reason to churn either for a panel that did not
+       change. */
+    ...(braceSignature === "nobrace" ? [] : [braceSignature]),
   ].join("-");
 }
 
@@ -349,14 +401,38 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
   const instances: DeckPanelTakeoffInstance[] = [];
   const byKey = new Map<
     string,
-    { options: FloorRoofPanelOptions; role: FloorRoofPanelRole; runIndex: number; instances: DeckPanelTakeoffInstance[] }
+    {
+      options: FloorRoofPanelOptions;
+      role: FloorRoofPanelRole;
+      runIndex: number;
+      /* ⚠ Carried on the GROUP rather than rebuilt from `options`, because
+         these boards cannot be rebuilt from `options` — see
+         `DeckPanelTakeoffGroup.braceMembers`. The first copy's are the
+         group's, which is sound precisely because the brace geometry is in
+         the group key. */
+      braceMembers: PanelMember[];
+      instances: DeckPanelTakeoffInstance[];
+    }
   >();
-  const push = (instance: DeckPanelTakeoffInstance, options: FloorRoofPanelOptions, role: FloorRoofPanelRole) => {
+  const push = (
+    instance: DeckPanelTakeoffInstance,
+    options: FloorRoofPanelOptions,
+    role: FloorRoofPanelRole,
+    braceMembers: PanelMember[] = [],
+  ) => {
     instances.push(instance);
     const existing = byKey.get(instance.groupKey);
     if (existing) existing.instances.push(instance);
-    else byKey.set(instance.groupKey, { options, role, runIndex: instance.runIndex, instances: [instance] });
+    else
+      byKey.set(instance.groupKey, {
+        options,
+        role,
+        runIndex: instance.runIndex,
+        braceMembers,
+        instances: [instance],
+      });
   };
+  const roofBracing: RoofRunBracingReport[] = [];
 
   /* ⚠ Where the ridge columns come down, so the floor panels under them carry
      the extra girts he asked for: *"one under each side of the panel resting
@@ -687,8 +763,36 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
                 panelWidthsIn: plan.instances.map((inst) => inst.widthIn),
               })
             : [];
+          /* ⚠ **THE BRACING IS PLANNED FOR THE WHOLE RUN BEFORE ANY PANEL IS
+             BUILT, and it has to be.** One figure crosses every seam, so which
+             boards a panel carries is a fact about the run. Planned once here
+             rather than per panel, which is also what keeps a 40-panel roof
+             from laying the figure 40 times on every render. */
+          const bracing = planRoofRunBracing({
+            panelWidthsIn: plan.instances.map((inst) => inst.widthIn),
+            panelMitred: plan.instances.map((_, i) => bandCuts[i]?.isMitred === true),
+            spanIn,
+            depthIn,
+            optionsForWidthIn: (widthIn) => ({
+              kind: "roof",
+              widthIn,
+              depthIn,
+              lengthIn: spanIn,
+              structuralGirtEnds: [],
+              pitchIn12: roofPitchIn12,
+              bearingSeatDepthIn: depthIn,
+            }),
+          });
+          roofBracing.push({
+            ...bracing,
+            runIndex,
+            facing: plane.facing,
+            panelCount: plan.instances.length,
+            boardCount: bracing.perPanel.reduce((n, p) => n + p.members.length, 0),
+          });
           for (const [i, planned] of plan.instances.entries()) {
           const bandCut = bandCuts[i];
+          const braceMembers = bracing.perPanel[i]?.members ?? [];
           /* ⚠ **PLAN inches become SLOPE inches here and nowhere else.** A
              panel is the hypotenuse over the ground it covers, so a chamfer that
              takes 12in of ground takes 12.65in off the panel at 4:12. Handing the
@@ -743,7 +847,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
               atIn: planned.atIn,
               widthIn: planned.widthIn,
               spanIn,
-              groupKey: optionsKey(options, planned.role),
+              groupKey: optionsKey(options, planned.role, bracing.perPanel[i]?.signature),
               world: {
                 anchorX: bandOriginX + ux * alongFt,
                 anchorZ: bandOriginY + uy * alongFt,
@@ -759,6 +863,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
             },
             options,
             planned.role,
+            braceMembers,
           );
           }
         }
@@ -767,7 +872,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
   }
 
   const groups: DeckPanelTakeoffGroup[] = [...byKey.entries()].map(
-    ([key, { options, role, runIndex, instances: groupInstances }]) => ({
+    ([key, { options, role, runIndex, braceMembers, instances: groupInstances }]) => ({
       key,
       kind: options.kind,
       role,
@@ -784,6 +889,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
         options.kind === "roof" && options.pitchIn12 !== undefined
           ? buildRoofPanelCapMembers(options, "eave", options.pitchIn12)
           : [],
+      braceMembers,
       capSectionIn:
         options.kind === "roof" && options.pitchIn12 !== undefined
           ? roofPanelCapOutlineSection(options, options.pitchIn12)
@@ -797,6 +903,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
     runs,
     instances,
     groups,
+    roofBracing,
     floorRefusal,
     roofRefusal,
     coverageSqFt: { floor: floorCoverageSqFt, roof: roofCoverageSqFt },

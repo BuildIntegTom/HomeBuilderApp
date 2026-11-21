@@ -17,6 +17,8 @@ import {
   tileInteriorWalls,
   ringRoofGableBlockReason,
   roofBearingBands,
+  ROOF_BRACE_MAX_ANGLE_DEG,
+  ROOF_BRACE_MIN_ANGLE_DEG,
   roofNeedsRidgeBeam,
   roofSpanFt,
   shedTallWallId,
@@ -11568,9 +11570,15 @@ export default function LayoutEditor() {
     const densityKgM3 = densityLbFt3 * LB_FT3_TO_KG_M3;
 
     return deckPanelTakeoff.groups.map((group) => {
-      /* The cap IS part of the panel the shop builds, so it is on the sheet
-         and in the sheet's own weight. */
-      const members = group.capMembers.length === 0 ? group.members : [...group.members, ...group.capMembers];
+      /* The cap and the roof bracing ARE part of the panel the shop builds, so
+         both are on the sheet and in the sheet's own weight — and in the straw
+         volume, where a flat 2x4 on the top face displaces its own wood. The
+         3D view composes the same three fields through `deckMembersAsInstalled`,
+         which is the pair that must not drift. */
+      const members =
+        group.capMembers.length === 0 && group.braceMembers.length === 0
+          ? group.members
+          : [...group.members, ...group.capMembers, ...group.braceMembers];
       const runs = deckPanelTakeoff.runs.filter((r) => group.instances.some((i) => i.runIndex === r.index));
       const run = runs[0] ?? deckPanelTakeoff.runs[group.runIndex]!;
       const straw = computeStandardPanelStrawVolume(members, {
@@ -11609,7 +11617,11 @@ export default function LayoutEditor() {
         hasClayPlaster: false,
         hasLimePlaster: false,
       });
-      return { ...group, members, run, runs, plan: run.plan, runIn: run.runIn, weightBreakdown };
+      /* The run's own bracing report, so the sheet can state the bay and the
+         angle band this panel's boards came out of rather than only drawing
+         them. A floor panel, and a roof run that refused, find nothing. */
+      const bracing = deckPanelTakeoff.roofBracing.find((b) => b.runIndex === run.index);
+      return { ...group, members, run, runs, plan: run.plan, runIn: run.runIn, weightBreakdown, bracing };
     });
   }, [deckPanelTakeoff, densityLbFt3]);
 
@@ -13828,6 +13840,131 @@ export default function LayoutEditor() {
   }, [panelFabricationGroups]);
 
   /**
+   * ⚠ **THE DECK PANELS' OWN OVERLAP AUDIT — his condition for leaving the
+   * roof bracing's crossings alone.**
+   *
+   * The audit above walks `panelFabricationGroups`, which is WALL panels. Deck
+   * panels were never audited, and before the roof bracing was built there was
+   * nothing in one to find. Now there is: a brace crosses boards by design.
+   *
+   * > *"As long as the review log says when things are overlapping, I think
+   * > it's fine for now."*
+   *
+   * So the crossings are reported rather than cut, and this is the entry that
+   * reports them. Its own entry rather than a line in the wall audit because
+   * the CAUSES are different — a carrot landing on a leg of the X is his own
+   * figure asking for the contact, which is nothing like a nailer asked for
+   * twice.
+   */
+  const deckMemberOverlapReviewEntries = useMemo(() => {
+    const reports = floorRoofPanelFabricationGroups
+      .map((group) => ({
+        name: group.instances[0]?.name ?? group.key,
+        copies: group.instances.length,
+        pairs: overlappingMemberPairs(group.members),
+      }))
+      .filter((report) => report.pairs.length > 0);
+    if (reports.length === 0) return [];
+
+    /* Every pair naming a brace board is a crossing his figure asks for; any
+       pair that does NOT is something nobody has accounted for, and the two
+       must not be reported as one number. */
+    const isBrace = (pair: string) => pair.includes("roof-brace");
+    const bracePairs = reports.reduce((n, r) => n + r.pairs.filter(isBrace).length * r.copies, 0);
+    const other = reports
+      .map((r) => ({ ...r, pairs: r.pairs.filter((p) => !isBrace(p)) }))
+      .filter((r) => r.pairs.length > 0);
+    const LIST_LIMIT = 6;
+    const listed = other.slice(0, LIST_LIMIT).map((r) => `${r.name} (${r.pairs.join("; ")})`);
+    const moreCount = other.length - listed.length;
+
+    const braceSentence =
+      bracePairs === 0
+        ? ""
+        : `⚠ ${bracePairs} crossing${bracePairs === 1 ? "" : "s"} across this roof involve a brace board, and they are his own figure rather than defects: a carrot's foot LANDS on a leg of the X because that is how a carrot delivers load into the main diagonal, and a diagonal running the panel has to cross any anti-twist girt in its way. Both boards sit in the same outermost 1 1/2in of the panel's depth, so two flat 2x4s cannot both be there as drawn. A half-lap where they meet is the obvious answer and it is NOT built — nobody has said how a roof brace meets the board it crosses, so the shop would have to be told which one loses material and the drawing does not say. This is counted under his standing rule that an overlap is acceptable while the log states it, not under a rule that it is fine. `;
+
+    if (other.length === 0) {
+      return [
+        {
+          label: `${bracePairs} roof brace crossing${bracePairs === 1 ? "" : "s"} — his own figure, not notched`,
+          status: "pending-BI-confirmation" as const,
+          note:
+            braceSentence +
+            "No deck panel in this building has two members in the same volume for any other reason.",
+        },
+      ];
+    }
+    return [
+      {
+        label: `⚠ ${other.length} deck panel type${other.length === 1 ? "" : "s"} with two members in the same volume${
+          bracePairs > 0 ? `, plus ${bracePairs} roof brace crossing${bracePairs === 1 ? "" : "s"}` : ""
+        }`,
+        status: "pending-BI-confirmation" as const,
+        note:
+          `These pairs are NOT accounted for by the roof bracing and nobody has explained them: ${listed.join(" · ")}${
+            moreCount > 0 ? ` · and ${moreCount} more` : ""
+          }. Each is two members whose boxes share real volume, measured as prisms rather than as bounding boxes. ` +
+          braceSentence +
+          "No panel was changed to produce this entry, and none should be changed to silence it.",
+      },
+    ];
+  }, [floorRoofPanelFabricationGroups]);
+
+  /**
+   * ⚠ **WHAT THE ROOF BRACING COST, per plane, in words.**
+   *
+   * It reports three things nothing on screen would show: that the figure was
+   * snapped onto the panel seams at all (which is what makes the board count
+   * the same in every panel), the spread of member angles snapping bought it,
+   * and — when a run could not be braced — that it is bare, and why.
+   */
+  const roofBracingReviewEntries = useMemo(() => {
+    const reports = deckPanelTakeoff.roofBracing;
+    if (reports.length === 0) return [];
+    const refused = reports.filter((r) => r.refusal !== null);
+    const braced = reports.filter((r) => r.refusal === null);
+    const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
+
+    if (refused.length > 0) {
+      entries.push({
+        label: `⚠ ${refused.length} roof plane${refused.length === 1 ? " is" : "s are"} NOT braced`,
+        status: "pending-BI-confirmation",
+        note:
+          `${refused
+            .map((r) => `${r.facing ?? "roof"} plane (roof run ${reports.indexOf(r) + 1} of ${reports.length}): ${r.refusal}`)
+            .join(" · ")} An unbraced roof plane has no in-plane bracing drawn on it at all, and the reader who most needs to know that is the one reading this log.`,
+      });
+    }
+    if (braced.length > 0) {
+      const boards = braced.reduce((n, r) => n + r.boardCount, 0);
+      const minDeg = Math.min(...braced.map((r) => r.minMemberAngleDeg));
+      const maxDeg = Math.max(...braced.map((r) => r.maxMemberAngleDeg));
+      const unsnapped = braced.filter((r) => !r.snapped);
+      entries.push({
+        label: `${boards} roof brace board${boards === 1 ? "" : "s"} across ${braced.length} plane${
+          braced.length === 1 ? "" : "s"
+        } — member angles ${minDeg.toFixed(1)}° to ${maxDeg.toFixed(1)}°`,
+        status: "pending-BI-confirmation",
+        note:
+          "Each plane carries one figure — two legs of an X per bay, with carrots feeding them — cut at the panel seams so a board runs seam to seam rather than stopping inside a panel. " +
+          `His stated preference is ${ROOF_BRACE_MIN_ANGLE_DEG}° to ${ROOF_BRACE_MAX_ANGLE_DEG}° ("i like keeping angles between 30 and 45 degrees where possible"), and the number of bays on a plane is chosen to hold the X's legs inside that band. ` +
+          `⚠ THE CARROTS ARE NOT HELD TO IT. Snapping the figure's five stations onto real panel seams is what makes every panel carry the same four boards, and it moves the carrots' feet off the quarter points — so a carrot is no longer parallel to its leg and takes whatever angle connects its two ends. The spread on this building is ${minDeg.toFixed(
+            1,
+          )}° to ${maxDeg.toFixed(1)}°. ` +
+          `${braced.map((r) => `${r.facing ?? "roof"} plane (roof run ${reports.indexOf(r) + 1} of ${reports.length}): ${r.why}`).join(" · ")} ` +
+          "⚠ NO BOARD ON THIS ROOF CARRIES A MODELLED FORCE. The figure's geometry, lengths, bevels and counts are real; what any one brace resists is not computed, and a roof diaphragm capacity is not among the numbers this app reports. " +
+          "Each board is also shortened at both ends to butt the inner face of the joist beside it instead of reaching the panel seam — a joist thickness divided by the cosine of the board's angle at each end, about 4in in all off a board at 38°. That buys it something to bear against, and it is a trade rather than free." +
+          (unsnapped.length > 0
+            ? ` ⚠ ${unsnapped.length} of these planes could not be snapped and keeps its offcuts: ${unsnapped
+                .map((r) => `${r.facing ?? "roof"} plane (roof run ${reports.indexOf(r) + 1})`)
+                .join(", ")}.`
+            : ""),
+      });
+    }
+    return entries;
+  }, [deckPanelTakeoff]);
+
+  /**
    * **Every header in this building that has no truss web.**
    *
    * ⚠ **This is the ABSENCE the overlap entry above cannot see.** A header
@@ -14550,6 +14687,15 @@ export default function LayoutEditor() {
       // outranks every material assumption below. His 2026-11-06 condition for
       // leaving the brace/ring collision alone was that this log says so.
       ...memberOverlapReviewEntries,
+      /* Immediately behind it, because it is the same question about the other
+         half of the building: the entry above audits WALL panels, this one
+         audits the floor and roof decks. The roof bracing put the first real
+         crossings in a deck panel, and his condition for leaving them alone
+         was that this log says so. */
+      ...deckMemberOverlapReviewEntries,
+      /* And behind THAT, because it is what explains them: the figure those
+         crossings come from, and what snapping it onto the seams cost. */
+      ...roofBracingReviewEntries,
       /* Beside it again: this one reports a part that is RIGHT but not as good
          as it could be, which ranks just under one that cannot be built. */
       ...gableBevelRefusedReviewEntries,
@@ -14768,6 +14914,8 @@ export default function LayoutEditor() {
     zeroBracingReviewEntries,
     squareBaleMergedCornerReviewEntries,
     memberOverlapReviewEntries,
+    deckMemberOverlapReviewEntries,
+    roofBracingReviewEntries,
     gableBevelRefusedReviewEntries,
     gableMitreRefusedReviewEntries,
     headerWithoutWebReviewEntries,
@@ -17827,6 +17975,32 @@ export default function LayoutEditor() {
                   of space between the truss plate and this panel&apos;s own level seat — the gap that used
                   to run the whole length of the wall, because the part that fills it was built and never
                   placed.{" "}
+                </>
+              )}
+              {group.braceMembers.length > 0 && group.bracing !== undefined && (
+                <>
+                  <strong>
+                    {group.braceMembers.length} brace board
+                    {group.braceMembers.length === 1 ? "" : "s"}
+                  </strong>{" "}
+                  lie flat on this panel&apos;s exterior (top) face, nailed on before it ships, and they are
+                  in the cut list below. They are this panel&apos;s share of one figure laid across the whole{" "}
+                  {formatLengthIn(group.runIn, unitSystem)} roof plane in {group.bracing.bayCount} bay
+                  {group.bracing.bayCount === 1 ? "" : "s"} and then cut at the panel seams, so a board runs
+                  from one seam to the next rather than stopping inside the panel.{" "}
+                  <strong>Each board is a parallelogram</strong>: both ends are cut on the panel&apos;s own
+                  side face at the board&apos;s own angle off the eave, so the two cuts are parallel, one jig
+                  setting does the piece, both long edges are the same length and there is no long point to
+                  measure to. Each end butts the inner face of the joist beside it rather than reaching the
+                  seam, which is what gives it something to bear against. Member angles across this plane run{" "}
+                  {group.bracing.minMemberAngleDeg.toFixed(1)}&deg; to{" "}
+                  {group.bracing.maxMemberAngleDeg.toFixed(1)}&deg; off the eave.{" "}
+                  {group.bracing.snapped
+                    ? "Every end of the figure lands on a panel seam, which is what makes the board count the same in every panel."
+                    : "The figure is NOT snapped to the seams on this plane — see the Review Log."}{" "}
+                  ⚠ Where a brace crosses another board — a carrot&apos;s foot landing on a leg of the X, or
+                  a diagonal crossing an anti-twist girt — <strong>nothing is notched</strong>. The Review
+                  Log counts those crossings; the shop has not been told which board loses material.{" "}
                 </>
               )}
               {group.plan.lastTrueSheetSeamIn !== null && (
