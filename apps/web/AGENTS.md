@@ -755,6 +755,31 @@
   `git checkout HEAD -- app/page.tsx` to confirm the baseline, then put
   changes back in groups.
 
+- **2026-11-21, the roof bracing's 3D members: ZERO delta.** **188 problems**,
+  141 errors / 47 warnings, every rule byte-identical
+  (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ The change adds **one file to `apps/web`** — a test — and it carries no
+  flags of its own, so the rule from the 2026-11-18 entries holds again: the
+  budget is spent by `useMemo`s and by what their dep arrays touch, and
+  nothing here is a memo. The rest of the stride is in
+  `packages/panel-catalog`, which this gate never lints.
+
+  ⚠ **THE END-TO-END TEST IS IN `apps/web` BECAUSE NO PACKAGE CAN HOLD IT, and
+  that is worth reaching for deliberately.** The roof bracing figure lives in
+  `@building-integrity/geometry`; the panel and its members live in
+  `@building-integrity/panel-catalog`; neither depends on the other and
+  neither should. `apps/web` is the first place both are in scope. **Both
+  defects this stride found were defects of the JOIN** — every brace board
+  buried inside both top joist chords (200 overlap pairs on one roof), and 80
+  more inside an end lid because the figure was held back by a constant
+  instead of by the panel's own geometry. Each package's own tests passed
+  throughout, because each was right about its own half. When two leaf
+  packages have to agree about a shape, the test for that agreement belongs
+  here, and `overlappingMemberPairs` is what makes it cheap to write.
+
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately

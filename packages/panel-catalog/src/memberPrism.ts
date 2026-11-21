@@ -322,6 +322,29 @@ export function membersOverlap(a: PanelMember, b: PanelMember): { overlaps: bool
   return { overlaps: polygonsOverlap(pa.polygon, pb.polygon), mixedAxes: false };
 }
 
+/**
+ * A member's TRUE axis-aligned extent in member space, from its prism.
+ *
+ * ⚠ **NOT `memberBoxIn`, and the difference is the whole reason this is
+ * exported.** That reads `position` plus `memberBoxSizeIn`, which is right
+ * for a plain box and wrong for every prism whose shape lives in corners: a
+ * roof panel's plumb end lid reports `zIn: 0` with a 1 1/2in box while
+ * actually running most of a foot along the span. Anything that has to know
+ * where a member really is — the overlap audit, and now the roof bracing's
+ * search for clear space on a panel's top face — has to go through the
+ * prism.
+ */
+export function memberAabbIn(member: PanelMember): {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  z0: number;
+  z1: number;
+} {
+  return aabbOf(member);
+}
+
 function aabbOf(member: PanelMember) {
   const prism = memberPrism(member);
   const us = prism.polygon.map((p) => p.u);
