@@ -1335,3 +1335,133 @@ describe("⚠ plywood faces out on all four lids", () => {
     }
   }
 });
+
+describe("⚠ plywood is the OUTER layer of every lid (his rule, re-stated 2026-11-20)", () => {
+  /* > "Plywood lids on floor panels should always be on the outside/exterior.
+     > We can put 2x4 structural vertical blocking inboard of that part of the
+     > lid."  — Tommy, 2026-11-20, restating his 2026-11-05 "Plywood should
+     > always be on the exterior side for lids/plates."
+
+     ⚠ **He is confirming what is already built, and the value here is the
+     COVERAGE rather than a change.** The 2026-11-05 fix was made in the plain
+     lid builder only, and there are FOUR that can produce an end: the plain
+     lid, the mitred lid, the eave fascia and the plumb tall-end plate. Three
+     of them were already laying the skin outermost and one had to be fixed —
+     which is exactly the arrangement that drifts silently the next time one of
+     them is touched. This sweeps all four.
+
+     The test is "no lid member sits outboard of the lid's own skin", not "the
+     skin is at z = 0" — a mitred or plumb end's skin is not at the panel's
+     nominal end, and asserting a coordinate would pass only the square case. */
+
+  const END_MEMBER = /^(lid|fascia)-/;
+
+  /**
+   * How far a member reaches along the span.
+   *
+   * ⚠ **THREE placement conventions reach this sweep, and reading only one
+   * of them is how the first version of this test "found" three defects that
+   * were not there.** A plain lid carries its span in `zIn + thicknessIn`; a
+   * mitred lid carries it in `trapezoidCornersIn`; and the PLUMB tall-end
+   * plate carries it in `sectionCornersIn`, leaving `zIn` at 0 as a
+   * placeholder. Read naively, every plumb roof panel looked like it had its
+   * 2x4s outside its plywood. It does not — `buildPlumbEndPlate` gives the
+   * skin the slab from perpendicular 0 to 3/4in and the 2x4 faces the slab
+   * from 3/4in to 2 1/4in, which is his rule exactly.
+   */
+  function spanIn(m: PanelMember): [number, number] {
+    const p = m.position;
+    const corners = p.trapezoidCornersIn ?? p.sectionCornersIn;
+    if (corners && corners.length > 0) {
+      const zs = corners.map((c) => c.zIn);
+      return [Math.min(...zs), Math.max(...zs)];
+    }
+    return [p.zIn, p.zIn + m.actualDimsIn.thicknessIn];
+  }
+
+  const CASES: [string, FloorRoofPanelOptions][] = [
+    [
+      "floor panel, square both ends",
+      { kind: "floor", widthIn: 24, depthIn: 11.25, lengthIn: 144, structuralGirtEnds: ["start", "end"] },
+    ],
+    [
+      "floor panel, no structural girts",
+      { kind: "floor", widthIn: 24, depthIn: 11.25, lengthIn: 96 },
+    ],
+    [
+      "floor panel, mitred at one end",
+      {
+        kind: "floor",
+        widthIn: 24,
+        depthIn: 11.25,
+        lengthIn: 120,
+        mitreIn: { startNearIn: 0, startFarIn: 0, endNearIn: 0, endFarIn: 9 },
+      },
+    ],
+    [
+      "roof panel at 4:12 — plumb both ends",
+      { kind: "roof", widthIn: 24, depthIn: 11.25, lengthIn: 150, pitchIn12: 4 },
+    ],
+    [
+      "roof panel at 4:12 with an eave seat — the fascia end",
+      { kind: "roof", widthIn: 24, depthIn: 11.25, lengthIn: 150, pitchIn12: 4, bearingSeatDepthIn: 5.5 },
+    ],
+    [
+      "roof panel at 8:12 with an eave seat",
+      { kind: "roof", widthIn: 24, depthIn: 11.25, lengthIn: 180, pitchIn12: 8, bearingSeatDepthIn: 5.5 },
+    ],
+  ];
+
+  for (const [label, options] of CASES) {
+    it(label, () => {
+      const members = buildFloorRoofPanelMembers(options).filter((m) => END_MEMBER.test(m.memberId));
+      expect(members.length).toBeGreaterThan(0);
+      for (const atEnd of ["start", "end"] as const) {
+        const ofEnd = members.filter((m) => m.memberId.includes(`-${atEnd}-`));
+        if (ofEnd.length === 0) continue;
+        const skins = ofEnd.filter((m) => m.material === "plywood");
+        /* Every end that exists has a sheet in it — a lid with no plywood
+           would pass the outboard check below vacuously. */
+        expect(skins.length).toBeGreaterThan(0);
+        const others = ofEnd.filter((m) => m.material !== "plywood");
+        if (others.length === 0) continue;
+
+        const skinSpans = skins.map(spanIn);
+        const otherSpans = others.map(spanIn);
+        if (atEnd === "start") {
+          /* The start faces z = 0, so "outermost" is the LOWEST z. */
+          const skinOuter = Math.min(...skinSpans.map((sp) => sp[0]));
+          const lumberOuter = Math.min(...otherSpans.map((sp) => sp[0]));
+          expect(lumberOuter).toBeGreaterThanOrEqual(skinOuter - 1e-9);
+        } else {
+          /* The end faces z = lengthIn, so "outermost" is the HIGHEST z. */
+          const skinOuter = Math.max(...skinSpans.map((sp) => sp[1]));
+          const lumberOuter = Math.max(...otherSpans.map((sp) => sp[1]));
+          expect(lumberOuter).toBeLessThanOrEqual(skinOuter + 1e-9);
+        }
+      }
+    });
+  }
+
+  it("⚠ the 2x4s really are INBOARD of the sheet, not merely level with it", () => {
+    /* The assertions above use >= and <=, which a lid built as one flush
+       sandwich would satisfy. His rule is an ORDER: sheet out, lumber behind
+       it. This is the square floor panel, where the two layers are plain. */
+    const members = buildFloorRoofPanelMembers({
+      kind: "floor",
+      widthIn: 24,
+      depthIn: 11.25,
+      lengthIn: 144,
+      structuralGirtEnds: ["start", "end"],
+    });
+    const startSkin = members.find((m) => m.memberId === "lid-start-skin")!;
+    const startFace = members.find((m) => m.memberId === "lid-start-face-0")!;
+    expect(spanIn(startSkin)[0]).toBeCloseTo(0, 9);
+    expect(spanIn(startFace)[0]).toBeGreaterThan(spanIn(startSkin)[1] - 1e-9);
+
+    const endSkin = members.find((m) => m.memberId === "lid-end-skin")!;
+    const endFace = members.find((m) => m.memberId === "lid-end-face-0")!;
+    expect(spanIn(endSkin)[1]).toBeCloseTo(144, 9);
+    expect(spanIn(endFace)[1]).toBeLessThan(spanIn(endSkin)[0] + 1e-9);
+  });
+});

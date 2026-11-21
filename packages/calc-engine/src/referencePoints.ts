@@ -255,12 +255,14 @@ export interface ReferencePointsContext {
    */
   braceAxialCapacityLb?: number;
   /**
-   * How deep a brace-end screw lands in solid sawn lumber.
+   * How deep a brace-end screw lands in the brace.
    *
-   * ⚠ **An app assumption the caller must state, not a default hidden here.**
-   * A brace lies flat on a 1 1/2in member; what is behind that member is a
-   * question about the real detail, and `gap-brace-end-penetration` says the
-   * app does not model it.
+   * ⚠ **His figure, not an app assumption, and still stated by the caller
+   * rather than defaulted here.** Tommy, 2026-11-20: a 4in GRK through the
+   * 1 1/2in stud leaving 2 1/2in in the brace, walls and roof alike. The
+   * screw's real length makes that 2 3/8in — exactly ESR-2442 Table 3's
+   * minimum. What remains open is the grain angle at the beveled end cut;
+   * see `gap-brace-end-grain-angle`.
    */
   braceEndPenetrationIn?: number;
 }
@@ -382,7 +384,7 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
             statement:
               braceEndConnection === null
                 ? "⚠ A force IS modelled for the BRACE — its axial capacity as a pin-ended strut, and the horizontal component of that. What is NOT modelled is whether these four screws can deliver that force into the frame."
-                : `⚠ A force IS modelled for the BRACE — its axial capacity as a pin-ended strut, and the horizontal component of that. As of 2026-11-19 these screws have a capacity too: ${Math.round(braceEndConnection.perEndLb)} lbf at each end against ${Math.round(braceEndConnection.braceAxialCapacityLb)} lbf in the strut, so the ENDS are the smaller number by a factor of about ${(1 / Math.max(braceEndConnection.ratio, 1e-9)).toFixed(1)}. Neither figure is a demand and neither says the brace passes.`,
+                : `⚠ A force IS modelled for the BRACE — its axial capacity as a pin-ended strut, and the horizontal component of that. These screws have a capacity too: ${Math.round(braceEndConnection.perEndLb)} lbf at each end against ${Math.round(braceEndConnection.braceAxialCapacityLb)} lbf in the strut, so the ENDS are the smaller number by a factor of about ${(1 / Math.max(braceEndConnection.ratio, 1e-9)).toFixed(1)}. Neither figure is a demand and neither says the brace passes. The ${braceEndConnection.penetrationIn}in penetration is Tommy's detail of 2026-11-20 (through a ${braceEndConnection.sideMemberIn}in stud), which is what lets ESR-2442 Table 3's tested row apply at all.`,
             seeAlso:
               braceEndConnection === null
                 ? "Shear Derivation sheet — every NDS step from the cut length to the pounds."
@@ -473,14 +475,17 @@ export function buildReferencePoints(ctx: ReferencePointsContext): ReferencePoin
   });
 
   gaps.push({
-    id: "gap-brace-end-penetration",
-    connection: "How much wood is behind a brace end screw",
+    id: "gap-brace-end-grain-angle",
+    connection: "Which way the grain runs where a brace end screw lands",
     why:
-      "⚠ The brace-end capacity above is computed on an ASSUMED penetration — the 1 1/2in of solid 2x4 or Blocking the brace bears on. " +
-      "Behind that sits 3/4in of plywood skin, giving 2 1/4in of material in all, which is 1/8in short of the 2 3/8in " +
-      "ESR-2442 Table 3 requires for this screw and ends in plywood rather than the sawn lumber the row was tested in. " +
-      "The app does not model whether the real detail doubles the plate, rakes the screw into a stud, or lets it protrude. " +
-      "That is a question for Building Integrity and it moves the brace-end number either way.",
+      "⚠ The penetration behind the brace-end capacity above is no longer a gap — Tommy settled it on 2026-11-20: a 4in GRK " +
+      "through the 1 1/2in stud, 2 1/2in into the brace, walls and roof alike. What is still open is the GRAIN. A brace end is a beveled cut, so the screw " +
+      "enters that cut face and runs lengthwise into the member at an angle to the grain, where ESR-2442 Table 3 was tested across " +
+      "the SIDE grain of a main member. The app takes the LESSER of the tabulated and the calculated value for that reason, which " +
+      "cannot overstate the connection but is not the same as having it checked. " +
+      "⚠ And it clears Table 3's 2 3/8in minimum by NOTHING: the screw is 3 7/8in long, not 4, so 3.875 − 1.5 = 2.375in exactly. " +
+      "Any thickening of what the screw crosses first — an engineered stud at 1 5/8in, a skin it must also pass, a head left proud — " +
+      "drops this connection out of the tested row and onto the calculated route. That is a question for Building Integrity.",
   });
 
   const needsReviewCount = points.filter((p) => derivationStatusNeedsReview(p.status)).length;

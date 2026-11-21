@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { DERIVATION_STATUS_MEANINGS } from "./derivationStatus";
 import {
+  BRACE_END_PENETRATION_IN,
+  BRACE_END_SIDE_MEMBER_IN,
   CD_NORMAL,
   CD_WIND_SEISMIC,
   ESR_2442,
+  braceEndConnectionComparison,
   ESR_2442_TABLE_3_GRK_5_16,
   FASTENER_CAPACITY_SCOPE_LIMIT,
   GRK_5_16_RSS,
@@ -295,5 +298,109 @@ describe("fastenerCapacityInputs", () => {
     const g = fastenerCapacityInputs().find((i) => i.label.startsWith("G —"));
     expect(g?.note).toContain("1.84");
     expect(g?.value).toBe(SPF_SPECIFIC_GRAVITY);
+  });
+});
+
+describe("⚠ the brace end, on his 2026-11-20 detail", () => {
+  /* "Diagonal bracing ends should have a 4-in grk going through the inch and a
+     half stud leaving 2 and 1/2 in of penetration into the bracing piece. This
+     applies to both walls and roof." — the answer to what used to be
+     `gap-brace-end-penetration`. */
+
+  it("⚠ DERIVES the penetration, and it lands exactly on Table 3's minimum", () => {
+    /* ⚠ The zero-margin finding, asserted rather than written in a comment.
+       His "2 1/2in" is nominal; the screw is 3.875in, so the real figure is
+       2.375in — which is PRECISELY what the row requires. A typed 2.375 would
+       keep claiming the tested row if the screw ever changed. */
+    expect(BRACE_END_SIDE_MEMBER_IN).toBe(1.5);
+    expect(BRACE_END_PENETRATION_IN).toBeCloseTo(
+      GRK_5_16_RSS.overallLengthIn - BRACE_END_SIDE_MEMBER_IN,
+      12,
+    );
+    const row = ESR_2442_TABLE_3_GRK_5_16.find(
+      (r) => r.screwOverallLengthIn === 4 && r.gravityMin === 0.42,
+    )!;
+    expect(BRACE_END_PENETRATION_IN).toBeCloseTo(row.minPenetrationIn, 12);
+    /* ⚠ No tolerance here on purpose: "clears it by nothing" is the claim, and
+       an epsilon would let a connection 1/64in short read as clearing it. */
+    expect(BRACE_END_PENETRATION_IN >= row.minPenetrationIn).toBe(true);
+  });
+
+  it("⚠ puts the connection INSIDE Table 3, where 1 1/2in of penetration kept it out", () => {
+    const his = esrLateralDesignValue({
+      ...TABLE_3_GEOMETRY,
+      penetrationIn: BRACE_END_PENETRATION_IN,
+      specificGravity: SPF_SPECIFIC_GRAVITY,
+    });
+    expect(his.applies).toBe(true);
+    const assumed = esrLateralDesignValue({
+      ...TABLE_3_GEOMETRY,
+      penetrationIn: 1.5,
+      specificGravity: SPF_SPECIFIC_GRAVITY,
+    });
+    expect(assumed.applies).toBe(false);
+  });
+
+  it("⚠ falls back OUT of the tested row the moment anything in front of it thickens", () => {
+    /* The behavioural half of the zero-margin claim. An engineered stud at
+       1 5/8in leaves 2 1/4in, and the row is gone. This is the assertion that
+       makes the derivation worth having. */
+    const thicker = 1.625;
+    const comparison = braceEndConnectionComparison({
+      braceAxialCapacityLb: 3064,
+      sideMemberIn: thicker,
+      penetrationIn: GRK_5_16_RSS.overallLengthIn - thicker,
+    });
+    expect(comparison.esrPerScrewLb).toBeNull();
+    expect(comparison.esrWhy).toContain("2.375in of penetration");
+    expect(comparison.governingRoute).toContain("NDS");
+  });
+
+  it("⚠ computes BOTH routes and lets the LESSER govern", () => {
+    const check = braceEndConnectionComparison({
+      braceAxialCapacityLb: 3064,
+      penetrationIn: BRACE_END_PENETRATION_IN,
+    });
+    /* Table 3's tested row would say 236 lbf a screw; the calculated NDS route
+       says 152. The lesser governs because the row was tested across the SIDE
+       grain of a main member, and a brace end is a beveled cut the screw
+       enters lengthwise — see `gap-brace-end-grain-angle`. */
+    expect(check.esrPerScrewLb).toBeCloseTo(236, 6);
+    expect(check.ndsPerScrewLb).toBeCloseTo(151.55, 1);
+    expect(check.perScrewLb).toBeCloseTo(check.ndsPerScrewLb, 9);
+    expect(check.perScrewLb).toBeLessThan(check.esrPerScrewLb as number);
+    expect(check.governingRoute).toContain("NDS");
+    expect(check.governingMode).toBe("IIIs");
+    expect(check.perEndLb).toBeCloseTo(303.1, 1);
+  });
+
+  it("⚠ his answer RAISED the capacity 13%, and the ends are still ~10x the smaller number", () => {
+    /* Worth pinning as a pair: the detail helped, and it did not resolve the
+       finding. 267 -> 303 lbf an end, 11.5x -> 10.1x against the strut. */
+    const strut = 3064;
+    const assumed = braceEndConnectionComparison({
+      braceAxialCapacityLb: strut,
+      penetrationIn: 1.5,
+    });
+    const his = braceEndConnectionComparison({
+      braceAxialCapacityLb: strut,
+      penetrationIn: BRACE_END_PENETRATION_IN,
+    });
+    expect(his.perEndLb).toBeGreaterThan(assumed.perEndLb);
+    expect(his.perEndLb / assumed.perEndLb).toBeCloseTo(1.135, 2);
+    expect(1 / his.ratio).toBeCloseTo(10.1, 1);
+    /* ⚠ Still never a verdict, however much better the number got. */
+    expect(his.statement).not.toMatch(/\b(pass|fail)/i);
+    expect(his.caveat).toContain("neither is a demand");
+  });
+
+  it("⚠ says in the caveat that the margin over the tested row is zero", () => {
+    const his = braceEndConnectionComparison({
+      braceAxialCapacityLb: 3064,
+      penetrationIn: BRACE_END_PENETRATION_IN,
+    });
+    expect(his.caveat).toContain("NOTHING");
+    expect(his.caveat).toContain("3 7/8in");
+    expect(his.caveat).toContain("2026-11-20");
   });
 });

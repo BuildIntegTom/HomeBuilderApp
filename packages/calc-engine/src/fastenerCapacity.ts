@@ -412,22 +412,55 @@ export function allowableLateralLoadLb(
  * and the brace row on the Reference Points page says so in those words. This
  * puts a number beside it.
  *
- * ⚠ **THE PENETRATION IS THE PART TO ARGUE WITH.** A brace lies flat and bears
- * on a 1 1/2in member — a 2x4 plate at one end, a Blocking girt at the other —
- * behind which sits 3/4in of plywood skin. That is 2 1/4in of material, 1/8in
- * SHORT of the 2 3/8in ESR-2442 Table 3 requires for this screw, and the last
- * 3/4in of it is plywood rather than the sawn lumber the row was tested in. So
- * Table 3 refuses (see `esrLateralDesignValue`) and the penetration taken here
- * is the 1 1/2in of solid 2x4, through the calculated route. If the real
- * detail has a doubled plate, or the screws rake into a stud, the number goes
- * up — which is exactly the question to put to an engineer.
+ * ⚠ **THE PENETRATION WAS THE PART TO ARGUE WITH, AND HE SETTLED IT.** Tommy,
+ * 2026-11-20, asked directly: *"Diagonal bracing ends should have a 4-in grk
+ * going through the inch and a half stud leaving 2 and 1/2 in of penetration
+ * into the bracing piece. This applies to both walls and roof."* So the screw
+ * is driven THROUGH the stud and INTO the brace — the stud is the side member,
+ * the brace is the main member. That is the reverse of what this module
+ * previously assumed (a brace bearing ON a 1 1/2in plate, with 3/4in of
+ * plywood behind it), and it takes the penetration from 1 1/2in to 2 3/8in.
+ *
+ * ⚠ **IT FITS, AND THE 1 1/2in BRACE THICKNESS IS NOT THE LIMIT.** A brace is
+ * 1.5in thick (asserted in `bracedPanelMembers.test.ts`), so 2 3/8in could not
+ * possibly go through its broad face. It does not have to: a brace end is a
+ * TRUE PLUMB CUT flush to the stud's own face, so a screw driven level through
+ * the stud travels in the PLANE of the panel, entering that cut face and
+ * running lengthwise into the member. The depth available that way is the
+ * brace's 3 1/2in width divided by the sine of its slope — over 5in on a
+ * typical brace — not its 1 1/2in thickness.
+ *
+ * ⚠ **HIS 2 1/2in IS NOMINAL AND THE REAL FIGURE IS 2 3/8in, WHICH IS EXACTLY
+ * TABLE 3's MINIMUM — ZERO MARGIN.** The screw's overall length is 3.875in,
+ * not 4 (see `GRK_5_16_RSS`), so 3.875 − 1.5 = 2.375in, and Table 3's row for
+ * this screw requires 2.375in. The detail therefore qualifies for the
+ * tabulated value by nothing at all. Any thickening of the side member — an
+ * engineered stud at 1 5/8in, a skin the screw must also cross, a head left
+ * standing proud — drops it below the row and back onto the calculated route.
+ * This is why the penetration is DERIVED here rather than typed as 2.375.
  */
 export const BRACE_END_SCREWS = 2;
 
+/**
+ * The member a brace-end screw passes THROUGH: one 1 1/2in stud, his words.
+ * Named rather than inlined because the whole margin above depends on it.
+ */
+export const BRACE_END_SIDE_MEMBER_IN = 1.5;
+
+/**
+ * How deep a brace-end screw lands in the brace. ⚠ **Derived, never typed.**
+ * 3.875 − 1.5 = 2.375in, which is precisely ESR-2442 Table 3's minimum for
+ * this screw; see the note above on why that margin of zero matters.
+ */
+export const BRACE_END_PENETRATION_IN =
+  GRK_5_16_RSS.overallLengthIn - BRACE_END_SIDE_MEMBER_IN;
+
 export interface BraceEndConnectionComparison {
   screwsPerEnd: number;
-  /** The solid sawn thickness the screw lands in. An app assumption, named. */
+  /** How deep the screw lands in the brace. His figure, derived. */
   penetrationIn: number;
+  /** The stud the screw passes through on its way in. */
+  sideMemberIn: number;
   perScrewLb: number;
   perEndLb: number;
   /** From the Shear Derivation sheet: what the strut itself can carry. */
@@ -435,6 +468,14 @@ export interface BraceEndConnectionComparison {
   /** perEndLb / braceAxialCapacityLb. Under 1 means the screws are the smaller number. */
   ratio: number;
   governingMode: string;
+  /** Which of the two routes produced `perScrewLb`. */
+  governingRoute: string;
+  /** Table 3's allowable per screw once the row applies, else null. */
+  esrPerScrewLb: number | null;
+  /** Why Table 3 did or did not apply, in its own words. */
+  esrWhy: string;
+  /** The NDS 12.3 calculated allowable per screw. Always computed, as a cross-check. */
+  ndsPerScrewLb: number;
   statement: string;
   /** ⚠ Never a verdict. What a reader must go and do with these two numbers. */
   caveat: string;
@@ -453,42 +494,88 @@ export interface BraceEndConnectionComparison {
 export function braceEndConnectionComparison(args: {
   braceAxialCapacityLb: number;
   penetrationIn: number;
+  /** The stud the screw crosses. Defaults to his 1 1/2in. */
+  sideMemberIn?: number;
   specificGravity?: number;
 }): BraceEndConnectionComparison {
   const g = args.specificGravity ?? SPF_SPECIFIC_GRAVITY;
+  const sideMemberIn = args.sideMemberIn ?? BRACE_END_SIDE_MEMBER_IN;
   const yieldLimit = ndsYieldLimitZ({
     minorThreadDiameterIn: GRK_5_16_RSS.minorThreadDiameterIn,
     bendingYieldStrengthPsi: GRK_5_16_RSS.bendingYieldStrengthPsi,
-    /* The brace is the side member: a 2x4 lying flat. */
-    sideMemberThicknessIn: 1.5,
+    /* The stud is the side member — the piece the screw passes through. */
+    sideMemberThicknessIn: sideMemberIn,
     penetrationIn: args.penetrationIn,
     specificGravity: g,
   });
   /* CD_NORMAL, to match the Shear Derivation sheet, which takes CD as 1.0 and
      says so. Comparing a CD 1.6 connection against a CD 1.0 strut would
      flatter the connection by 60% for no reason other than mismatched units. */
-  const perScrew = allowableLateralLoadLb(
+  const ndsPerScrewLb = allowableLateralLoadLb(
     yieldLimit.zLb,
     "NDS 12.3 yield limit (calculated)",
     CD_NORMAL,
   ).allowableLb;
+
+  /* ⚠ Now that his detail gives the full 2 3/8in, Table 3's row APPLIES where
+     it used to refuse. Both routes are computed and the LESSER governs. */
+  const esr = esrLateralDesignValue({
+    screwOverallLengthIn: 4,
+    sideMemberThicknessIn: sideMemberIn,
+    penetrationIn: args.penetrationIn,
+    specificGravity: g,
+  });
+  const esrPerScrewLb = esr.applies
+    ? allowableLateralLoadLb(esr.zLb, "ESR-2442 Table 3 (tested)", CD_NORMAL).allowableLb
+    : null;
+
+  /* ⚠ THE LESSER GOVERNS, AND THE REASON IS THE CUT THE SCREW ENTERS. Table 3
+     is test-based (§4.1.4) and ordinarily outranks a calculation — ESR values
+     here run 1.3-1.8x above the NDS route for exactly that reason. But Table 3
+     was tested with the screw crossing the SIDE grain of a main member, and a
+     brace end is a beveled cut the screw enters lengthwise, at an angle to the
+     grain that the row did not test. Taking the smaller of the two is the only
+     reading that cannot overstate a connection nobody has looked at yet. */
+  const governingByEsr = esrPerScrewLb !== null && esrPerScrewLb < ndsPerScrewLb;
+  const perScrew = governingByEsr ? (esrPerScrewLb as number) : ndsPerScrewLb;
+  const governingRoute = governingByEsr
+    ? "ESR-2442 Table 3 (tested)"
+    : "NDS 12.3 yield limit (calculated)";
   const perEndLb = perScrew * BRACE_END_SCREWS;
+
+  /* ⚠ No "pass"/"fail" words anywhere in `statement`, and a test enforces it —
+     this module reports two capacities and must never read as a verdict. That
+     rules out the natural verb here: a screw CROSSES the stud, it does not
+     "pass through" it. */
+  const esrSentence =
+    esrPerScrewLb === null
+      ? `ESR-2442 Table 3 does not apply to this connection. ${esr.why}`
+      : `ESR-2442 Table 3's tested row for this screw gives ${Math.round(esrPerScrewLb)} lbf per screw, and the calculated NDS route gives ${Math.round(ndsPerScrewLb)} lbf; ` +
+        `the LESSER governs above, because Table 3 was tested across the side grain of a main member while a brace end is a beveled cut the screw enters lengthwise.`;
+
   return {
     screwsPerEnd: BRACE_END_SCREWS,
     penetrationIn: args.penetrationIn,
+    sideMemberIn,
     perScrewLb: perScrew,
     perEndLb,
     braceAxialCapacityLb: args.braceAxialCapacityLb,
     ratio: args.braceAxialCapacityLb === 0 ? 0 : perEndLb / args.braceAxialCapacityLb,
     governingMode: yieldLimit.governing.mode,
+    governingRoute,
+    esrPerScrewLb,
+    esrWhy: esr.why,
+    ndsPerScrewLb,
     statement:
       `Two ${GRK_5_16_RSS.designation} screws at ${Math.round(perScrew)} lbf each give ${Math.round(perEndLb)} lbf at a brace end ` +
-      `(NDS yield mode ${yieldLimit.governing.mode} — ${yieldLimit.governing.meaning}), against ${Math.round(args.braceAxialCapacityLb)} lbf of axial capacity in the strut itself. ` +
-      `⚠ ESR-2442 Table 3's tested ${236} lbf per screw does NOT apply here: it needs 2 3/8in of penetration and a brace bears on a 1 1/2in member.`,
+      `(${governingRoute}; NDS yield mode ${yieldLimit.governing.mode} — ${yieldLimit.governing.meaning}), against ${Math.round(args.braceAxialCapacityLb)} lbf of axial capacity in the strut itself. ` +
+      `The screw crosses ${sideMemberIn}in of stud and lands ${args.penetrationIn}in into the brace. ` +
+      esrSentence,
     caveat:
       "⚠ Both of these are CAPACITIES, and neither is a demand — this is not a check and says nothing about whether the brace passes. " +
       "What it does say is that the panel capacity on the Shear Derivation sheet is reported off the strut, while the smaller number sits at its two ends. " +
-      "The penetration is an app assumption (the solid 2x4 the brace bears on); a doubled plate or a raked screw would change it.",
+      `⚠ The ${args.penetrationIn}in penetration is Tommy's own detail (2026-11-20), and it clears ESR-2442 Table 3's 2 3/8in minimum by NOTHING — ` +
+      "the screw is 3 7/8in long, not 4, so a side member any thicker than 1 1/2in puts this connection back outside the tested row.",
   };
 }
 

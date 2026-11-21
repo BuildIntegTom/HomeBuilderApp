@@ -598,10 +598,25 @@ export function buildGablePeakWedgeTopMembers(
     const wedgeDeepXIn = shallowAtFrom ? wedgeToXIn : wedgeFromXIn;
 
     const stock = gablePeakWedgeStockFor(wedgeDeepestIn);
-    /* The wedges. Two per slope, one at each wythe face. */
+    /* The wedges. Two per slope, one at each wythe face.
+     *
+     * ⚠ **`yIn` IS THE CENTRE, NOT THE NEAR EDGE** — the whole top assembly
+     * had it wrong and stood proud of the building because of it. A member
+     * carrying `trapezoidCornersIn` is read by `memberPrism` as
+     * `yIn ± trapezoidDepthIn / 2` ("its position records the CENTRE through
+     * the thickness rather than a min corner"), which is why
+     * `buildColumnSidePly` passes `depthIn / 2` and the gable's own top plate
+     * passes `centreDepthIn`. This loop passed the near edges, 0 and
+     * `depthIn - thickness`, so every wedge sat half its own thickness
+     * outboard: measured on The Tank, the exterior wedge ran to 576.75 on a
+     * wall whose outside face is 576.00. Tommy saw it as *"the top plate is
+     * offset and overhanging the exterior of the building a little bit"*
+     * (2026-11-20). Half of 1 1/2in is the "little bit"; the lid below was
+     * out by half of 15 1/2in.
+     */
     for (const [face, yIn] of [
-      ["exterior", 0],
-      ["interior", depthIn - GABLE_PEAK_WEDGE_THICKNESS_IN],
+      ["exterior", GABLE_PEAK_WEDGE_THICKNESS_IN / 2],
+      ["interior", depthIn - GABLE_PEAK_WEDGE_THICKNESS_IN / 2],
     ] as const) {
       out.push({
         memberId: `gable_peak_wedge_${slope.id}_${face}`,
@@ -670,7 +685,10 @@ export function buildGablePeakWedgeTopMembers(
       orientation: "diagonal",
       position: {
         xIn: slope.fromXIn,
-        yIn: 0,
+        /* ⚠ The CENTRE, like the wedges above — this lid is the full depth of
+           the panel, so passing 0 put half of it outside the building and
+           left the inner half missing. See the wedge loop's note. */
+        yIn: depthIn / 2,
         zIn: bodyTopZIn,
         rotationDeg: 0,
         trapezoidCornersIn: plumbEndedSlopedBoardCornersIn(

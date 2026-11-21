@@ -12,7 +12,8 @@ import {
 } from "./gablePeakPanelMembers";
 import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMembers";
 import { ROOF_CATCHER_BEAM_DEPTH_IN, ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN } from "./roofCatcherBeamMembers";
-import { memberBoxIn } from "./panelMemberHelpers";
+import { memberBoxIn, memberLocalCornersIn } from "./panelMemberHelpers";
+import type { PanelMember } from "./componentSchema";
 import { overlappingPairsIn } from "./memberOverlap.test";
 
 /**
@@ -229,5 +230,115 @@ describe("the Gable Peak Panel", () => {
     const schema = buildGablePeakPanelSchema(DEPTH, HEIGHT, false);
     expect(schema.derivedFrom).toBe("column_panel");
     expect(schema.overallDimensions).toEqual({ heightIn: HEIGHT, widthIn: COLUMN_TOTAL_WIDTH_IN, depthIn: DEPTH });
+  });
+});
+
+describe("the wedge top stays inside the building (2026-11-20)", () => {
+  /* Tommy: "on the Gable peak panels on a gable roof, the top plate is offset
+     and overhanging the exterior of the building a little bit."
+
+     He was right, and it was one mistake made three times. A member carrying
+     `trapezoidCornersIn` records its position as the CENTRE through the depth
+     (`memberLocalCornersIn`: `const centerDepthIn = member.position.yIn`), and
+     the whole wedge-top assembly was passing NEAR EDGES. Every piece sat half
+     its own depth outboard. Measured on The Tank's own OBJ export, against a
+     wall whose outside face is x = 576.00:
+
+       gable_peak_wedge_*_exterior   575.25..576.75   (0.75 proud)
+       gable_peak_lid_*              568.25..583.75   (7.75 proud, and 7.75
+                                                       of it missing inside)
+
+     The "little bit" he could see is half of a 1 1/2in wedge. The lid was out
+     by half of the whole 15 1/2in wall and nobody had noticed. */
+  const PITCH_RISE = (COLUMN_TOTAL_WIDTH_IN / 2) * (4 / 12);
+  const TOP = {
+    apexOffsetXIn: COLUMN_TOTAL_WIDTH_IN / 2,
+    leftRiseIn: 0,
+    apexRiseIn: PITCH_RISE,
+    rightRiseIn: 0,
+  };
+
+  /** The depth band a trapezoid member really occupies, by the one convention
+   * the OBJ exporter and the 3D renderer share. */
+  function depthBandIn(m: PanelMember): [number, number] {
+    const half = (m.position.trapezoidDepthIn ?? m.actualDimsIn.thicknessIn) / 2;
+    return [m.position.yIn - half, m.position.yIn + half];
+  }
+
+  it("keeps every wedge and lid within the panel depth", () => {
+    for (const depthIn of [14, 15.5, 15.75]) {
+      const members = buildGablePeakPanelMembers(
+        depthIn,
+        HEIGHT,
+        false,
+        undefined,
+        COLUMN_TOTAL_WIDTH_IN,
+        0,
+        TOP,
+      );
+      const top = members.filter((m) => /gable_peak_(wedge|lid)/.test(m.memberId));
+      /* Two wedges and a lid on each of the two slopes. */
+      expect(top).toHaveLength(6);
+      for (const m of top) {
+        const [from, to] = depthBandIn(m);
+        expect(from).toBeGreaterThanOrEqual(-1e-9);
+        expect(to).toBeLessThanOrEqual(depthIn + 1e-9);
+      }
+    }
+  });
+
+  it("lands the wedges ON the two wythe faces and the lid across the whole wall", () => {
+    /* ⚠ Not just "inside". Clamping would also satisfy the test above while
+       leaving the parts in the wrong place, so this pins where they go. */
+    const depthIn = 15.5;
+    const members = buildGablePeakPanelMembers(
+      depthIn,
+      HEIGHT,
+      false,
+      undefined,
+      COLUMN_TOTAL_WIDTH_IN,
+      0,
+      TOP,
+    );
+    const byId = (id: string) => members.find((m) => m.memberId === id)!;
+    expect(depthBandIn(byId("gable_peak_wedge_left_exterior"))).toEqual([0, 1.5]);
+    expect(depthBandIn(byId("gable_peak_wedge_left_interior"))).toEqual([depthIn - 1.5, depthIn]);
+    expect(depthBandIn(byId("gable_peak_wedge_right_exterior"))).toEqual([0, 1.5]);
+    expect(depthBandIn(byId("gable_peak_wedge_right_interior"))).toEqual([depthIn - 1.5, depthIn]);
+    expect(depthBandIn(byId("gable_peak_lid_left"))).toEqual([0, depthIn]);
+    expect(depthBandIn(byId("gable_peak_lid_right"))).toEqual([0, depthIn]);
+  });
+
+  it("⚠ is measured through the function the OBJ and the 3D view actually share", () => {
+    /* ⚠ `depthBandIn` above is this test file's own reading of the
+       convention, and a test that only checks my arithmetic against my
+       arithmetic would have passed on the broken code too. `memberLocalCornersIn`
+       is the real thing — `buildBuildingObj` and `PanelMembersGroup` both
+       build from it, which is how the overhang reached the screen AND the
+       downloadable .obj. Asserting on its output is what makes this a
+       regression test rather than a restatement. */
+    const depthIn = 15.5;
+    const members = buildGablePeakPanelMembers(
+      depthIn,
+      HEIGHT,
+      false,
+      undefined,
+      COLUMN_TOTAL_WIDTH_IN,
+      0,
+      TOP,
+    );
+    for (const id of ["gable_peak_lid_left", "gable_peak_wedge_left_exterior"]) {
+      const corners = memberLocalCornersIn(members.find((m) => m.memberId === id)!);
+      /* The third ordinate is the depth. */
+      const depths = corners.map((c) => c[2]);
+      expect(Math.min(...depths)).toBeGreaterThanOrEqual(-1e-9);
+      expect(Math.max(...depths)).toBeLessThanOrEqual(depthIn + 1e-9);
+    }
+    /* And the lid really does cover the whole wall, both faces. */
+    const lidDepths = memberLocalCornersIn(
+      members.find((m) => m.memberId === "gable_peak_lid_left")!,
+    ).map((c) => c[2]);
+    expect(Math.min(...lidDepths)).toBeCloseTo(0, 9);
+    expect(Math.max(...lidDepths)).toBeCloseTo(depthIn, 9);
   });
 });

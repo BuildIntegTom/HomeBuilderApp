@@ -161,6 +161,7 @@ import {
   DERIVATION_STATUS_ORDER,
   REFERENCE_POINT_GROUP_LABELS,
   REFERENCE_POINT_GROUP_ORDER,
+  BRACE_END_PENETRATION_IN,
   type BuildingShearDerivation,
   buildReferencePoints,
   derivationStatusNeedsReview,
@@ -236,6 +237,7 @@ import {
   buildBracedPanelMembers,
   DEFAULT_GIRT_STYLE,
   GIRT_WEB_PLY_SPEC,
+  GIRT_WEB_THICK_PLY_SPEC,
   LEGACY_GIRT_STYLE,
   formatPlySpecLabel,
   buildColumnPanelMembers,
@@ -400,6 +402,7 @@ import {
   ridgeBeamUndersideFt,
   columnStorySegments,
   buildRoofCatcherBeamMembers,
+  roofCatcherBeamCapGeometry,
   buildStructuralColumnMembers,
   ROOF_CATCHER_BEAM_DEPTH_IN,
   STRUCTURAL_COLUMN_WIDTH_IN,
@@ -8809,6 +8812,13 @@ export default function LayoutEditor() {
     return {
       startFt: plane.highStart,
       endFt: plane.highEnd,
+      /* ⚠ **Carried out of this memo rather than re-read downstream**, so the
+         triangle cap on the fabrication sheet is cut at the same pitch this
+         beam was laid out at. `ridgeBeamFabricationGroups` depends on this
+         memo alone; giving it its own `roofTrussLayoutContext` dep would both
+         cost the memoization budget and open the gap where a beam is split at
+         one pitch and capped at another. */
+      pitchIn12,
       columns: layout.columns.map((c: { index: number; atFt: { x: number; y: number }; widthIn: number }) => ({
         index: c.index,
         atFt: c.atFt,
@@ -11527,11 +11537,12 @@ export default function LayoutEditor() {
     hasRoofPanels: panelCounts.roof > 0,
     ...(medianBraceAxialCapacityLb(shearDerivation) !== undefined && {
       braceAxialCapacityLb: medianBraceAxialCapacityLb(shearDerivation),
-      /* ⚠ An app assumption, stated here rather than defaulted inside the
-         sheet: a brace lies flat and bears on a 1 1/2in member, so that is the
-         solid sawn depth a 4in screw lands in. What sits behind that member is
-         a question about the real detail — see `gap-brace-end-penetration`. */
-      braceEndPenetrationIn: PLATE_2X4_THICKNESS_IN,
+      /* ⚠ No longer an app assumption. Tommy, 2026-11-20: a 4in GRK goes
+         through the 1 1/2in stud and lands 2 1/2in into the brace, walls and
+         roof alike. The constant DERIVES that from the screw's real 3 7/8in
+         length, so the figure here is 2 3/8in — exactly ESR-2442 Table 3's
+         minimum, which is why it is derived and not typed. */
+      braceEndPenetrationIn: BRACE_END_PENETRATION_IN,
     }),
   });
 
@@ -11966,10 +11977,10 @@ export default function LayoutEditor() {
       else groups.set(key, { spanIn: segment.spanIn, instances: [{ name }] });
     }
     return [...groups.values()].map(({ spanIn, instances }) => {
-      const members = buildRoofCatcherBeamMembers(spanIn);
+      const members = buildRoofCatcherBeamMembers(spanIn, ridgeBeamForPlan.pitchIn12);
       const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
       const woodComponent = {
-        label: "Wood (3-ply built-up 2x12)",
+        label: "Wood (3-ply built-up 2x12 + triangle cap)",
         weightKg: woodWeightKg,
         weightLb: woodWeightKg * KG_TO_LB,
       };
@@ -11986,7 +11997,13 @@ export default function LayoutEditor() {
       return {
         uniqueKey: `ridge-beam-${spanIn.toFixed(3)}`,
         lengthIn: spanIn,
-        heightIn: ROOF_CATCHER_BEAM_DEPTH_IN,
+        /* ⚠ The beam PLUS its cap. A fabrication sheet is headed by its
+           height (B25), and the shop assembles the two as one piece, so a
+           sheet headed 11¼in for a part that stands 12in would have the
+           fitter measuring the wrong thing. */
+        heightIn:
+          ROOF_CATCHER_BEAM_DEPTH_IN +
+          (roofCatcherBeamCapGeometry(ridgeBeamForPlan.pitchIn12)?.riseIn ?? 0),
         members,
         weightBreakdown,
         instances,
@@ -15269,12 +15286,27 @@ export default function LayoutEditor() {
         </button>
         <button
           type="button"
-          title={`Two 2x4 bars and a plywood web, the only girt this app could build before 2026-11-03. The BOM's confirmed web is ${formatPlySpecLabel(GIRT_WEB_PLY_SPEC)}.`}
+          title={`Two 2x4 bars and a ${formatPlySpecLabel(GIRT_WEB_PLY_SPEC)} web. This is the girt this app built before 2026-11-03, and the one the confirmed Panel Set 1 BOM specifies.`}
           aria-pressed={girtStyle === "web"}
           className={girtStyle === "web" ? styles.toolActive : styles.tool}
           onClick={() => setGirtStyle("web")}
         >
-          Web Girts
+          1/2&quot; Web Girts
+        </button>
+        {/* ⚠ **Added 2026-11-20.** His *"3/4 in and 1/2 in should be options
+            to replace the 2x6"* — the answer to a question this very panel
+            used to ask in its own footnote ("Tell me which is right and I'll
+            change the one number"). The answer was not one number: it was two
+            buttons. A 3/4in sheet also lifts every brace's low point 1/4in,
+            through `girtRowTopAboveCentreIn`. */}
+        <button
+          type="button"
+          title={`Two 2x4 bars and a ${formatPlySpecLabel(GIRT_WEB_THICK_PLY_SPEC)} web — the thickness you described Web Girts with on 2026-11-03. Same bars, same bar positions, so no brace moves; the row itself stands 1/4in taller.`}
+          aria-pressed={girtStyle === "web34"}
+          className={girtStyle === "web34" ? styles.toolActive : styles.tool}
+          onClick={() => setGirtStyle("web34")}
+        >
+          3/4&quot; Web Girts
         </button>
         {/* ⚠ **Built 2026-11-06 (B31).** This button was disabled with a
             tooltip listing three reasons a ring was a different assembly
@@ -15308,10 +15340,19 @@ export default function LayoutEditor() {
               "holding the straw itself. No bars, no web, no blocking. 28 3.5in #10 screws a ring. ⚠ A ring runs a rail " +
               "along the panel's face, where a diagonal brace also lives, so braced panels report overlapping members with " +
               "this style until that is settled."
-            : "Every girt row is two 2x4 bars with a plywood web resting on them."}{" "}
-        ⚠ You described Web Girts as <strong>3/4in</strong> plywood; the confirmed Panel Set 1 BOM says{" "}
-        <strong>{formatPlySpecLabel(GIRT_WEB_PLY_SPEC)}</strong>, so the app still builds, counts and prices the BOM&apos;s
-        1/2in sheet. Tell me which is right and I&apos;ll change the one number.
+            : `Every girt row is two 2x4 bars with a ${formatPlySpecLabel(
+                girtStyle === "web34" ? GIRT_WEB_THICK_PLY_SPEC : GIRT_WEB_PLY_SPEC,
+              )} web resting on them.`}{" "}
+        {girtStyle === "web" || girtStyle === "web34" ? (
+          <>
+            The two web thicknesses are both yours (2026-11-20). The{" "}
+            <strong>{formatPlySpecLabel(GIRT_WEB_PLY_SPEC)}</strong> sheet is what the confirmed Panel Set 1 BOM
+            specifies; the <strong>{formatPlySpecLabel(GIRT_WEB_THICK_PLY_SPEC)}</strong> sheet is the one you described
+            Web Girts with. Swapping between them re-cuts the sheet and nothing else — a brace&apos;s low point rides
+            the girt <em>bar</em>, which is the same 2x4 either way, so no diagonal moves. The 3/4in row does stand
+            1/4in taller overall, which can matter to a gable tile fitting a girt row under its sloped plate.
+          </>
+        ) : null}
       </p>
 
       {/* ⚠ **A SELECT, NOT A PAIR OF BUTTONS, since 2026-11-14** — the

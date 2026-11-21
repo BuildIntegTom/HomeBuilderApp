@@ -41,6 +41,26 @@ export const LUMBER_SPECIES_GRADE = "No. 2 Pine";
 export const GIRT_WEB_THICKNESS_IN = standardPanelBom.girts.web.thicknessIn; // 0.5
 export const GIRT_WEB_HEIGHT_IN = standardPanelBom.girts.web.widthIn; // 8.75
 export const GIRT_WEB_PLY_SPEC = "1/2in_3ply_CDX";
+/**
+ * ⚠ **The 3/4in web, which settles a conflict rather than adding a whim.**
+ *
+ * His 2026-11-03 description of Web Girts said *"a piece of 3/4" plywood and
+ * two 2x4s"*, and the BOM this app builds from says **1/2in** — so the one
+ * "Web Girts" button has been building a sheet he did not describe since the
+ * style existed. Asked which, he answered on 2026-11-20 with BOTH:
+ * *"3/4 in and 1/2 in should be options to replace the 2x6."*
+ *
+ * ⚠ **`web` keeps meaning 1/2in**, so every stored project and every panel
+ * this app has already drawn, cut and priced is byte-identical. The 3/4in
+ * sheet is the NEW id.
+ *
+ * ⚠ **A 3/4in girt web lands in the same material row as the panel SKINS**,
+ * which are also 3/4in. The Material Totals page orders sheets by thickness,
+ * so choosing this style does not add a line — it moves 5.37 sqft a panel out
+ * of the 1/2in line and into the 3/4in one.
+ */
+export const GIRT_WEB_THICK_THICKNESS_IN = 0.75;
+export const GIRT_WEB_THICK_PLY_SPEC = "3/4in_5ply_CDX";
 export const NAILER_THICKNESS_IN = standardPanelBom.nailer.thicknessIn; // 1.5
 export const NAILER_WIDTH_IN = standardPanelBom.nailer.widthIn; // 3.5
 /** A nominal 2x6's actual width. One constant, so the floor deck's joists and
@@ -57,12 +77,20 @@ export const LUMBER_2X6_WIDTH_IN = 5.5;
  * > default setting actually, it's what I'm currently doing in the shop. The
  * > 2x6 is centered in the panel depth with two 2x4s."* — Tommy, 2026-11-03
  *
- * `web` and `blocking` share the bar pair and differ only in what bridges
- * them. `ring` is a different assembly altogether (a closed 2x4 rectangle,
- * every member standing on edge) and is NOT built yet — see
- * `buildGirtRows`'s own note for the three things it needs first.
+ * ⚠ **He confirmed the default and split the plywood in two**, 2026-11-20:
+ * *"Default girts should be made out of 2x4s with a 2x6 spanning the width of
+ * the panel. No plywood in the default girt. 3/4 in and 1/2 in should be
+ * options to replace the 2x6."* The first two sentences describe `blocking`,
+ * which is already the default and already has no plywood in it — so nothing
+ * moved there, and that is worth knowing rather than assuming a change was
+ * needed. The third sentence is the real instruction: the single "Web Girts"
+ * option becomes TWO, one per sheet thickness.
+ *
+ * `web`, `web34` and `blocking` share the bar pair and differ only in what
+ * bridges them. `ring` is a different assembly altogether (a closed 2x4
+ * rectangle, every member standing on edge) — see `buildGirtRows`'s own note.
  */
-export type GirtStyle = "ring" | "web" | "blocking";
+export type GirtStyle = "ring" | "web" | "web34" | "blocking";
 
 /**
  * ⚠ **Blocking, by his own instruction**, because it is what the shop is
@@ -2004,10 +2032,33 @@ export function girtRowTopAboveCentreIn(style: GirtStyle): number {
        the 2x6's own 1 1/2in. */
     case "blocking":
       return PLATE_2X4_THICKNESS_IN / 2 + PLATE_2X4_THICKNESS_IN;
-    /* The plywood web, also resting on the bars. */
+    /* The plywood web, also resting on the bars. ⚠ The two thicknesses give
+       the ROW two different overall tops, which `gableGirtPlan` reads when it
+       decides whether a row fits under a sloped plate.
+
+       ⚠ **It does NOT move a brace, and the first version of this comment
+       said it did.** A diagonal's low point rides the girt BAR's top face
+       (his 2026-10-13 rule), and the bar is the same 1 1/2in board under all
+       three bar-pair styles — the web sits above it. `girtHalfHeightIn` is
+       the thickness-blind helper the braces read, and that is why a ring
+       moves a diagonal (its members stand on edge) while a thicker sheet
+       does not. Caught by `girtStyles.test.ts`, which was written asserting
+       the wrong thing. */
     case "web":
       return PLATE_2X4_THICKNESS_IN / 2 + GIRT_WEB_THICKNESS_IN;
+    case "web34":
+      return PLATE_2X4_THICKNESS_IN / 2 + GIRT_WEB_THICK_THICKNESS_IN;
   }
+}
+
+/** The sheet a web-girt style bridges its bars with, and how thick it is.
+ * `null` for the styles that use no plywood at all. */
+export function girtWebPlyIn(style: GirtStyle): { thicknessIn: number; plySpec: string } | null {
+  if (style === "web") return { thicknessIn: GIRT_WEB_THICKNESS_IN, plySpec: GIRT_WEB_PLY_SPEC };
+  if (style === "web34") {
+    return { thicknessIn: GIRT_WEB_THICK_THICKNESS_IN, plySpec: GIRT_WEB_THICK_PLY_SPEC };
+  }
+  return null;
 }
 
 export function buildGirtRows(
@@ -2107,10 +2158,11 @@ export function buildGirtRows(
       });
     }
 
-    /* ⚠ **The two styles differ in exactly one member: what bridges the
-       bars.** Everything else about the row — both bars, their X positions,
-       the row centre, the bearing ledge — is shared, which is why they can
-       swap without moving anything a brace or a sheet is measured from.
+    /* ⚠ **The three bar-pair styles differ in exactly one member: what
+       bridges the bars.** Everything else about the row — both bars, their X
+       positions, the row centre, the bearing ledge — is shared, which is why
+       they can swap without moving anything a brace or a sheet is measured
+       from. A 2x6, a 1/2in sheet or a 3/4in sheet, and nothing else moves.
 
        The 2x6 is *"centered in the panel depth"*, his words, so its 5.5in runs
        THROUGH the depth and its 1.5in stands up, the same way the plywood web
@@ -2122,16 +2174,20 @@ export function buildGirtRows(
        its own — the overhang models the piece sliding down the stud channels
        into place, which is the same fabrication move either way. Flagged as
        inherited, not independently specified. */
-    const isBlocking = style === "blocking";
+    /* ⚠ The sheet comes from `girtWebPlyIn`, not from a second `=== "web"`
+       here — two thicknesses with their two ply specs is exactly the kind of
+       pair that drifts when each consumer writes its own branch. */
+    const webPly = girtWebPlyIn(style);
+    const isBlocking = webPly === null;
     const infillDepthIn = isBlocking ? LUMBER_2X6_WIDTH_IN : webHeightIn;
     members.push({
       memberId: isBlocking ? `girt_${row}_blocking` : `girt_${row}_web`,
       material: isBlocking ? "dimensional_lumber" : "plywood",
       speciesGrade: isBlocking ? LUMBER_SPECIES_GRADE : null,
-      plySpec: isBlocking ? null : GIRT_WEB_PLY_SPEC,
+      plySpec: webPly?.plySpec ?? null,
       nominalSize: isBlocking ? "2x6" : null,
       actualDimsIn: {
-        thicknessIn: isBlocking ? PLATE_2X4_THICKNESS_IN : GIRT_WEB_THICKNESS_IN,
+        thicknessIn: webPly?.thicknessIn ?? PLATE_2X4_THICKNESS_IN,
         widthIn: infillDepthIn,
         lengthIn: studFaceSpanIn + WEB_OVERHANG_TOTAL_IN,
       },

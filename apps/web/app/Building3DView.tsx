@@ -2688,7 +2688,11 @@ export default function Building3DView({
         anchorZ: segment.startFt.y,
         anchorYFt: beamUnderFt,
         rotationRad: ridgeRad,
-        members: buildRoofCatcherBeamMembers(segment.spanIn),
+        /* ⚠ The pitch, so the beam gets its triangle cap — the bearing face
+           for the roof panels' plumb-cut ends (his 2026-11-20). The same
+           `roofPitchIn12 ?? 0` the beam's own underside is derived from a few
+           lines above, so the cap and the drop cannot disagree. */
+        members: buildRoofCatcherBeamMembers(segment.spanIn, roofPitchIn12 ?? 0),
       });
     }
 

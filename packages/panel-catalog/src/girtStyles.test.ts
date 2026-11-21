@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GIRT_STYLE,
+  GIRT_WEB_PLY_SPEC,
+  GIRT_WEB_THICKNESS_IN,
+  GIRT_WEB_THICK_PLY_SPEC,
+  GIRT_WEB_THICK_THICKNESS_IN,
   LEGACY_GIRT_STYLE,
   LUMBER_2X6_WIDTH_IN,
   PLATE_2X4_THICKNESS_IN,
   computePlywoodAreaSqFt,
+  girtHalfHeightIn,
+  girtRowTopAboveCentreIn,
   memberBoxSizeIn,
 } from "./panelMemberHelpers";
 import { overlappingMemberPairs } from "./memberPrism";
@@ -145,5 +151,124 @@ describe("girt styles", () => {
        Blocking test above makes, and the reason the style reaches the member
        list rather than only the drawing. */
     expect(computePlywoodAreaSqFt(panel("ring"), 0.5)).toBe(0);
+  });
+});
+
+describe("the 3/4in web option (2026-11-20)", () => {
+  /* > "Default girts should be made out of 2x4s with a 2x6 spanning the width
+     > of the panel. No plywood in the default girt. 3/4 in and 1/2 in should
+     > be options to replace the 2x6."  — Tommy, 2026-11-20
+
+     The first half confirmed what was already built. The second half settled a
+     real contradiction: his 2026-11-03 description of Web Girts said 3/4in
+     plywood, and the confirmed Panel Set 1 BOM says 1/2in, so the single "Web
+     Girts" button had been building a sheet he had not described. The answer
+     was both, as two options. */
+
+  it("⚠ leaves the 1/2in web and the default BYTE-IDENTICAL", () => {
+    /* The whole reason `web` keeps meaning 1/2in. Every stored project, every
+       sheet already cut and every price already quoted has to be unmoved by
+       adding an option beside it. */
+    expect(DEFAULT_GIRT_STYLE).toBe("blocking");
+    expect(LEGACY_GIRT_STYLE).toBe("web");
+    const web = panel("web");
+    expect(web.filter((m) => m.memberId.endsWith("_web")).map((m) => m.plySpec)).toEqual([
+      GIRT_WEB_PLY_SPEC,
+      GIRT_WEB_PLY_SPEC,
+    ]);
+    for (const m of web.filter((x) => x.memberId.endsWith("_web"))) {
+      expect(m.actualDimsIn.thicknessIn).toBeCloseTo(GIRT_WEB_THICKNESS_IN, 9);
+    }
+  });
+
+  it("differs from the 1/2in web in exactly the sheet, and nowhere else", () => {
+    const thin = panel("web");
+    const thick = panel("web34");
+    expect(thick.length).toBe(thin.length);
+    /* The bars are the load-bearing claim again: a brace's low point rides a
+       bar's top face, so a style that moved a bar would re-cut every diagonal
+       in the building. */
+    const bars = (ms: typeof thin) => ms.filter((m) => m.role === "girt");
+    expect(bars(thick)).toEqual(bars(thin));
+    const differing = thick.filter((t) => !thin.some((n) => JSON.stringify(n) === JSON.stringify(t)));
+    expect(differing.map((m) => m.memberId).sort()).toEqual(["girt_1_web", "girt_2_web"]);
+    for (const m of differing) {
+      expect(m.plySpec).toBe(GIRT_WEB_THICK_PLY_SPEC);
+      expect(m.actualDimsIn.thicknessIn).toBeCloseTo(GIRT_WEB_THICK_THICKNESS_IN, 9);
+      expect(m.material).toBe("plywood");
+    }
+  });
+
+  it("⚠ does NOT move a brace — a diagonal rides the BAR's top face, not the web's", () => {
+    /* ⚠ **This test was written asserting the opposite and was wrong.** His
+       2026-10-13 rule is that "the brace low point rides the girt bar TOP
+       face", and the bar is the same 1 1/2in board under all three bar-pair
+       styles — the web rests ON the bars, above where the brace lands. So
+       `girtHalfHeightIn` (what the braces read) is thickness-blind, while
+       `girtRowTopAboveCentreIn` (what the gable girt plan reads) is not. A
+       ring moves a brace because its members stand ON EDGE; a thicker sheet
+       does not, because it is not what the brace is sitting on.
+
+       Worth keeping as a test rather than deleting: "the two webs swap without
+       re-cutting a single diagonal" is the reason this option is cheap to
+       offer, and it would be easy to break by wiring braces to the wrong
+       helper. */
+    const braced = (style: Parameters<typeof buildBracedPanelMembers>[7]) =>
+      buildBracedPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false, "chevron", false, false, style)
+        .filter((m) => m.role === "brace");
+    expect(braced("web34")).toEqual(braced("web"));
+    expect(girtHalfHeightIn("web34")).toBe(girtHalfHeightIn("web"));
+  });
+
+  it("⚠ DOES raise the row's overall top by the extra 1/4in, where the gable reads it", () => {
+    /* The difference the thicker sheet really makes: `girtRowTopAboveCentreIn`
+       is how tall the finished row is above its centre, and `gableGirtPlan`
+       uses it to decide whether a row fits under a sloped plate. A 3/4in web
+       makes the row 1/4in taller, so a gable tile that just fits a 1/2in row
+       may not fit this one. */
+    expect(girtRowTopAboveCentreIn("web34") - girtRowTopAboveCentreIn("web")).toBeCloseTo(
+      GIRT_WEB_THICK_THICKNESS_IN - GIRT_WEB_THICKNESS_IN,
+      9,
+    );
+    expect(girtRowTopAboveCentreIn("web34")).toBeGreaterThan(girtRowTopAboveCentreIn("web"));
+    /* And the blocking row is taller than either, being a 1 1/2in board. */
+    expect(girtRowTopAboveCentreIn("blocking")).toBeGreaterThan(girtRowTopAboveCentreIn("web34"));
+  });
+
+  it("⚠ both webs are buildable — no overlapping members at either thickness", () => {
+    expect(overlappingMemberPairs(panel("web34"))).toEqual([]);
+    expect(overlappingMemberPairs(panel("web"))).toEqual([]);
+  });
+
+  it("⚠ the sheet lands in the 3/4in material bucket, not the 1/2in one", () => {
+    /* `computePlywoodAreaSqFt` is per THICKNESS — that is how the Material
+       Totals page orders sheets — so the whole point of the new style is that
+       its area moves from one row of that table to the other. */
+    /* ⚠ Measured as the girt's OWN contribution, against the Blocking panel
+       as the baseline. The bucket total will not do: a panel's SKINS are 3/4in
+       plywood too, so a 3/4in girt web lands in the same material row as the
+       skins and the raw total for `web34` at 3/4in is 15.70 sqft against the
+       1/2in web's 5.37 — 10.33 sqft of that being skin. Comparing the totals
+       made this test fail with two numbers that were both right. */
+    const girtAreaIn = (style: Parameters<typeof panel>[0], thicknessIn: number) =>
+      computePlywoodAreaSqFt(panel(style), thicknessIn) -
+      computePlywoodAreaSqFt(panel("blocking"), thicknessIn);
+    const thinArea = girtAreaIn("web", GIRT_WEB_THICKNESS_IN);
+    const thickArea = girtAreaIn("web34", GIRT_WEB_THICK_THICKNESS_IN);
+    expect(thinArea).toBeGreaterThan(0);
+    /* Same sheet size, so the same area — it has simply changed aisle. */
+    expect(thickArea).toBeCloseTo(thinArea, 9);
+    expect(girtAreaIn("web34", GIRT_WEB_THICKNESS_IN)).toBe(0);
+    expect(girtAreaIn("web", GIRT_WEB_THICK_THICKNESS_IN)).toBe(0);
+    /* And the default orders no girt plywood at either thickness — "no
+       plywood in the default girt", his words, measured rather than asserted
+       about the member list. */
+    expect(computePlywoodAreaSqFt(panel("blocking"), GIRT_WEB_THICKNESS_IN)).toBe(0);
+  });
+
+  it("⚠ the default still has NO plywood girt in it at all — his words", () => {
+    const blocking = panel("blocking");
+    expect(blocking.filter((m) => m.role === "girt_web" && m.material === "plywood")).toEqual([]);
+    expect(blocking.filter((m) => m.memberId.endsWith("_blocking"))).toHaveLength(2);
   });
 });

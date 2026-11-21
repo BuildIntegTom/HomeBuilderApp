@@ -20,12 +20,70 @@ export const ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN = ROOF_CATCHER_BEAM_PLY_COUNT 
 export const ROOF_CATCHER_BEAM_MAX_SPAN_IN = 144;
 
 /**
+ * ⚠ **THE TRIANGLE CAP — why the beam's square top was not enough.**
+ *
+ * > *"The ridge beam should have a triangle cap on it for more bearing for
+ * > the ends of roof panels."* — Tommy, 2026-11-20
+ *
+ * A roof panel arrives at the ridge leaning at the roof's pitch and cut
+ * PLUMB at its tall end (his 2026-10-29 rule). The beam's top is flat and
+ * square, so the two meet along a LINE — the panel's bottom arris on the
+ * beam's top corner — and the bearing area is whatever that line spreads to
+ * under load. A triangle whose two faces ARE the roof planes turns that line
+ * into full contact across the beam, for both slopes at once.
+ *
+ * ⚠ **The rise is forced by the pitch and the beam's own width**, not
+ * chosen: the cap has to run from the beam's edge up to the ridge centreline
+ * at exactly the roof's slope, so `rise = (width / 2) x pitch/12`. On the
+ * 4 1/2in built-up beam that is 3/4in at 4:12 and 1 1/2in at 8:12. It is a
+ * small part, and that is the right size — a deeper cap would lift the
+ * panels off the beam rather than seat them on it.
+ *
+ * ⚠ **A pitch of zero gets NO cap, and that is not a degenerate case.** A
+ * shed roof has no ridge for two slopes to meet over (see `decideRoofForm`,
+ * which refuses a catcher beam on a shed), and a zero rise would be a cap of
+ * no thickness reaching the cut list as a real part.
+ *
+ * ⚠ **The stock is `pending-BI-confirmation`.** Which board a shop rips this
+ * from is a fabrication choice nobody has stated; what is derived here is the
+ * SECTION, and the stock is the smallest nominal that can hold it.
+ */
+export const ROOF_CATCHER_BEAM_CAP_BASE_IN = ROOF_CATCHER_BEAM_TOTAL_THICKNESS_IN;
+
+export interface RoofCatcherBeamCap {
+  /** Across the ridge — the beam's own built-up width. */
+  baseIn: number;
+  /** Height of the apex above the beam's top face. */
+  riseIn: number;
+  /** The smallest standard board the triangle can be ripped from. */
+  nominalSize: string;
+}
+
+export function roofCatcherBeamCapGeometry(pitchIn12: number): RoofCatcherBeamCap | null {
+  if (!(pitchIn12 > 0)) return null;
+  const baseIn = ROOF_CATCHER_BEAM_CAP_BASE_IN;
+  const riseIn = (baseIn / 2) * (pitchIn12 / 12);
+  /* Ripped from a board lying flat: its THICKNESS has to cover the rise and
+     its WIDTH the base. The base never changes (it is the beam), so only the
+     rise picks the row. */
+  const nominalSize = riseIn <= 1.5 + 1e-9 ? "2x6" : riseIn <= 3.5 + 1e-9 ? "4x6" : "built-up";
+  return { baseIn, riseIn, nominalSize };
+}
+
+/**
  * The 3 built-up 2x12 plies for one beam segment, stacked side by side (on
  * edge — the 11.25in depth is vertical) along the Y axis, same convention as
- * the two-story Box Beam's LVL webs (see boxBeamMembers.ts).
+ * the two-story Box Beam's LVL webs (see boxBeamMembers.ts) — plus the
+ * triangle cap on top, when a pitch is given.
+ *
+ * ⚠ **`pitchIn12` defaults to 0, which builds the beam EXACTLY as it was
+ * built before 2026-11-20.** Every call site has to opt in, so a caller that
+ * has not been taught about the cap draws the old beam (a stale picture)
+ * rather than a beam capped at some assumed pitch (a wrong one) — the same
+ * rule `LEGACY_GIRT_STYLE` follows.
  */
-export function buildRoofCatcherBeamMembers(spanIn: number): PanelMember[] {
-  return Array.from({ length: ROOF_CATCHER_BEAM_PLY_COUNT }, (_, i) => ({
+export function buildRoofCatcherBeamMembers(spanIn: number, pitchIn12 = 0): PanelMember[] {
+  const plies: PanelMember[] = Array.from({ length: ROOF_CATCHER_BEAM_PLY_COUNT }, (_, i) => ({
     memberId: `roof_catcher_beam_ply_${i + 1}`,
     material: "dimensional_lumber",
     speciesGrade: LUMBER_SPECIES_GRADE,
@@ -38,6 +96,56 @@ export function buildRoofCatcherBeamMembers(spanIn: number): PanelMember[] {
     qty: 1,
     notes: `Ply ${i + 1} of ${ROOF_CATCHER_BEAM_PLY_COUNT} — built-up ${ROOF_CATCHER_BEAM_PLY_COUNT}-ply 2x12 roof-catcher beam, on edge.`,
   }));
+
+  const cap = roofCatcherBeamCapGeometry(pitchIn12);
+  if (cap === null) return plies;
+
+  /* ⚠ **`sectionCornersIn` is ABSOLUTE in the beam's own space**, not an
+     offset from `position` — `memberLocalCornersIn` reads `c.yIn`/`c.zIn`
+     straight through and `memberPrism` builds its polygon from the same two.
+     So the base sits at the beam's top face, z = its 11.25in depth.
+
+     ⚠ **A TRIANGLE, written as a QUAD with the apex doubled.** `BOX_FACES` is
+     an 8-corner table shared by the OBJ exporter and the 3D renderer, so a
+     genuine 3-point ring would index past the end of it. The gable peak
+     wedge uses the same trick for the same reason. */
+  const apexYIn = cap.baseIn / 2;
+  const topZIn = ROOF_CATCHER_BEAM_DEPTH_IN;
+  const apexZIn = topZIn + cap.riseIn;
+  plies.push({
+    memberId: "roof_catcher_beam_cap",
+    material: "dimensional_lumber",
+    speciesGrade: LUMBER_SPECIES_GRADE,
+    plySpec: null,
+    nominalSize: cap.nominalSize,
+    /* ⚠ The BOUNDING BOX of the cut, which is how every other tapered rip in
+       this package declares itself (see the gable peak wedge). The triangle
+       is half this volume; the board it comes out of is not, and weight and
+       price follow the board. */
+    actualDimsIn: { thicknessIn: cap.riseIn, widthIn: cap.baseIn, lengthIn: spanIn },
+    orientation: "horizontal",
+    position: {
+      xIn: 0,
+      yIn: 0,
+      zIn: topZIn,
+      rotationDeg: 0,
+      sectionCornersIn: [
+        { yIn: 0, zIn: topZIn },
+        { yIn: apexYIn, zIn: apexZIn },
+        { yIn: apexYIn, zIn: apexZIn },
+        { yIn: cap.baseIn, zIn: topZIn },
+      ],
+    },
+    role: "plate",
+    qty: 1,
+    notes:
+      `Triangle cap — a tapered rip from a ${cap.nominalSize}, ${cap.baseIn}in across the beam rising ` +
+      `${cap.riseIn.toFixed(3)}in to the ridge centreline, both faces cut at the roof's ${pitchIn12}:12. ` +
+      `It gives each roof panel's plumb-cut end a full bearing face instead of the line contact a square ` +
+      `beam top leaves. ⚠ The stock is the smallest board the section fits in, not a specified one — pending ` +
+      `Building Integrity confirmation.`,
+  });
+  return plies;
 }
 
 export interface RoofCatcherBeamSegment {

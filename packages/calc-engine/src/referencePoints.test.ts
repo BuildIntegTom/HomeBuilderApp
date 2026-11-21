@@ -8,6 +8,7 @@ import {
 } from "./derivationStatus";
 import { buildBracedPanelMembers } from "@building-integrity/panel-catalog";
 
+import { BRACE_END_PENETRATION_IN } from "./fastenerCapacity";
 import { computeFastenerWeight, computeJackStudFastenerWeight } from "./fastenerWeight";
 import type { ReferencePointFastenerTally } from "./referencePoints";
 import {
@@ -448,11 +449,41 @@ describe("what one screw can hold (2026-11-19)", () => {
     expect(buildReferencePoints(ctx({ braceEndPenetrationIn: 1.5 })).braceEndConnection).toBeNull();
   });
 
-  it("⚠ names the penetration it assumed as a gap, because the app cannot see it", () => {
-    const gap = buildReferencePoints(ctx()).gaps.find((g) => g.id === "gap-brace-end-penetration")!;
+  it("⚠ names the GRAIN ANGLE as the gap, now that he has answered the penetration", () => {
+    /* ⚠ The penetration gap is RETIRED, not renamed. Tommy answered it on
+       2026-11-20 (4in GRK through a 1 1/2in stud, 2 1/2in into the brace), so
+       a page still calling it unknown would be contradicting him. What took
+       its place is a real and different question: Table 3 was tested across
+       the side grain of a main member, and a brace end is a beveled cut the
+       screw enters lengthwise. */
+    const gaps = buildReferencePoints(ctx()).gaps;
+    expect(gaps.find((g) => g.id === "gap-brace-end-penetration")).toBeUndefined();
+    const gap = gaps.find((g) => g.id === "gap-brace-end-grain-angle")!;
     expect(gap.why).toContain("2 3/8in");
-    expect(gap.why).toContain("plywood");
     expect(gap.why).toContain("Building Integrity");
+    /* ⚠ And it must carry the zero-margin finding, which is the part an
+       engineer would otherwise have to rediscover: his 2 1/2in is nominal,
+       the screw is 3 7/8in, so the real figure lands EXACTLY on the row's
+       minimum and anything thicker in front of it drops out of the table. */
+    expect(gap.why).toContain("3 7/8in");
+    expect(gap.why).toMatch(/exactly|NOTHING/);
+  });
+
+  it("⚠ wires the sheet to his DERIVED penetration, not to a typed 2.375", () => {
+    /* The whole zero-margin point is that 2 3/8in is 3.875 - 1.5. A typed
+       constant would survive the screw's length changing and silently keep
+       claiming the tested row. */
+    expect(BRACE_END_PENETRATION_IN).toBeCloseTo(2.375, 9);
+    const check = buildReferencePoints(
+      ctx({ braceAxialCapacityLb: 3064, braceEndPenetrationIn: BRACE_END_PENETRATION_IN }),
+    ).braceEndConnection!;
+    expect(check.penetrationIn).toBeCloseTo(2.375, 9);
+    expect(check.sideMemberIn).toBe(1.5);
+    /* ⚠ His answer RAISED the end capacity: 267 lbf at the old assumed 1.5in,
+       303 lbf now. It did not make the ends stop being the smaller number. */
+    expect(check.perEndLb).toBeCloseTo(303.1, 1);
+    expect(check.perEndLb).toBeLessThan(check.braceAxialCapacityLb);
+    expect(check.statement).toContain("2.375in into the brace");
   });
 });
 
@@ -487,7 +518,9 @@ describe("⚠ the page must not contradict itself about the jack stud", () => {
     /* It read "The capacity below" while the capacity section renders before
        the gaps. A page that tells an engineer to look the wrong way is a small
        defect with the same cause as the big ones. */
-    const gap = buildReferencePoints(ctx()).gaps.find((g) => g.id === "gap-brace-end-penetration")!;
+    const gap = buildReferencePoints(ctx()).gaps.find(
+      (g) => g.id === "gap-brace-end-grain-angle",
+    )!;
     expect(gap.why).toContain("above");
     expect(gap.why).not.toContain("capacity below");
   });
