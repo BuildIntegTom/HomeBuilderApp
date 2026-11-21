@@ -244,6 +244,16 @@ export interface RoofPlaneBracing {
   segments: RoofBraceSegment[];
   /** Total cut length, for the takeoff. */
   totalLengthIn: number;
+  /**
+   * ⚠ **The plane carries its own dimensions back out so that nothing
+   * downstream has to be told them a second time.** `sliceRoofPlaneBracing`
+   * has to know how wide the plane is, to check that the panel bands it is
+   * given actually cover it; recovering that as `bays * bayWidthIn` works but
+   * invites a caller to pass a width of its own, and a width passed twice is
+   * a width that can disagree with itself.
+   */
+  planeWidthIn: number;
+  planeSlopeIn: number;
 }
 
 /** The whole plane: the bay decision, then each bay's figure. */
@@ -264,5 +274,7 @@ export function roofPlaneBracing(
     choice,
     segments,
     totalLengthIn: segments.reduce((sum, s) => sum + roofBraceSegmentLengthIn(s), 0),
+    planeWidthIn,
+    planeSlopeIn,
   };
 }
