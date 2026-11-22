@@ -67,10 +67,17 @@ describe("a 2x4 lying flat on the exterior face", () => {
      the weather side, where the sheathing goes. A wall brace sits at
      `PLATE_2X4_THICKNESS_IN / 2`, its own exterior wythe; this is the mirror
      of that, measured back from the panel's depth. */
+  /* ⚠ **AT y=0, WHICH IS THE EXTERIOR FACE — this read
+     `PANEL_DEPTH_IN - PLATE_2X4_THICKNESS_IN` until 2026-11-22 and pinned the
+     board to the INTERIOR.** The describe above it has always said *"lying
+     flat on the exterior face"*, so the intent was never in doubt; the
+     assertion simply agreed with the builder's own wrong premise that a roof
+     panel's exterior face is its far one in depth. `yIn` is measured FROM the
+     exterior face on every panel in this app. */
   it("fills the outermost 1 1/2in of the depth and nothing deeper", () => {
     const box = memberAabbIn(member);
-    expect(box.y0).toBeCloseTo(PANEL_DEPTH_IN - PLATE_2X4_THICKNESS_IN, 9);
-    expect(box.y1).toBeCloseTo(PANEL_DEPTH_IN, 9);
+    expect(box.y0).toBeCloseTo(0, 9);
+    expect(box.y1).toBeCloseTo(PLATE_2X4_THICKNESS_IN, 9);
   });
 
   it("refuses a panel too shallow to hold the board at all", () => {
@@ -226,7 +233,6 @@ describe("the clear band on the top face", () => {
   });
   const clear = roofBraceTopFaceClearZIn(
     panel,
-    PANEL_DEPTH_IN,
     PANEL_SPAN_IN,
     CLEAR_X_FROM_IN,
     CLEAR_X_TO_IN,
@@ -238,8 +244,17 @@ describe("the clear band on the top face", () => {
      stop at and the top face runs the full way to z = 0. The plumb end lid
      does reach this depth, and stops the top face about 7in short of the
      span. */
-  it("runs to the eave and stops short at the plumb end", () => {
-    expect(clear.fromIn).toBe(0);
+  /* ⚠ **IT STOPS SHORT AT BOTH ENDS, and this test used to say it ran
+     clear to the eave.** That claim was an artefact of reading the WRONG
+     DEPTH SLICE: on the interior face (y 14-15.5) there really is nothing at
+     the eave, because the eave takes its cut from below and the interior face
+     is the short one. On the real exterior face (y 0-1.5) the eave lid's own
+     face studs reach z 2.37in, so the band starts there. Both ends are
+     capped, by different members and by very different amounts - 2.37in at
+     the eave against about 7.5in at the plumb end. */
+  it("stops short at both ends, by very different amounts", () => {
+    expect(clear.fromIn).toBeGreaterThan(0);
+    expect(clear.fromIn).toBeLessThan(5);
     expect(clear.toIn).toBeLessThan(PANEL_SPAN_IN - 5);
     expect(clear.toIn).toBeGreaterThan(PANEL_SPAN_IN - 10);
   });
@@ -264,7 +279,7 @@ describe("the clear band on the top face", () => {
       depthIn: PANEL_DEPTH_IN,
       lengthIn: 120,
     });
-    const band = roofBraceTopFaceClearZIn(floor, PANEL_DEPTH_IN, 120, CLEAR_X_FROM_IN, CLEAR_X_TO_IN);
+    const band = roofBraceTopFaceClearZIn(floor, 120, CLEAR_X_FROM_IN, CLEAR_X_TO_IN);
     expect(band.fromIn).toBeGreaterThan(0);
     expect(band.toIn).toBeLessThan(120);
   });

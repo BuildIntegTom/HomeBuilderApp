@@ -245,9 +245,15 @@ describe("what still overlaps, and whose decision it is", () => {
   it("leaves only brace-on-brace once the girts dodge — the 65 go to 0", () => {
     const braced = braceRoofPlane(576, 12);
 
+    /* ⚠ 98 and 64, not the 99 and 65 this pinned before 2026-11-22.
+       Moving the boards to the panel's real EXTERIOR face shortened the clear
+       band at the eave by 2.37in, which moved every bay boundary and so every
+       board - one girt crossing fewer falls out of the new arrangement. The
+       AFTER numbers below are untouched, which is the point: the dodge still
+       clears every crossing on this plane. */
     const before = totalsOf(braced, (e) => e.panelUndodged);
-    expect([...before.values()].reduce((sum, n) => sum + n, 0)).toBe(99);
-    expect(girtPairsIn(before)).toBe(65);
+    expect([...before.values()].reduce((sum, n) => sum + n, 0)).toBe(98);
+    expect(girtPairsIn(before)).toBe(64);
 
     const after = totalsOf(braced, (e) => e.panel);
     for (const kind of after.keys()) expect(kind).toBe("roof-brace x roof-brace");
@@ -278,11 +284,15 @@ describe("what still overlaps, and whose decision it is", () => {
         braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panel), 0),
       ];
     });
+    /* ⚠ **These rose when the boards moved to the exterior face
+       (2026-11-22)**: 12 -> 15, 29 -> 30 and 123 -> 122. The figure sits on a
+       band 2.37in shorter at the eave, so the bands the girts dodge are
+       different bands, and the re-datum lands differently. */
     expect(counts).toEqual([
-      [9, 12],
-      [26, 29],
+      [9, 15],
+      [26, 30],
       [50, 50],
-      [111, 123],
+      [111, 122],
     ]);
   });
 
@@ -315,7 +325,6 @@ describe("the clear band is what the figure is built on", () => {
     const spanIn = Math.hypot(12, 4) * 12;
     const clear = roofBraceTopFaceClearZIn(
       buildFloorRoofPanelMembers(optionsFor(24, spanIn)),
-      PANEL_DEPTH_IN,
       spanIn,
       JOIST_2X6_THICKNESS_IN,
       24 - JOIST_2X6_THICKNESS_IN,
@@ -480,7 +489,6 @@ describe("the clear band is read per distinct width", () => {
     const bandOf = (widthIn: number) =>
       roofBraceTopFaceClearZIn(
         buildFloorRoofPanelMembers(optionsFor(widthIn, spanIn)),
-        PANEL_DEPTH_IN,
         spanIn,
         JOIST_2X6_THICKNESS_IN,
         widthIn - JOIST_2X6_THICKNESS_IN,
@@ -496,49 +504,52 @@ describe("the clear band is read per distinct width", () => {
 });
 
 describe("the clear band is the INTERSECTION over the run's widths", () => {
-  /* ⚠ **A MUTANT SURVIVED HERE AND THIS IS WHY: on every real roof the eave
-     end's clear band is 0 at every width**, because the eave takes its cut
-     from BELOW and leaves the top face running the full span. Taking the
-     smallest instead of the largest is therefore the same answer on every
-     building this app can draw, and nothing could see the difference.
+  /* ⚠ **THIS COMMENT USED TO STATE THE DEFECT AS ITS PREMISE.** It said
+     *"on every real roof the eave end's clear band is 0 at every width,
+     because the eave takes its cut from BELOW and leaves the top face running
+     the full span"* - true of the INTERIOR face the boards were wrongly being
+     laid on, and false of the real exterior one, where the eave lid's face
+     studs cap the band at 2.37in. See `centreYIn` in `roofBraceMembers.ts`.
 
-     So the difference is made visible on purpose. A pitch-0 roof panel gets a
-     square lid at each end that DOES reach the top face (0.75in of it), and
-     handing one width such a panel while the rest keep the real 4:12 gives a
-     run whose two ends disagree. No real run mixes pitches — this is a
-     synthetic fixture for a direction that otherwise has no witness. */
+     A synthetic fixture is still needed, because the real band is the same
+     2.37in at every WIDTH, so a real run's ends still never disagree. But the
+     witness has to be reversed: a 4:12 panel's eave cap (2.37in) is now LATER
+     than a flat panel's square lid (0.75in), so the odd one out is the SLOPED
+     panel in an otherwise flat run. Taking the earliest would read 0.75 and
+     lay a board through the odd panel's eave lid. */
   it("takes the LATEST eave end any panel of the run has, not the earliest", () => {
     const spanIn = 200;
     const widths = [24, 24, 24, 15.5];
+    const optionsAt = (pitchFor: (widthIn: number) => number) => (widthIn: number) => ({
+      kind: "roof" as const,
+      widthIn,
+      depthIn: PANEL_DEPTH_IN,
+      lengthIn: spanIn,
+      structuralGirtEnds: [],
+      pitchIn12: pitchFor(widthIn),
+      bearingSeatDepthIn: PANEL_DEPTH_IN,
+    });
+    /* The odd one out is the SLOPED panel, whose angled eave lid reaches
+       further up the top face than a flat panel's square one. */
     const mixed = planRoofRunBracing({
       panelWidthsIn: widths,
       panelMitred: widths.map(() => false),
       spanIn,
       depthIn: PANEL_DEPTH_IN,
-      optionsForWidthIn: (widthIn) => ({
-        kind: "roof",
-        widthIn,
-        depthIn: PANEL_DEPTH_IN,
-        lengthIn: spanIn,
-        structuralGirtEnds: [],
-        /* The odd one out: a flat panel, whose square eave lid really does
-           cap the top face. */
-        pitchIn12: widthIn === 15.5 ? 0 : PITCH_IN_12,
-        bearingSeatDepthIn: PANEL_DEPTH_IN,
-      }),
+      optionsForWidthIn: optionsAt((widthIn) => (widthIn === 15.5 ? PITCH_IN_12 : 0)),
     });
-    const sloped = planRoofRunBracing({
+    const flat = planRoofRunBracing({
       panelWidthsIn: widths,
       panelMitred: widths.map(() => false),
       spanIn,
       depthIn: PANEL_DEPTH_IN,
-      optionsForWidthIn: (widthIn) => optionsFor(widthIn, spanIn),
+      optionsForWidthIn: optionsAt(() => 0),
     });
     expect(mixed.refusal).toBeNull();
-    expect(sloped.refusal).toBeNull();
-    /* The flat panel's lid pushes the region's eave end out by its own 0.75in,
-       which is exactly what taking the largest means. */
-    expect(mixed.regionFromIn - sloped.regionFromIn).toBeCloseTo(0.75, 9);
+    expect(flat.refusal).toBeNull();
+    /* The sloped panel's lid pushes the region's eave end out from 0.75in to
+       2.37in, which is exactly what taking the largest means. */
+    expect(mixed.regionFromIn - flat.regionFromIn).toBeCloseTo(2.3717082451262845 - 0.75, 9);
   });
 });
 

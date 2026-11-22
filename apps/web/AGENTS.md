@@ -803,6 +803,22 @@
   widths and spans. **When a test fails on a count rather than a value, ask
   what the count was standing in for before you re-pin it.**
 
+- **2026-11-22, the roof brace's face: ZERO delta.** **188 problems**,
+  141 errors / 47 warnings, every rule byte-identical
+  (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1). The only `page.tsx` edit was prose inside an
+  existing Review Log note and an existing sheet paragraph — no new memo, no
+  new dep, no new JSX — so zero was the expected answer and it was still
+  measured rather than assumed. JSON 2,275,140 bytes against the previous
+  stride's 2,274,942; stderr the one benign Babel `page.tsx` note.
+
+  ⚠ **Dropping a now-unused PARAMETER is a lint-driven call, not a style
+  one.** `roofBraceTopFaceClearZIn` stopped needing `panelDepthIn` once the
+  slice moved to y=0. Leaving it would have been +1 `no-unused-vars` against
+  a baseline of 35, so it came out of the signature and all five call sites
+  changed with it.
+
 - **2026-11-21, the girts dodging the bracing: ZERO delta.** **188 problems**,
   141 errors / 47 warnings, every rule byte-identical
   (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
@@ -846,6 +862,49 @@
   = -1e9;` was sitting in `floorRoofPanelMembers.ts` afterwards. Two habits:
   give `subprocess.run` a `timeout=` so a hang counts as caught, and **`git
   status` the tree after killing any script that edits files.**
+
+- **A COMMENT CAN STATE THE DEFECT AS ITS PREMISE, and then every test agrees
+  with it** (2026-11-22, the roof brace's face). Every roof brace board in
+  this app was nailed to the panel's **INTERIOR** face for its whole life.
+  The cause was one line whose own comment asserted the false bit: *"a roof
+  panel's exterior face is the far one in depth, so this is measured back
+  from `panelDepthIn`"*. It is not. **`yIn` is measured FROM the exterior
+  face on every panel here** — `PanelMembersGroup`'s frame doc says
+  *"Z=depth from its exterior face"*, the wall chevron documented *"on the
+  exterior wythe"* is `yIn: 0`, and the floor's toe-up pair puts the exterior
+  board at 0–3.5in against the interior one at 12–15.5in. A roof panel's own
+  silhouette settles it too: the **y=0 edge runs the full span** while the
+  y=depth edge is cut back at both ends, which is Tommy's *"top face is the
+  long point"*.
+
+  ⚠ **NO GATE COULD SEE IT, because every derived number is face-invariant.**
+  The figure, the bay choice, the snap, the slicing, the cut lengths, the
+  angles, the overlap counts, the weight and the price are all identical on
+  either face — only which side of the panel the board is nailed to changed.
+  Found by Tommy looking at the 3D view: *"diagonal roof bracing is appearing
+  on the bottom/underside of the roof panels instead of the exterior/top"*.
+  **Eleventh time he or the browser found what the three gates could not.**
+
+  ⚠ **THE REUSABLE LESSON: when a comment and an assertion disagree, the
+  COMMENT is the spec.** Three places pinned the wrong face while their own
+  prose stated the right intent — a describe block named *"a 2x4 lying flat
+  on the exterior face"* asserting `y0 = PANEL_DEPTH_IN - 1.5`; a comment
+  reading *"its exterior face, which on a roof panel is the top"* sitting
+  directly above `expect(...yIn).toBeCloseTo(group.options.depthIn - 0.75)`;
+  and a test comment explaining a SURVIVING MUTANT by reciting the defect as
+  fact (*"on every real roof the eave end's clear band is 0 at every
+  width"* — true of the interior face, false of the exterior one). Prose that
+  contradicts the number next to it is a defect report, not decoration.
+
+  ⚠ **AND THE BLAST RADIUS WAS IN THE CONSEQUENCES, not the boards.** The
+  clear band on the real top face is `2.37 .. 144.28` where the interior read
+  `0 .. 144.28`, because the eave lid's face studs reach z 2.37 and nothing
+  caps the interior face at the eave at all. That moved every bay boundary,
+  so: the 48ft plane's before-count went 99→98 pairs, the dodge's girt bill
+  went 12→15 / 29→30 / 123→122, and **the stuck-girt case went from reaching
+  NO Home template to reaching five of nine** (the Multiplex alone has 16).
+  A one-line face change is not a cosmetic change when anything downstream
+  reads the panel's members to decide where to put something.
 
 - **A literal space next to a JSX expression does not survive** (same stride).
   `{count} of this panel&apos;s ...` rendered as **"1of this panel's"** on the

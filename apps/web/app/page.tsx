@@ -13939,9 +13939,9 @@ export default function LayoutEditor() {
           (stuck > 0 ? `, and ${stuck} had nowhere to go` : ""),
         status: "pending-BI-confirmation" as const,
         note:
-          `An anti-twist girt runs the panel's whole depth and width and its top 2x4 sits in the same outermost ` +
-          `1 1/2in a flat brace board does, so a girt standing anywhere inside a brace's reach along the span crosses ` +
-          `it. ${shifted} girt${shifted === 1 ? " has" : "s have"} therefore been moved back along the span, by up to ` +
+          `An anti-twist girt's OSB web runs the panel's whole depth as well as its whole width, so it stands in ` +
+          `the brace's own 1 1/2in slice at the exterior face, and the girt's exterior 2x4 is in that slice too. ` +
+          `A girt anywhere inside a brace's reach along the span therefore crosses it. ${shifted} girt${shifted === 1 ? " has" : "s have"} therefore been moved back along the span, by up to ` +
           `${formatLengthIn(maxShiftIn, unitSystem)}, on ${groups.length} panel type${groups.length === 1 ? "" : "s"}. ` +
           `⚠ HIS SPACING RULE IS WHAT MADE THE DIRECTION OF THE MOVE: a girt only ever moves EARLIER than the ` +
           `station the rule put it at, never later, and the next station is then measured from where this one really ` +
@@ -18078,9 +18078,10 @@ export default function LayoutEditor() {
                           group.girtDodge.shiftedCount === 1 ? " is" : " are"
                         } NOT on the plain 5ft stride`}
                       </strong>{" "}
-                      — measure each one off the cut list rather than off the spacing. A girt&apos;s top
-                      2x4 sits in the same outermost 1 1/2in a brace board does, so a girt inside a
-                      brace&apos;s reach along the span would cross it; each one has been moved back toward
+                      — measure each one off the cut list rather than off the spacing. A girt&apos;s OSB web
+                      runs the panel&apos;s whole depth, so it stands in the same 1 1/2in slice at the
+                      exterior face that a brace board lies in, and so does the girt&apos;s exterior 2x4;
+                      a girt inside a brace&apos;s reach along the span would cross it. Each one has been moved back toward
                       the eave instead, by up to{" "}
                       {formatLengthIn(group.girtDodge.maxShiftIn, unitSystem)} here. A girt only ever moves
                       EARLIER, and the next one is measured from where this one landed, so no gap along the

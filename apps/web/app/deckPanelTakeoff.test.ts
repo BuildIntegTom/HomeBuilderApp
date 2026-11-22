@@ -176,13 +176,20 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
     }
     /* Every board lies flat in the panel's outermost 1 1/2in — its exterior
        face, which on a roof panel is the top — so the sheathing lies flat
-       over both the brace and the joists. */
+       over both the brace and the joists.
+
+       ⚠ **`yIn` IS 0.75, NOT `depthIn - 0.75`.** This pinned the far face
+       until 2026-11-22, which is the very defect Tommy saw in the 3D view:
+       *"diagonal roof bracing is appearing on the bottom/underside of the
+       roof panels instead of the exterior/top"*. The comment directly above
+       was already right — only the number was wrong — so nothing here read
+       as suspicious. */
     for (const group of takeoff.groups.filter((g) => g.kind === "roof")) {
       for (const member of group.braceMembers) {
         expect(member.orientation).toBe("diagonal");
         expect(member.position.rotationDeg).toBe(90);
         expect(member.nominalSize).toBe("2x4");
-        expect(member.position.yIn).toBeCloseTo(group.options.depthIn - 0.75, 9);
+        expect(member.position.yIn).toBeCloseTo(0.75, 9);
       }
     }
   });
@@ -222,15 +229,24 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
       if (group.girtDodge.crossesBraceCount === 0) expect(pairs, group.key).toBe(0);
     }
 
-    /* ⚠ **MEASURED, AND THIS FIXTURE IS THE ONLY PLACE THE STUCK CASE SHOWS
-       UP.** None of the eight Home templates reaches it; a 40 x 20 peaked roof
-       does. Three panel types, one girt each, 8 member pairs — a girt at a
-       bay's centre, where the figure's four boards tile its whole span with no
-       gap to move into. The spacing rule wins there and the crossing is
-       reported rather than the girt dropped. */
+    /* ⚠ **MEASURED. THE STUCK CASE IS COMMON NOW, AND THIS COMMENT USED TO
+       SAY THE OPPOSITE.** It read *"this fixture is the only place the stuck
+       case shows up — none of the eight Home templates reaches it"*, which was
+       true while the boards were being laid on the panel's INTERIOR face. On
+       the real exterior face the clear band starts 2.37in later at the eave,
+       so the figure covers more of a shorter plane, and the case now reaches
+       FIVE of the nine Home template options: the Multiplex (16 stuck girts in
+       the building), both Octagons and both Courtyards. The Tank, the Tiny
+       House and the Cindy still reach none.
+
+       Three panel types on this 40 x 20 fixture, one girt each, 6 member pairs
+       — a girt at a bay's centre, where the figure's four boards tile its whole
+       span with no gap to move into. The spacing rule wins there and the
+       crossing is reported rather than the girt dropped. Tommy's standing
+       answer for these is to notch the girt, which is not built yet. */
     const stuckPanels = roof.filter((g) => g.girtDodge.crossesBraceCount > 0);
     expect(stuckPanels.map((g) => g.girtDodge.crossesBraceCount)).toEqual([1, 1, 1]);
-    expect(roof.reduce((n, g) => n + girtBracePairsOf(g), 0)).toBe(8);
+    expect(roof.reduce((n, g) => n + girtBracePairsOf(g), 0)).toBe(6);
 
     /* ⚠ Girts really did MOVE to achieve that — a build that simply placed
        no girts would also score zero above. */

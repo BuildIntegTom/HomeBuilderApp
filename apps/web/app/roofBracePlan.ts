@@ -160,7 +160,6 @@ export function planRoofRunBracing(input: RoofRunBracingInput): RoofRunBracing {
   for (const widthIn of new Set(panelWidthsIn)) {
     const clear = roofBraceTopFaceClearZIn(
       buildFloorRoofPanelMembers(optionsForWidthIn(widthIn)),
-      depthIn,
       spanIn,
       JOIST_2X6_THICKNESS_IN,
       widthIn - JOIST_2X6_THICKNESS_IN,

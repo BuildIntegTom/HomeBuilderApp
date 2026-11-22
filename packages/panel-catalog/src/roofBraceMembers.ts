@@ -107,13 +107,18 @@ export const ROOF_BRACE_CONTAINED_TO_DEG = 60;
  */
 export function roofBraceTopFaceClearZIn(
   members: readonly PanelMember[],
-  panelDepthIn: number,
   panelSpanIn: number,
   clearXFromIn: number,
   clearXToIn: number,
   boardThicknessIn: number = PLATE_2X4_THICKNESS_IN,
 ): { fromIn: number; toIn: number } {
-  const sliceFromIn = panelDepthIn - boardThicknessIn;
+  /* ⚠ The board's own slice at the EXTERIOR face, y=0 to the board's
+     thickness — see `centreYIn`. This read `panelDepthIn - boardThicknessIn`
+     while the brace was being placed on the interior, so it was at least
+     self-consistent with the defect: it read the caps in the wrong slice and
+     the figure was laid on the wrong face, together. */
+  const sliceFromIn = 0;
+  const sliceToIn = boardThicknessIn;
   const tolerance = 1e-6;
   const overlaps = (aFrom: number, aTo: number, bFrom: number, bTo: number) =>
     Math.min(aTo, bTo) - Math.max(aFrom, bFrom) > tolerance;
@@ -122,7 +127,7 @@ export function roofBraceTopFaceClearZIn(
   let toIn = panelSpanIn;
   for (const member of members) {
     const box = memberAabbIn(member);
-    if (!overlaps(box.y0, box.y1, sliceFromIn, panelDepthIn)) continue;
+    if (!overlaps(box.y0, box.y1, sliceFromIn, sliceToIn)) continue;
     if (!overlaps(box.x0, box.x1, clearXFromIn, clearXToIn)) continue;
     if (box.z0 <= tolerance) fromIn = Math.max(fromIn, box.z1);
     if (box.z1 >= panelSpanIn - tolerance) toIn = Math.min(toIn, box.z0);
@@ -290,11 +295,27 @@ export function buildRoofBraceMembers(
     );
   }
 
-  /* ⚠ The CENTRE of the outermost 1 1/2in slice, because a diagonal's
-     position is its centre. A wall brace does the same at its own exterior
-     wythe (`PLATE_2X4_THICKNESS_IN / 2`); a roof panel's exterior face is
-     the far one in depth, so this is measured back from `panelDepthIn`. */
-  const centreYIn = panelDepthIn - PLATE_2X4_THICKNESS_IN / 2;
+  /* ⚠ **THE CENTRE OF THE EXTERIOR 1 1/2in SLICE, WHICH IS AT y=0** —
+     because a diagonal's position is its centre, and `yIn` is measured FROM
+     THE PANEL'S EXTERIOR FACE.
+
+     ⚠ **This read `panelDepthIn - PLATE_2X4_THICKNESS_IN / 2` until
+     2026-11-22, and that put every roof brace on the INTERIOR face.** The
+     comment here asserted that *"a roof panel's exterior face is the far one
+     in depth"* and that premise is simply false: y=0 is the exterior face on
+     every panel in this app. Three independent places say so —
+     `PanelMembersGroup`'s own frame (*"Z=depth from its exterior face"*), the
+     wall chevron documented *"on the exterior wythe"* at `yIn: 0`, and the
+     floor's toe-up pair, whose exterior board is at 0–3.5in and whose
+     interior board is at 12–15.5in.
+
+     It was invisible to every gate: the figure, the snap, the slicing, the
+     cut lengths, the angles, the overlap counts and the weight are all
+     identical on either face, because the board's own geometry never
+     changed — only which side of the panel it is nailed to. Found by Tommy
+     looking at the 3D view: *"diagonal roof bracing is appearing on the
+     bottom/underside of the roof panels instead of the exterior/top"*. */
+  const centreYIn = PLATE_2X4_THICKNESS_IN / 2;
 
   const members: PanelMember[] = [];
   let zFromIn = Number.POSITIVE_INFINITY;
