@@ -490,3 +490,27 @@ export function roofBracePiecesForPanel(
       };
     });
 }
+
+/**
+ * The bands along a panel's SPAN that its brace boards occupy, for a girt to
+ * dodge — see `FloorRoofPanelOptions.avoidGirtZBandsIn`.
+ *
+ * ⚠ **IT IS THE BOARD'S BOUNDING BAND IN Z, NOT THE LINE IT LIES ON, AND
+ * THAT IS NOT CONSERVATISM.** A girt runs the panel's whole width and depth,
+ * so it meets a diagonal somewhere along that diagonal's whole z-extent —
+ * there is no part of the band a full-width girt could slip through. The
+ * bounding box is the exact answer here, not an over-estimate of one.
+ *
+ * ⚠ Read off the MEMBERS, so it cannot drift from what is really in the
+ * panel. Taking it from the figure instead would re-derive the end cuts, the
+ * joist trim and the board width a second time, and the second copy would be
+ * the one that was wrong.
+ */
+export function roofBraceGirtAvoidBandsIn(
+  braceMembers: readonly PanelMember[],
+): (readonly [number, number])[] {
+  return braceMembers.map((member) => {
+    const box = memberAabbIn(member);
+    return [box.z0, box.z1] as const;
+  });
+}

@@ -3,6 +3,7 @@ import {
   buildFloorRoofPanelMembers,
   JOIST_2X6_THICKNESS_IN,
   overlappingMemberPairs,
+  roofBraceGirtAvoidBandsIn,
   roofBraceTopFaceClearZIn,
   ROOF_BRACE_END_CLEARANCE_IN,
   type FloorRoofPanelOptions,
@@ -37,7 +38,14 @@ const realRunWidths = (planeWidthIn: number): number[] => {
   return widths;
 };
 
-const optionsFor = (widthIn: number, spanIn: number): FloorRoofPanelOptions => ({
+const optionsFor = (
+  widthIn: number,
+  spanIn: number,
+  /** ⚠ The brace bands its girts dodge — see `avoidGirtZBandsIn`. Left
+   * out, the panel is the one the app built BEFORE the dodge existed, which
+   * is what the before/after assertions below need. */
+  avoidGirtZBandsIn?: readonly (readonly [number, number])[],
+): FloorRoofPanelOptions => ({
   kind: "roof",
   widthIn,
   depthIn: PANEL_DEPTH_IN,
@@ -45,6 +53,7 @@ const optionsFor = (widthIn: number, spanIn: number): FloorRoofPanelOptions => (
   structuralGirtEnds: [],
   pitchIn12: PITCH_IN_12,
   bearingSeatDepthIn: PANEL_DEPTH_IN,
+  ...(avoidGirtZBandsIn ? { avoidGirtZBandsIn } : {}),
 });
 
 interface BracedPlane {
@@ -55,7 +64,10 @@ interface BracedPlane {
   perPanel: {
     band: { name: string; widthIn: number };
     brace: PanelMember[];
+    /** The panel AS INSTALLED — its girts already dodging these braces. */
     panel: PanelMember[];
+    /** The same panel with its girts on the bare spacing rule, for before/after. */
+    panelUndodged: PanelMember[];
     lidBiteIn: number;
     trimmedIn: number;
     withinPanelSpan: boolean;
@@ -90,7 +102,13 @@ function braceRoofPlane(planeWidthIn: number, runFt: number): BracedPlane {
       return {
         band,
         brace: entry.members,
-        panel: buildFloorRoofPanelMembers(optionsFor(band.widthIn, spanIn)),
+        /* ⚠ **THE PANEL THE APP REALLY BUILDS**, girts and all. This used to
+           build it without the brace bands, so every overlap assertion below
+           was measuring a panel `deckPanelTakeoff` no longer emits. */
+        panel: buildFloorRoofPanelMembers(
+          optionsFor(band.widthIn, spanIn, roofBraceGirtAvoidBandsIn(entry.members)),
+        ),
+        panelUndodged: buildFloorRoofPanelMembers(optionsFor(band.widthIn, spanIn)),
         lidBiteIn: entry.lidBiteIn,
         trimmedIn: entry.trimmedIn,
         withinPanelSpan: entry.withinPanelSpan,
@@ -205,29 +223,67 @@ describe("what still overlaps, and whose decision it is", () => {
      a carrot's foot LANDS on a leg of the X — they are meant to touch — and
      a diagonal crossing the panel has to cross any anti-twist girt in its
      way. Pinned so the number cannot drift unnoticed. */
-  it("leaves only brace-on-brace and brace-across-a-girt, at a pinned count", () => {
-    const braced = braceRoofPlane(576, 12);
+  const totalsOf = (braced: BracedPlane, pick: (e: BracedPlane["perPanel"][number]) => PanelMember[]) => {
     const totals = new Map<string, number>();
     for (const entry of braced.perPanel) {
-      for (const [kind, count] of overlapKinds(entry.panel, entry.brace)) {
+      for (const [kind, count] of overlapKinds(pick(entry), entry.brace)) {
         totals.set(kind, (totals.get(kind) ?? 0) + count);
       }
     }
-    for (const kind of totals.keys()) {
-      expect(kind).toMatch(/roof-brace/);
-      expect(kind).toMatch(/^(roof-brace x roof-brace|anti-twist-\d+-(top|bottom|web) x roof-brace)$/);
+    return totals;
+  };
+  const girtPairsIn = (totals: Map<string, number>) =>
+    [...totals.entries()].filter(([kind]) => kind.startsWith("anti-twist")).reduce((sum, [, n]) => sum + n, 0);
+
+  /* ⚠ **THE 65 WERE A PROXY AND THE DODGE MADE THEM FALSE.** This test
+     pinned 99 pairs on the 48ft plane: 34 of a carrot's foot landing on a leg
+     of the X, which his figure asks for, and 65 of a diagonal crossing an
+     anti-twist girt, which the comment above called inherent — *"a diagonal
+     crossing the panel has to cross any anti-twist girt in its way."* It does
+     not: the girt moves. Both numbers are kept, the before as well as the
+     after, so what the dodge bought is recorded rather than forgotten. */
+  it("leaves only brace-on-brace once the girts dodge — the 65 go to 0", () => {
+    const braced = braceRoofPlane(576, 12);
+
+    const before = totalsOf(braced, (e) => e.panelUndodged);
+    expect([...before.values()].reduce((sum, n) => sum + n, 0)).toBe(99);
+    expect(girtPairsIn(before)).toBe(65);
+
+    const after = totalsOf(braced, (e) => e.panel);
+    for (const kind of after.keys()) expect(kind).toBe("roof-brace x roof-brace");
+    expect(girtPairsIn(after)).toBe(0);
+    /* ⚠ Brace-on-brace is UNTOUCHED, and has to be: it is his own figure
+       asking for it, and a half-lap there is still his call. */
+    expect(after.get("roof-brace x roof-brace")).toBe(34);
+    expect([...after.values()].reduce((sum, n) => sum + n, 0)).toBe(34);
+  });
+
+  /* ⚠ The dodge is not free, and this is the price in parts. Pulling a
+     station back re-datums the stride from where the girt really landed —
+     forced, or the interval ahead of it would exceed his spacing rule — so
+     one more station can fit before the far lid. */
+  it("says what the dodge COSTS: more girts, not fewer", () => {
+    const antiTwistCount = (ms: PanelMember[]) => ms.filter((m) => /^anti-twist-\d+-web$/.test(m.memberId)).length;
+    for (const [planeWidthIn, runFt] of PLANES) {
+      const braced = braceRoofPlane(planeWidthIn, runFt);
+      const before = braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panelUndodged), 0);
+      const after = braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panel), 0);
+      expect(after, `${planeWidthIn}in plane`).toBeGreaterThanOrEqual(before);
     }
-    const all = [...totals.values()].reduce((sum, n) => sum + n, 0);
-    /* 25 panels, 100 boards: 99 pairs — about four to a panel, against the
-       375 the first build produced. 34 are a carrot's foot landing on a leg
-       of the X, which his figure asks for; the other 65 are a diagonal
-       crossing an anti-twist girt. */
-    expect(all).toBe(99);
-    expect(totals.get("roof-brace x roof-brace")).toBe(34);
-    const girtPairs = [...totals.entries()]
-      .filter(([kind]) => kind.startsWith("anti-twist"))
-      .reduce((sum, [, n]) => sum + n, 0);
-    expect(girtPairs).toBe(65);
+    /* Measured, so the bill cannot drift unnoticed. */
+    const counts = PLANES.map(([planeWidthIn, runFt]) => {
+      const braced = braceRoofPlane(planeWidthIn, runFt);
+      return [
+        braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panelUndodged), 0),
+        braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panel), 0),
+      ];
+    });
+    expect(counts).toEqual([
+      [9, 12],
+      [26, 29],
+      [50, 50],
+      [111, 123],
+    ]);
   });
 
   /* The bite into the end clearance, and the trim the joists take, are both

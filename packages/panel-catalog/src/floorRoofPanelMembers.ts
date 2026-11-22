@@ -195,6 +195,27 @@ export interface FloorRoofPanelOptions {
    */
   bearingSeatDepthIn?: number;
   /**
+   * ⚠ **BANDS ALONG THE SPAN THAT A GIRT MUST NOT LAND IN — the roof
+   * bracing's boards.**
+   *
+   * > *"can we continue to keep the hard rule of girts must be placed every
+   * > 3 ft or less, but also place them in away where they do not interfere
+   * > with the braces"* — Tommy, 2026-11-21
+   *
+   * Each pair is `[fromIn, toIn]` along Z. A girt runs the panel's whole
+   * depth and width, so it crosses a diagonal brace wherever its own z-band
+   * overlaps the brace's — which makes the brace's bounding band in Z
+   * exactly the thing to dodge. `roofBraceGirtAvoidBandsIn` builds the list
+   * from the BOARDS rather than from the figure, so it cannot drift from what
+   * is really in the panel.
+   *
+   * ⚠ **Left out or empty, nothing moves**: every station lands on
+   * `datum + k * spacing` exactly as it did before this existed, which is what
+   * every FLOOR panel and every unbraced roof panel in the app still gets.
+   * See `planFloorRoofGirtStationsIn`.
+   */
+  avoidGirtZBandsIn?: readonly (readonly [number, number])[];
+  /**
    * ⚠ **A MITRED SPAN END — the panel cut on an angle IN PLAN, so the deck
    * stops at the building instead of at its bounding box.**
    *
@@ -1818,42 +1839,152 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
  * than guessed from options: `applyRoofPlanMitre` reports `uncutMemberIds` for
  * any member whose shape runs through an axis a plumb cut cannot touch.
  */
-export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
-  const roofMitre = options.kind === "roof" && hasFloorRoofMitre(options) ? options.mitreIn : undefined;
-  const o: FloorRoofPanelOptions = roofMitre ? { ...options, mitreIn: undefined } : options;
+/** One girt's station along the span, and what it took to put it there. */
+export interface FloorRoofGirtStation {
+  /** Where the girt's near face really goes. */
+  zIn: number;
+  /** Where the spacing rule on its own would have put it. */
+  targetIn: number;
+  /** How far back from `targetIn` it moved to clear a brace. 0 normally. */
+  shiftedIn: number;
+  /**
+   * ⚠ True when there was NO clear position left inside the spacing rule's
+   * reach, so the girt sits across a brace anyway. **The rule wins and the
+   * crossing is reported** rather than the girt being dropped or the spacing
+   * stretched — his own standing condition for leaving a crossing alone is
+   * that the Review Log says it is there.
+   */
+  crossesBrace: boolean;
+}
+
+export interface FloorRoofGirtStationPlan {
+  stations: FloorRoofGirtStation[];
+  /** Stations the lid or a structural girt took out of the run entirely. */
+  droppedCount: number;
+}
+
+export interface FloorRoofGirtStationContext {
+  /** The exterior structural girt's far face, or the panel's own first lid. */
+  datumIn: number;
+  /** Where the far end's lid begins — see `lidStartsAtIn` at the call site. */
+  lidStartsAtIn: number;
+  /**
+   * Bands a station is **DROPPED** for: the structural girts. Dropping is
+   * right there, and for the reason it always was — a structural girt IS
+   * blocking at that station, and it is carrying a wall besides.
+   */
+  dropBandsIn: readonly (readonly [number, number])[];
+  /**
+   * Bands a station **SHIFTS** off: the roof bracing's boards. Shifting is
+   * right there because nothing else is doing the girt's job at that station,
+   * so dropping it would open a gap his rule does not allow.
+   */
+  shiftBandsIn: readonly (readonly [number, number])[];
+}
+
+/**
+ * Where one family of girts goes along a floor or roof panel's span.
+ *
+ * ⚠ **HIS 3FT RULE IS A MAXIMUM, AND THAT IS THE WHOLE REASON THE DODGE IS
+ * SAFE.** A girt that moves EARLIER than its target cannot break the rule: the
+ * interval behind it only shortens, and the next target is measured from where
+ * this one really landed, so the interval ahead of it is a full spacing again.
+ * A girt that moved LATER would break it. **So this only ever pulls back**,
+ * and the spacing is never stretched to buy clearance.
+ *
+ * ⚠ **WITH NO BANDS TO SHIFT OFF IT IS THE FIXED-STRIDE LOOP IT REPLACES,
+ * STATION FOR STATION.** Nothing moves, so the datum never moves, so every
+ * station is `datum + k * spacing` exactly as before. Every floor panel and
+ * every unbraced roof panel in the app depends on that, so it is asserted
+ * rather than assumed.
+ *
+ * ⚠ **A DROPPED STATION DOES NOT RE-DATUM.** The stride carries on from
+ * where the rule put it, not from the last girt actually built — the
+ * behaviour the lid and structural-girt drops already had, kept so that
+ * dropping one station cannot cascade into moving every station after it.
+ *
+ * ⚠ A shifted station is floored onto the **1/8in grid**. The band it is
+ * dodging is a diagonal board's bounding box, which lands on no grid at all,
+ * and flooring moves the girt further from the brace rather than into it.
+ */
+export function planFloorRoofGirtStationsIn(
+  spacingIn: number,
+  ownThicknessIn: number,
+  ctx: FloorRoofGirtStationContext,
+): FloorRoofGirtStationPlan {
+  const tolerance = 1e-9;
+  const clearsLid = (zIn: number) => zIn + ownThicknessIn <= ctx.lidStartsAtIn + tolerance;
+  const clears = (zIn: number, bands: readonly (readonly [number, number])[]) =>
+    bands.every(([aIn, bIn]) => zIn + ownThicknessIn <= aIn + tolerance || zIn >= bIn - tolerance);
+  /* The band in the way whose start is LATEST, so each pull-back is the
+     smallest one that clears anything and the walk converges downwards. */
+  const blockerOf = (zIn: number) =>
+    [...ctx.shiftBandsIn, ...ctx.dropBandsIn]
+      .filter(([aIn, bIn]) => zIn + ownThicknessIn > aIn + tolerance && zIn < bIn - tolerance)
+      .sort((a, b) => b[0] - a[0])[0];
+
+  const stations: FloorRoofGirtStation[] = [];
+  let droppedCount = 0;
+  let fromIn = ctx.datumIn;
+
+  for (let guard = 0; guard < 4096; guard++) {
+    const targetIn = fromIn + spacingIn;
+    if (!clearsLid(targetIn)) break;
+    /* The stride advances from the RULE's station whatever happens below. */
+    fromIn = targetIn;
+
+    if (!clears(targetIn, ctx.dropBandsIn)) {
+      droppedCount += 1;
+      continue;
+    }
+    if (clears(targetIn, ctx.shiftBandsIn)) {
+      stations.push({ zIn: targetIn, targetIn, shiftedIn: 0, crossesBrace: false });
+      continue;
+    }
+
+    const lowerBoundIn = stations[stations.length - 1]?.zIn ?? ctx.datumIn;
+    let zIn: number | null = targetIn;
+    for (let step = 0; step < 64 && zIn !== null; step++) {
+      const blocker = blockerOf(zIn);
+      if (!blocker) break;
+      zIn = Math.floor((blocker[0] - ownThicknessIn) * 8) / 8;
+      if (zIn <= lowerBoundIn + tolerance) zIn = null;
+    }
+    if (zIn === null || blockerOf(zIn) !== undefined) {
+      stations.push({ zIn: targetIn, targetIn, shiftedIn: 0, crossesBrace: true });
+      continue;
+    }
+    stations.push({ zIn, targetIn, shiftedIn: targetIn - zIn, crossesBrace: false });
+    fromIn = zIn;
+  }
+
+  return { stations, droppedCount };
+}
+
+/**
+ * Where every girt goes in ONE floor or roof panel: the datum, the far lid's
+ * bound, the structural girts to drop a station for, the braces to dodge, and
+ * both families' stations.
+ *
+ * ⚠ **EXPORTED BECAUSE A SHOP SHEET HAS TO SAY WHAT THE DODGE SPENT.** The
+ * alternative was for `deckPanelTakeoff` to work the datum and the lid bound
+ * out again beside the builder, which would have been two recipes that agree
+ * today. `buildFloorRoofPanelMembers` calls this one, so a girt the sheet
+ * describes is the girt the 3D view draws.
+ *
+ * ⚠ It strips a roof's plan mitre the same way the builder does, so it does
+ * not matter whether a caller hands it the raw options or the stripped ones.
+ */
+export function floorRoofGirtStationPlans(options: FloorRoofPanelOptions): {
+  antiTwist: FloorRoofGirtStationPlan;
+  /** Floors only — *"I guess we dont need blocking between the girts on the roofs."* */
+  blocking: FloorRoofGirtStationPlan | null;
+  context: FloorRoofGirtStationContext;
+} {
+  const o: FloorRoofPanelOptions =
+    options.kind === "roof" && hasFloorRoofMitre(options) ? { ...options, mitreIn: undefined } : options;
   const plumb = plumbEndCut(o, "end");
-  const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
-  if (plumb) members.push(...buildTallEndWedge(o, plumb));
-  members.push(...buildEndWebs(o, plumb, eaveCut(o), SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN));
-
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
-  /* ⚠ A PAIR per wall-bearing end since B23 — one girt under each toe-up
-     board. `wallBearingGirtStationsIn` owns where they go and why. */
-  for (const station of wallBearingGirtStationsIn(o)) {
-    members.push(
-      ...buildStructuralGirt(
-        o,
-        station.zIn,
-        station.label,
-        station.face === "exterior"
-          ? "structural girt web — carries the wall above, cut to the space between the joists"
-          : `structural girt web — set in flush with the wall's INTERIOR face (${o.depthIn}in from this end), ` +
-            "so the inner toe-up board bears on framing rather than spanning the subfloor between the joists",
-      ),
-    );
-  }
-
-  /* ⚠ The extra girts under a column, built from exactly the same part as
-     the end ones — *"more structural girts"*, his words, not a new member.
-     Clamped inside the panel so a column near an end cannot push a girt out
-     through the lid. */
-  const firstFaceIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
-  const lastFaceIn = o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
-  for (const [i, atIn] of (o.extraStructuralGirtsAtIn ?? []).entries()) {
-    const zIn = Math.min(Math.max(atIn, firstFaceIn), lastFaceIn);
-    if (lastFaceIn < firstFaceIn) break;
-    members.push(...buildStructuralGirt(o, zIn, `column_${i}`));
-  }
 
   /* Both spacings are measured from the structural girt on a floor and from
      the ridge on a roof — "Girts start from the ridge every 5'". The ridge is
@@ -1909,7 +2040,6 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   const lidStartsAtIn = plumb
     ? plumb.setBackAtYIn(o.depthIn, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN)
     : o.lengthIn - (SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN);
-  const clearsLid = (zIn: number, ownThicknessIn: number) => zIn + ownThicknessIn <= lidStartsAtIn + 1e-9;
 
   /**
    * ⚠ **A STATION THAT LANDS ON A STRUCTURAL GIRT IS DROPPED, not shifted.**
@@ -1931,43 +2061,117 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   const girtBandsIn = wallBearingGirtStationsIn(o).map(
     (s) => [s.zIn, s.zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN] as const,
   );
-  const clearsGirts = (zIn: number, ownThicknessIn: number) =>
-    girtBandsIn.every(([aIn, bIn]) => zIn + ownThicknessIn <= aIn + 1e-9 || zIn >= bIn - 1e-9);
-  const stationFits = (zIn: number, ownThicknessIn: number) =>
-    clearsLid(zIn, ownThicknessIn) && clearsGirts(zIn, ownThicknessIn);
+  /* ⚠ **THE STATIONS ARE PLANNED, NOT STRIDDEN**, now that the roof
+     bracing gives a girt something to dodge — see
+     `planFloorRoofGirtStationsIn` for why pulling a station BACK keeps his
+     3ft rule and pushing it forward would not. With no bracing the plan is
+     the old fixed stride, station for station. */
+  const girtStationCtx: FloorRoofGirtStationContext = {
+    datumIn,
+    lidStartsAtIn,
+    dropBandsIn: girtBandsIn,
+    shiftBandsIn: o.avoidGirtZBandsIn ?? [],
+  };
 
-  let index = 0;
-  const antiTwistThicknessIn = ANTI_TWIST_WEB_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
-  for (
-    let zIn = datumIn + ANTI_TWIST_SPACING_IN;
-    clearsLid(zIn, antiTwistThicknessIn);
-    zIn += ANTI_TWIST_SPACING_IN
-  ) {
-    /* ⚠ The index advances only when a girt is really placed, so the ids a
-       shop reads stay contiguous rather than carrying a hole where a station
-       was dropped. */
-    if (!stationFits(zIn, antiTwistThicknessIn)) continue;
-    members.push(...buildAntiTwistGirt(o, zIn, index));
-    index += 1;
+  return {
+    antiTwist: planFloorRoofGirtStationsIn(
+      ANTI_TWIST_SPACING_IN,
+      ANTI_TWIST_WEB_THICKNESS_IN + PLATE_2X4_THICKNESS_IN,
+      girtStationCtx,
+    ),
+    blocking:
+      o.kind === "floor"
+        ? planFloorRoofGirtStationsIn(BLOCKING_SPACING_IN, PLATE_2X4_WIDTH_IN, girtStationCtx)
+        : null,
+    context: girtStationCtx,
+  };
+}
+
+/** What the brace dodge cost one panel, in the terms a sheet can print. */
+export interface FloorRoofGirtDodgeSummary {
+  antiTwistCount: number;
+  blockingCount: number;
+  /** Girts that moved back off a brace. */
+  shiftedCount: number;
+  /** The furthest any one of them moved. */
+  maxShiftIn: number;
+  /**
+   * ⚠ Girts with nowhere clear to go, sitting across a brace. A panel at
+   * a bay's centre carries all four pieces of the figure, and they can tile
+   * its whole span with no gap — so the spacing rule wins and this is the
+   * number that says where it did.
+   */
+  crossesBraceCount: number;
+}
+
+export function floorRoofGirtDodgeSummary(options: FloorRoofPanelOptions): FloorRoofGirtDodgeSummary {
+  const plans = floorRoofGirtStationPlans(options);
+  const all = [...plans.antiTwist.stations, ...(plans.blocking?.stations ?? [])];
+  return {
+    antiTwistCount: plans.antiTwist.stations.length,
+    blockingCount: plans.blocking?.stations.length ?? 0,
+    shiftedCount: all.filter((s) => s.shiftedIn > 1e-9).length,
+    maxShiftIn: all.reduce((worst, s) => Math.max(worst, s.shiftedIn), 0),
+    crossesBraceCount: all.filter((s) => s.crossesBrace).length,
+  };
+}
+
+export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
+  const roofMitre = options.kind === "roof" && hasFloorRoofMitre(options) ? options.mitreIn : undefined;
+  const o: FloorRoofPanelOptions = roofMitre ? { ...options, mitreIn: undefined } : options;
+  const plumb = plumbEndCut(o, "end");
+  const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
+  if (plumb) members.push(...buildTallEndWedge(o, plumb));
+  members.push(...buildEndWebs(o, plumb, eaveCut(o), SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN));
+
+  const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
+  /* ⚠ A PAIR per wall-bearing end since B23 — one girt under each toe-up
+     board. `wallBearingGirtStationsIn` owns where they go and why. */
+  for (const station of wallBearingGirtStationsIn(o)) {
+    members.push(
+      ...buildStructuralGirt(
+        o,
+        station.zIn,
+        station.label,
+        station.face === "exterior"
+          ? "structural girt web — carries the wall above, cut to the space between the joists"
+          : `structural girt web — set in flush with the wall's INTERIOR face (${o.depthIn}in from this end), ` +
+            "so the inner toe-up board bears on framing rather than spanning the subfloor between the joists",
+      ),
+    );
   }
 
+  /* ⚠ The extra girts under a column, built from exactly the same part as
+     the end ones — *"more structural girts"*, his words, not a new member.
+     Clamped inside the panel so a column near an end cannot push a girt out
+     through the lid. */
+  const firstFaceIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const lastFaceIn = o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
+  for (const [i, atIn] of (o.extraStructuralGirtsAtIn ?? []).entries()) {
+    const zIn = Math.min(Math.max(atIn, firstFaceIn), lastFaceIn);
+    if (lastFaceIn < firstFaceIn) break;
+    members.push(...buildStructuralGirt(o, zIn, `column_${i}`));
+  }
+
+  const girtPlans = floorRoofGirtStationPlans(o);
+
+  girtPlans.antiTwist.stations.forEach(
+    /* ⚠ The index is a girt's place among the girts REALLY BUILT, so the
+       ids a shop reads stay contiguous rather than carrying a hole where a
+       station was dropped. */
+    (station, index) => members.push(...buildAntiTwistGirt(o, station.zIn, index)),
+  );
+
   if (o.kind === "floor") {
-    let blockIndex = 0;
-    for (
-      /* ⚠ **`PLATE_2X4_WIDTH_IN`, not its thickness.** Blocking is built
-         `horizontal` at 90deg, which `memberBoxSizeIn` maps to
-         `{ xIn: thickness, yIn: length, zIn: WIDTH }` — so the 3 1/2in face is
-         the one lying along the span. Reading the 1 1/2in here left exactly
-         2in of the interference still in place, which is how this was caught:
-         the band narrowed from 42.5-46in to 44.5-46in instead of closing. */
-      let zIn = datumIn + BLOCKING_SPACING_IN;
-      clearsLid(zIn, PLATE_2X4_WIDTH_IN);
-      zIn += BLOCKING_SPACING_IN
-    ) {
-      if (!stationFits(zIn, PLATE_2X4_WIDTH_IN)) continue;
-      members.push(...buildBlocking(o, zIn, blockIndex));
-      blockIndex += 1;
-    }
+    /* ⚠ **`PLATE_2X4_WIDTH_IN`, not its thickness.** Blocking is built
+       `horizontal` at 90deg, which `memberBoxSizeIn` maps to
+       `{ xIn: thickness, yIn: length, zIn: WIDTH }` — so the 3 1/2in face is
+       the one lying along the span. Reading the 1 1/2in here left exactly 2in
+       of the interference still in place, which is how this was caught: the
+       band narrowed from 42.5-46in to 44.5-46in instead of closing. */
+    (girtPlans.blocking?.stations ?? []).forEach((station, blockIndex) =>
+      members.push(...buildBlocking(o, station.zIn, blockIndex)),
+    );
   }
 
   if (roofMitre) {

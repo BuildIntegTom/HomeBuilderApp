@@ -13881,7 +13881,7 @@ export default function LayoutEditor() {
     const braceSentence =
       bracePairs === 0
         ? ""
-        : `⚠ ${bracePairs} crossing${bracePairs === 1 ? "" : "s"} across this roof involve a brace board, and they are his own figure rather than defects: a carrot's foot LANDS on a leg of the X because that is how a carrot delivers load into the main diagonal, and a diagonal running the panel has to cross any anti-twist girt in its way. Both boards sit in the same outermost 1 1/2in of the panel's depth, so two flat 2x4s cannot both be there as drawn. A half-lap where they meet is the obvious answer and it is NOT built — nobody has said how a roof brace meets the board it crosses, so the shop would have to be told which one loses material and the drawing does not say. This is counted under his standing rule that an overlap is acceptable while the log states it, not under a rule that it is fine. `;
+        : `⚠ ${bracePairs} crossing${bracePairs === 1 ? "" : "s"} across this roof involve a brace board, and they are his own figure rather than defects: a carrot's foot LANDS on a leg of the X because that is how a carrot delivers load into the main diagonal. Both boards sit in the same outermost 1 1/2in of the panel's depth, so two flat 2x4s cannot both be there as drawn. ⚠ A GIRT CROSSING IS A DIFFERENT CASE AND IS NO LONGER INHERENT: an anti-twist girt now moves back along the span to clear the bracing, so the only girt crossings left are on panels where the figure's four boards tile the whole span with no gap to move into — see the girt entry in this log. A half-lap where they meet is the obvious answer and it is NOT built — nobody has said how a roof brace meets the board it crosses, so the shop would have to be told which one loses material and the drawing does not say. This is counted under his standing rule that an overlap is acceptable while the log states it, not under a rule that it is fine. `;
 
     if (other.length === 0) {
       return [
@@ -13909,6 +13909,61 @@ export default function LayoutEditor() {
       },
     ];
   }, [floorRoofPanelFabricationGroups]);
+
+  /**
+   * ⚠ **WHERE THE GIRTS MOVED TO CLEAR THE BRACING, and what that cost.**
+   *
+   * > *"can we continue to keep the hard rule of girts must be placed every
+   * > 3 ft or less, but also place them in away where they do not interfere
+   * > with the braces"* — Tommy, 2026-11-21
+   *
+   * Three things nothing on screen would show: that girts are no longer on a
+   * fixed stride, that his spacing rule still holds anyway, and that the dodge
+   * ADDED girts rather than saving any.
+   */
+  const girtBraceDodgeReviewEntries = useMemo(() => {
+    const groups = deckPanelTakeoff.groups.filter(
+      (group) => group.girtDodge.shiftedCount > 0 || group.girtDodge.crossesBraceCount > 0,
+    );
+    if (groups.length === 0) return [];
+    const copiesOf = (group: (typeof groups)[number]) => group.instances.length;
+    const shifted = groups.reduce((n, g) => n + g.girtDodge.shiftedCount * copiesOf(g), 0);
+    const stuck = groups.reduce((n, g) => n + g.girtDodge.crossesBraceCount * copiesOf(g), 0);
+    const maxShiftIn = groups.reduce((worst, g) => Math.max(worst, g.girtDodge.maxShiftIn), 0);
+    const stuckPanels = groups.filter((g) => g.girtDodge.crossesBraceCount > 0);
+
+    return [
+      {
+        label:
+          `${shifted} deck girt${shifted === 1 ? "" : "s"} moved to clear the roof bracing` +
+          (stuck > 0 ? `, and ${stuck} had nowhere to go` : ""),
+        status: "pending-BI-confirmation" as const,
+        note:
+          `An anti-twist girt runs the panel's whole depth and width and its top 2x4 sits in the same outermost ` +
+          `1 1/2in a flat brace board does, so a girt standing anywhere inside a brace's reach along the span crosses ` +
+          `it. ${shifted} girt${shifted === 1 ? " has" : "s have"} therefore been moved back along the span, by up to ` +
+          `${formatLengthIn(maxShiftIn, unitSystem)}, on ${groups.length} panel type${groups.length === 1 ? "" : "s"}. ` +
+          `⚠ HIS SPACING RULE IS WHAT MADE THE DIRECTION OF THE MOVE: a girt only ever moves EARLIER than the ` +
+          `station the rule put it at, never later, and the next station is then measured from where this one really ` +
+          `landed — so no interval along any panel exceeds the spacing it was placed at. A girt moved later would ` +
+          `have broken the rule to buy clearance. ` +
+          `⚠ AND THE DODGE ADDS GIRTS RATHER THAN SAVING ANY, which is the part worth pricing: re-datuming from a ` +
+          `girt that moved back leaves room for one more station before the far end's lid. On the roof planes measured ` +
+          `for this, it is about one girt in ten more than the fixed stride placed. ` +
+          (stuck > 0
+            ? `⚠ ${stuck} GIRT${stuck === 1 ? "" : "S"} STILL CROSS${stuck === 1 ? "ES" : ""} A BRACE, on ` +
+              `${stuckPanels.map((g) => g.instances[0]?.name ?? g.key).join(", ")}. A panel at a bay's centre carries ` +
+              `all four boards of the figure and their bands can tile its whole span with no gap, so there is no clear ` +
+              `station to move to. The spacing rule wins there and the girt is placed anyway rather than dropped, ` +
+              `because nothing else is doing its job at that station. Those crossings are counted in the deck overlap ` +
+              `entry in this log, under his standing rule that an overlap is acceptable while the log states it. `
+            : `No girt on this building is left crossing a brace. `) +
+          `⚠ NOTHING HERE IS A FORCE CALCULATION. A girt's spacing is his rule and the dodge is geometry; what a ` +
+          `girt or a brace resists is not computed, and moving a girt has not been checked against anything it was ` +
+          `spaced for beyond the spacing itself.`,
+      },
+    ];
+  }, [deckPanelTakeoff, unitSystem]);
 
   /**
    * ⚠ **WHAT THE ROOF BRACING COST, per plane, in words.**
@@ -14696,6 +14751,7 @@ export default function LayoutEditor() {
       /* And behind THAT, because it is what explains them: the figure those
          crossings come from, and what snapping it onto the seams cost. */
       ...roofBracingReviewEntries,
+      ...girtBraceDodgeReviewEntries,
       /* Beside it again: this one reports a part that is RIGHT but not as good
          as it could be, which ranks just under one that cannot be built. */
       ...gableBevelRefusedReviewEntries,
@@ -14916,6 +14972,7 @@ export default function LayoutEditor() {
     memberOverlapReviewEntries,
     deckMemberOverlapReviewEntries,
     roofBracingReviewEntries,
+    girtBraceDodgeReviewEntries,
     gableBevelRefusedReviewEntries,
     gableMitreRefusedReviewEntries,
     headerWithoutWebReviewEntries,
@@ -17998,9 +18055,48 @@ export default function LayoutEditor() {
                   {group.bracing.snapped
                     ? "Every end of the figure lands on a panel seam, which is what makes the board count the same in every panel."
                     : "The figure is NOT snapped to the seams on this plane — see the Review Log."}{" "}
-                  ⚠ Where a brace crosses another board — a carrot&apos;s foot landing on a leg of the X, or
-                  a diagonal crossing an anti-twist girt — <strong>nothing is notched</strong>. The Review
-                  Log counts those crossings; the shop has not been told which board loses material.{" "}
+                  ⚠ Where a carrot&apos;s foot lands on a leg of the X, <strong>nothing is notched</strong>.
+                  The Review Log counts those crossings; the shop has not been told which board loses
+                  material.{" "}
+                </>
+              )}
+              {(group.girtDodge.shiftedCount > 0 || group.girtDodge.crossesBraceCount > 0) && (
+                <>
+                  {/* ⚠ ONE TEMPLATE LITERAL, not JSX text around an expression. Written
+                      the obvious way it rendered "1of this panel's" in the browser: the
+                      literal space after `{count}` does not survive, and only reading the
+                      sheet showed it. The file's own house pattern for this is `{" "}`. */}
+                  {/* ⚠ AND THE TWO SENTENCES ARE ON THEIR OWN CONDITIONS, because a
+                      panel can have a girt that could not move and none that did — three
+                      of them on a 40 x 20 peaked roof. Written as one block it printed
+                      "0 of this panel's anti-twist girts are NOT on the plain 5ft stride
+                      ... moved back by up to 0in", which is both false and unreadable. */}
+                  {group.girtDodge.shiftedCount > 0 && (
+                    <>
+                      <strong>
+                        {`${group.girtDodge.shiftedCount} of this panel's anti-twist girts${
+                          group.girtDodge.shiftedCount === 1 ? " is" : " are"
+                        } NOT on the plain 5ft stride`}
+                      </strong>{" "}
+                      — measure each one off the cut list rather than off the spacing. A girt&apos;s top
+                      2x4 sits in the same outermost 1 1/2in a brace board does, so a girt inside a
+                      brace&apos;s reach along the span would cross it; each one has been moved back toward
+                      the eave instead, by up to{" "}
+                      {formatLengthIn(group.girtDodge.maxShiftIn, unitSystem)} here. A girt only ever moves
+                      EARLIER, and the next one is measured from where this one landed, so no gap along the
+                      panel is longer than the 5ft the rule allows.{" "}
+                    </>
+                  )}
+                  {group.girtDodge.crossesBraceCount > 0 && (
+                    <>
+                      {`⚠ ${group.girtDodge.crossesBraceCount} girt${
+                        group.girtDodge.crossesBraceCount === 1 ? " has" : "s have"
+                      } nowhere clear to go on this panel — the figure's boards cover its whole span — so ${
+                        group.girtDodge.crossesBraceCount === 1 ? "it crosses" : "they cross"
+                      } a brace as drawn, and `}
+                      <strong>nothing is notched there either</strong>.{" "}
+                    </>
+                  )}
                 </>
               )}
               {group.plan.lastTrueSheetSeamIn !== null && (

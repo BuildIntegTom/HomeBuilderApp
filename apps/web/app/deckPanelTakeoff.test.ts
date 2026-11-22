@@ -6,7 +6,11 @@ import {
   simpleRoofPlanes,
   type Footprint,
 } from "@building-integrity/geometry";
-import { roofTopAboveRooflineIn } from "@building-integrity/panel-catalog";
+import {
+  overlappingMemberPairs,
+  roofBraceGirtAvoidBandsIn,
+  roofTopAboveRooflineIn,
+} from "@building-integrity/panel-catalog";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 
 /**
@@ -180,6 +184,65 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
         expect(member.nominalSize).toBe("2x4");
         expect(member.position.yIn).toBeCloseTo(group.options.depthIn - 0.75, 9);
       }
+    }
+  });
+
+  /* ⚠ **AND THE GIRTS DODGE THEM, through the takeoff rather than only in
+     the planner.** A mutation run found this gap by deleting the one line in
+     `deckPanelTakeoff` that hands a panel its brace bands: every test still
+     passed, because the end-to-end brace test builds its own options and the
+     catalog's tests call the planner directly. The whole feature could have
+     been unwired and the suite would have stayed green. */
+  it("⚠ wires the brace bands into the panel the takeoff BUILDS", () => {
+    const takeoff = computeDeckPanelTakeoff(input());
+    const roof = takeoff.groups.filter((g) => g.kind === "roof");
+    expect(roof.length).toBeGreaterThan(0);
+
+    for (const group of roof) {
+      /* The bands reach `options`, which is what builds `members`. */
+      expect(group.options.avoidGirtZBandsIn, group.key).toEqual(
+        roofBraceGirtAvoidBandsIn(group.braceMembers),
+      );
+    }
+    /* ⚠ And the result is measurable in the BOARDS, which is the half that
+       cannot be faked: every girt still sharing volume with a brace is on a
+       panel that REPORTS having nowhere to put it. A girt crossing a brace
+       silently is the defect this asserts against. */
+    const girtBracePairsOf = (group: (typeof roof)[number]) => {
+      const all = [...group.members, ...group.braceMembers];
+      const ids = all.map((m) => m.memberId);
+      return overlappingMemberPairs(all).filter((pair) => {
+        const hit = ids.filter((id) => pair.includes(id));
+        return hit.some((id) => id.startsWith("anti-twist")) && hit.some((id) => id.startsWith("roof-brace"));
+      }).length;
+    };
+    for (const group of roof) {
+      const pairs = girtBracePairsOf(group);
+      if (pairs > 0) expect(group.girtDodge.crossesBraceCount, group.key).toBeGreaterThan(0);
+      if (group.girtDodge.crossesBraceCount === 0) expect(pairs, group.key).toBe(0);
+    }
+
+    /* ⚠ **MEASURED, AND THIS FIXTURE IS THE ONLY PLACE THE STUCK CASE SHOWS
+       UP.** None of the eight Home templates reaches it; a 40 x 20 peaked roof
+       does. Three panel types, one girt each, 8 member pairs — a girt at a
+       bay's centre, where the figure's four boards tile its whole span with no
+       gap to move into. The spacing rule wins there and the crossing is
+       reported rather than the girt dropped. */
+    const stuckPanels = roof.filter((g) => g.girtDodge.crossesBraceCount > 0);
+    expect(stuckPanels.map((g) => g.girtDodge.crossesBraceCount)).toEqual([1, 1, 1]);
+    expect(roof.reduce((n, g) => n + girtBracePairsOf(g), 0)).toBe(8);
+
+    /* ⚠ Girts really did MOVE to achieve that — a build that simply placed
+       no girts would also score zero above. */
+    const shifted = roof.reduce((n, g) => n + g.girtDodge.shiftedCount, 0);
+    const girts = roof.reduce((n, g) => n + g.girtDodge.antiTwistCount, 0);
+    expect(girts).toBeGreaterThan(0);
+    expect(shifted).toBeGreaterThan(0);
+    /* No floor panel has anything to dodge, so none of them moved. */
+    for (const group of takeoff.groups.filter((g) => g.kind === "floor")) {
+      expect(group.options.avoidGirtZBandsIn, group.key).toBeUndefined();
+      expect(group.girtDodge.shiftedCount, group.key).toBe(0);
+      expect(group.girtDodge.crossesBraceCount, group.key).toBe(0);
     }
   });
 

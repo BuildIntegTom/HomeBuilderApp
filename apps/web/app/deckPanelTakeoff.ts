@@ -17,6 +17,8 @@ import {
 } from "@building-integrity/geometry";
 import {
   buildFloorRoofPanelMembers,
+  floorRoofGirtDodgeSummary,
+  roofBraceGirtAvoidBandsIn,
   buildRoofPanelCapMembers,
   columnBearingGirtPositionsIn,
   FLOOR_ROOF_PANEL_WIDTH_IN,
@@ -28,6 +30,7 @@ import {
   roofPanelCapOutlineSection,
   roofTopAboveRooflineIn,
   type FloorRoofPanelMitre,
+  type FloorRoofGirtDodgeSummary,
   type FloorRoofPanelOptions,
   type FloorRoofPanelRole,
   type FloorRoofPanelRunPlan,
@@ -165,6 +168,12 @@ export interface DeckPanelTakeoffGroup {
    * (see `DeckPanelTakeoff.roofBracing`).
    */
   braceMembers: PanelMember[];
+  /**
+   * ⚠ **WHAT THE GIRTS GAVE UP TO CLEAR THE BRACING.** Derived from
+   * `options` like `members` is, and from the same function the builder uses,
+   * so the sheet cannot describe a girt the 3D view does not draw.
+   */
+  girtDodge: FloorRoofGirtDodgeSummary;
   /** The panel's silhouette in (depth, span), for the box/membrane views. */
   sectionIn: { yIn: number; zIn: number }[];
   /**
@@ -814,6 +823,21 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
                is what gives it a LEVEL bearing via the wedge. */
             pitchIn12: roofPitchIn12,
             bearingSeatDepthIn: depthIn,
+            /* ⚠ **THE GIRTS DODGE THE BRACING, and the bands have to be in
+               `options` because `options` is what builds the members — one
+               member set per GROUP, further down. Handing the braces to the
+               builder any other way would give the 3D view a girt in one place
+               and the shop sheet a girt in another.
+
+               ⚠ They do NOT need to join the group key. A band is a pure
+               function of this panel's brace pieces, and the pieces' geometry
+               is already in the key as `braceSignature` — so two panels with
+               equal keys cannot have unequal bands. Adding them would churn
+               every braced panel's React key and `shop-fab-` DOM id for a
+               distinction the key already draws. */
+            ...(braceMembers.length > 0
+              ? { avoidGirtZBandsIn: roofBraceGirtAvoidBandsIn(braceMembers) }
+              : {}),
           };
           /* ⚠ **THE TRAPEZOID'S AREA, NOT THE RECTANGLE'S**, the line that stops
              the roof overclaiming exactly as the floor's own does. Measured on the
@@ -890,6 +914,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
           ? buildRoofPanelCapMembers(options, "eave", options.pitchIn12)
           : [],
       braceMembers,
+      girtDodge: floorRoofGirtDodgeSummary(options),
       capSectionIn:
         options.kind === "roof" && options.pitchIn12 !== undefined
           ? roofPanelCapOutlineSection(options, options.pitchIn12)

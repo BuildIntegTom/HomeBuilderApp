@@ -803,6 +803,79 @@
   widths and spans. **When a test fails on a count rather than a value, ask
   what the count was standing in for before you re-pin it.**
 
+- **2026-11-21, the girts dodging the bracing: ZERO delta.** **188 problems**,
+  141 errors / 47 warnings, every rule byte-identical
+  (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1).
+
+  ⚠ **A NEW `useMemo` COST NOTHING AGAIN** — `girtBraceDodgeReviewEntries`,
+  over `[deckPanelTakeoff, unitSystem]`. Neither dep is itself flagged
+  (`deckPanelTakeoff` is a memo but not a flagged one; `unitSystem` is plain
+  state), so the 2026-11-15 rule holds once more: **the cost is one per
+  ALREADY-FLAGGED value a dep array touches, and nothing for the memo itself.**
+  A new paragraph of JSX on the deck sheet, a new field on the takeoff group
+  and a corrected sentence in an existing entry all measured zero too.
+
+- **A TEST THAT BUILDS ITS OWN OPTIONS CANNOT SEE THE WIRING, and a mutation
+  run is what says so** (2026-11-21, the girt dodge). Deleting the one line in
+  `deckPanelTakeoff.ts` that hands a roof panel its brace bands left **every
+  test green**: the end-to-end brace test constructs `FloorRoofPanelOptions`
+  itself, and the catalog's tests call the planner directly, so nothing was
+  looking at the seam between them. The whole feature could have shipped
+  unwired. The fix is a test that reads `group.options` off the REAL takeoff
+  and then checks the consequence in the MEMBERS — not one that rebuilds the
+  options and re-derives the answer. **Whenever a feature's value is "X now
+  reaches Y", assert it on the object Y actually receives.**
+
+- **An equivalent mutant is a result, not a gap — prove it by measurement**
+  (same stride). `blockerOf` sorts the blocking bands by start, descending, and
+  flipping that to ascending survived every test. It is not a hole: walking
+  down one band at a time and jumping straight to the earliest blocker reach
+  the SAME station, because any intermediate position a band leaves clear is
+  one the earlier band already covered. Rather than argue it, both orderings
+  were run over **4,000 random band sets and produced byte-identical
+  stations**. Two vitest runs and a `diff`. Do that before either chasing a
+  survivor with a new test or waving it away.
+
+- **A mutant can HANG the suite, and a killed mutation script leaves the mutant
+  in your tree.** One mutant here removed the pull-back's lower bound, which let
+  the walk run its 4,096-iteration guard building girts into a panel; the run
+  blew past ten minutes with its output buffered behind `| tail`. `TaskStop`
+  killed it **before its `finally` restored the file**, and `const lowerBoundIn
+  = -1e9;` was sitting in `floorRoofPanelMembers.ts` afterwards. Two habits:
+  give `subprocess.run` a `timeout=` so a hang counts as caught, and **`git
+  status` the tree after killing any script that edits files.**
+
+- **A literal space next to a JSX expression does not survive** (same stride).
+  `{count} of this panel&apos;s ...` rendered as **"1of this panel's"** on the
+  shop sheet — the text node came back with no leading space. `tsc`, `vitest`
+  and lint all passed; only reading the page showed it. This file's own house
+  pattern is `{" "}`, and the sturdier answer for a sentence built from a
+  number is **one template literal** rather than JSX text wrapped around an
+  expression. Ninth time the gates missed what the browser found.
+
+  ⚠ **And the SAME paragraph had a second defect the browser found a few
+  minutes later, which is the more useful one.** Its condition was
+  `shiftedCount > 0 || crossesBraceCount > 0`, but its first sentence assumed
+  shifting had happened — so a panel with a girt that had NOWHERE to move
+  and none that did printed *"0 of this panel's anti-twist girts are NOT on the
+  plain 5ft stride ... moved back by up to 0in"*. Three such panels on a
+  40 x 20 peaked roof. **When a block is shown on `A || B`, every sentence in it
+  must be true under A alone and under B alone** — or it wants two blocks. No
+  test can see this: both sentences are prose, and the numbers behind them were
+  already correct.
+
+  ⚠ **Worth knowing HOW the second one was found, because the first attempt
+  failed.** None of the eight Home templates reaches the stuck case; the one
+  that does is the 40 x 20 peaked fixture from `deckPanelTakeoff.test.ts`. It
+  was reached in the browser by drawing The Tank and typing into the Width and
+  Depth dimension HANDLES — which are canvas-drawn, so `querySelector('input')`
+  finds nothing until the handle is clicked, and then the textbox exists and
+  `form_input` works on it. **If a test fixture exercises a branch no template
+  does, build that fixture's building in the browser rather than trusting the
+  branch.**
+
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately
