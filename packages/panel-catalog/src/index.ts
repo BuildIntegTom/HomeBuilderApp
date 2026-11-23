@@ -7,6 +7,7 @@ export * from "./panelPlanMitre";
 export * from "./standardPanelMembers";
 export * from "./floorRoofPanelMembers";
 export * from "./roofBraceMembers";
+export * from "./roofZigzagBracing";
 export * from "./floorRoofPanelRun";
 export * from "./ringFacetPanels";
 export * from "./roofPanelSpanLimit";

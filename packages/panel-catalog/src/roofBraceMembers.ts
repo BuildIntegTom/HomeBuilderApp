@@ -147,7 +147,7 @@ export function roofBraceTopFaceClearZIn(
  */
 export interface RoofBracePiece {
   /** Which part of the figure this came from. */
-  figure: "x" | "carrot";
+  figure: "x" | "carrot" | "zigzag";
   /** Which bay of the plane, for the note. */
   bayIndex: number;
   /** The parent brace's index within the plane's figure, for the note. */
@@ -390,9 +390,9 @@ export function buildRoofBraceMembers(
       role: "brace",
       qty: 1,
       notes:
-        `roof plane bracing, ${piece.figure === "x" ? "leg of the X" : "carrot"} in bay ${
-          piece.bayIndex + 1
-        }` +
+        `roof plane bracing, ${
+          piece.figure === "x" ? "leg of the X" : piece.figure === "carrot" ? "carrot" : "traverse of the zigzag"
+        } in bay ${piece.bayIndex + 1}` +
         (piece.pieceCount > 1 ? `, piece ${piece.pieceIndex} of ${piece.pieceCount}` : "") +
         `. 2x4 laid flat on the panel's exterior (top) face. Both ends cut on the panel's own side face at ${
           Math.round(bevelDeg * 10) / 10
@@ -458,7 +458,7 @@ function trimToClearX(
  * place instead of in every caller, which is where it would quietly differ.
  */
 export interface RoofBraceSliceLike {
-  figure: "x" | "carrot";
+  figure: "x" | "carrot" | "zigzag";
   bayIndex: number;
   segmentIndex: number;
   panelIndex: number;

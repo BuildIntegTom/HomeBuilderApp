@@ -802,6 +802,7 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
           for (const [i, planned] of plan.instances.entries()) {
           const bandCut = bandCuts[i];
           const braceMembers = bracing.perPanel[i]?.members ?? [];
+          const braceGirtStationsIn = bracing.perPanel[i]?.girtStationsIn;
           /* ⚠ **PLAN inches become SLOPE inches here and nowhere else.** A
              panel is the hypotenuse over the ground it covers, so a chamfer that
              takes 12in of ground takes 12.65in off the panel at 4:12. Handing the
@@ -835,7 +836,18 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
                equal keys cannot have unequal bands. Adding them would churn
                every braced panel's React key and `shop-fab-` DOM id for a
                distinction the key already draws. */
-            ...(braceMembers.length > 0
+            /* ⚠ **THE ZIGZAG PUTS THE GIRTS WHERE ITS BAYS END**, so the
+               stations travel with the boards and REPLACE the spacing rule
+               for this panel. A girt off its bay boundary is a girt a
+               diagonal runs into, so the two cannot be decided separately.
+               Equal bays under his 5ft maximum — see `planRoofZigzag`. */
+            ...(braceGirtStationsIn !== undefined ? { girtStationsIn: braceGirtStationsIn } : {}),
+            /* ⚠ **THE DODGE IS NOT RUN WHEN THE ZIGZAG IS PLACING THE GIRTS**,
+               because an odd traverse count already keeps every diagonal off
+               every girt — there is nothing to dodge. It stays wired for any
+               roof whose bracing comes from somewhere else, and for the
+               before/after the tests measure. */
+            ...(braceMembers.length > 0 && braceGirtStationsIn === undefined
               ? { avoidGirtZBandsIn: roofBraceGirtAvoidBandsIn(braceMembers) }
               : {}),
           };

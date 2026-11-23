@@ -131,8 +131,12 @@ describe("⚠ an OCTAGON is cut, and the cut reaches the coverage the price is b
     }
     const boxBoards = off.roofBracing.reduce((n, r) => n + r.boardCount, 0);
     expect(boxBoards).toBeGreaterThan(0);
+    /* ⚠ Was `toHaveLength(4)`, his carrot pattern's own property. A zigzag
+       puts an odd count in each bay and as many bays as the span needs, so
+       the number follows the panel — what matters here is that the box roof
+       is braced at all where the cut one is not. */
     for (const group of off.groups.filter((g) => g.kind === "roof")) {
-      expect(group.braceMembers).toHaveLength(4);
+      expect(group.braceMembers.length).toBeGreaterThan(0);
     }
   });
 });

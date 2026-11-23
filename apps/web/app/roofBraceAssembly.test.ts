@@ -3,7 +3,8 @@ import {
   buildFloorRoofPanelMembers,
   JOIST_2X6_THICKNESS_IN,
   overlappingMemberPairs,
-  roofBraceGirtAvoidBandsIn,
+  memberAabbIn,
+  ROOF_ZIGZAG_MAX_BAY_IN,
   roofBraceTopFaceClearZIn,
   ROOF_BRACE_END_CLEARANCE_IN,
   type FloorRoofPanelOptions,
@@ -60,6 +61,7 @@ interface BracedPlane {
   bands: { name: string; widthIn: number }[];
   spanIn: number;
   maxMemberAngleDeg: number;
+  bayCount: number;
   refusal: string | null;
   perPanel: {
     band: { name: string; widthIn: number };
@@ -96,6 +98,7 @@ function braceRoofPlane(planeWidthIn: number, runFt: number): BracedPlane {
     bands,
     spanIn,
     maxMemberAngleDeg: bracing.maxMemberAngleDeg,
+    bayCount: bracing.bayCount,
     refusal: bracing.refusal,
     perPanel: bands.map((band, index) => {
       const entry = bracing.perPanel[index]!;
@@ -105,9 +108,17 @@ function braceRoofPlane(planeWidthIn: number, runFt: number): BracedPlane {
         /* ⚠ **THE PANEL THE APP REALLY BUILDS**, girts and all. This used to
            build it without the brace bands, so every overlap assertion below
            was measuring a panel `deckPanelTakeoff` no longer emits. */
-        panel: buildFloorRoofPanelMembers(
-          optionsFor(band.widthIn, spanIn, roofBraceGirtAvoidBandsIn(entry.members)),
-        ),
+        /* ⚠ **THE PANEL AS THE TAKEOFF BUILDS IT: girts PLACED by the
+           zigzag, not dodging it.** This used to pass `avoidGirtZBandsIn`,
+           which was right while the bracing was a plane-wide figure the girts
+           had to get out of the way of. The zigzag puts them on its own bay
+           boundaries instead, so the harness has to hand over
+           `girtStationsIn` or it measures a panel the app no longer emits —
+           the same defect this harness already had once. */
+        panel: buildFloorRoofPanelMembers({
+          ...optionsFor(band.widthIn, spanIn),
+          girtStationsIn: entry.girtStationsIn,
+        }),
         panelUndodged: buildFloorRoofPanelMembers(optionsFor(band.widthIn, spanIn)),
         lidBiteIn: entry.lidBiteIn,
         trimmedIn: entry.trimmedIn,
@@ -139,11 +150,20 @@ const overlapKinds = (panel: PanelMember[], brace: PanelMember[]): Map<string, n
 };
 
 describe("his four boards, in every panel of every plane", () => {
-  it("hands each panel exactly four brace members", () => {
+  /* ⚠ **FOUR WAS HIS CARROT PATTERN'S OWN PROPERTY AND IT IS GONE.** A
+     zigzag's count follows the panel: an ODD number of traverses in each bay,
+     and as many bays as the span needs under his 5ft maximum. What has to
+     hold is the oddness, because that is what leaves each bay's chain on the
+     joist opposite the one it entered on — the whole reason a diagonal never
+     lands on a girt. */
+  it("hands each panel an odd number of traverses in every bay", () => {
     for (const [planeWidthIn, runFt] of PLANES) {
       const braced = braceRoofPlane(planeWidthIn, runFt);
       for (const entry of braced.perPanel) {
-        expect(entry.brace, `${planeWidthIn}in plane, ${entry.band.name}`).toHaveLength(4);
+        const label = `${planeWidthIn}in plane, ${entry.band.name}`;
+        expect(entry.brace.length, label).toBeGreaterThan(0);
+        expect(entry.brace.length % braced.bayCount, label).toBe(0);
+        expect((entry.brace.length / braced.bayCount) % 2, label).toBe(1);
       }
     }
   });
@@ -235,48 +255,43 @@ describe("what still overlaps, and whose decision it is", () => {
   const girtPairsIn = (totals: Map<string, number>) =>
     [...totals.entries()].filter(([kind]) => kind.startsWith("anti-twist")).reduce((sum, [, n]) => sum + n, 0);
 
-  /* ⚠ **THE 65 WERE A PROXY AND THE DODGE MADE THEM FALSE.** This test
-     pinned 99 pairs on the 48ft plane: 34 of a carrot's foot landing on a leg
-     of the X, which his figure asks for, and 65 of a diagonal crossing an
-     anti-twist girt, which the comment above called inherent — *"a diagonal
-     crossing the panel has to cross any anti-twist girt in its way."* It does
-     not: the girt moves. Both numbers are kept, the before as well as the
-     after, so what the dodge bought is recorded rather than forgotten. */
-  it("leaves only brace-on-brace once the girts dodge — the 65 go to 0", () => {
-    const braced = braceRoofPlane(576, 12);
+  /* ⚠ **NOTHING OVERLAPS ANYTHING ANY MORE, and his own rule is why.**
 
-    /* ⚠ 98 and 64, not the 99 and 65 this pinned before 2026-11-22.
-       Moving the boards to the panel's real EXTERIOR face shortened the clear
-       band at the eave by 2.37in, which moved every bay boundary and so every
-       board - one girt crossing fewer falls out of the new arrangement. The
-       AFTER numbers below are untouched, which is the point: the dodge still
-       clears every crossing on this plane. */
-    const before = totalsOf(braced, (e) => e.panelUndodged);
-    expect([...before.values()].reduce((sum, n) => sum + n, 0)).toBe(98);
-    expect(girtPairsIn(before)).toBe(64);
+     This pair of tests has tracked a shrinking problem. First it measured
+     what the girts gave up to dodge a plane-wide figure (65 crossings on the
+     48ft plane, bought with about one extra girt in ten). Then the zigzag
+     placed the girts on its bay boundaries and the girt crossings went to
+     zero, leaving only the chain's own node laps — two consecutive boards
+     sharing a rhombus where their centrelines met.
 
-    const after = totalsOf(braced, (e) => e.panel);
-    for (const kind of after.keys()) expect(kind).toBe("roof-brace x roof-brace");
-    expect(girtPairsIn(after)).toBe(0);
-    /* ⚠ Brace-on-brace is UNTOUCHED, and has to be: it is his own figure
-       asking for it, and a half-lap there is still his call. */
-    expect(after.get("roof-brace x roof-brace")).toBe(34);
-    expect([...after.values()].reduce((sum, n) => sum + n, 0)).toBe(34);
-  });
+     > *"every diagonal piece is mitered to be a flush cut with the joist -
+     > and if another diagonal is a node with it, the edge/tip of one should
+     > meet the edge/tip of the other - varying distances depending on
+     > angle."* — Tommy, 2026-11-22
 
-  /* ⚠ The dodge is not free, and this is the price in parts. Pulling a
-     station back re-datums the stride from where the girt really landed —
-     forced, or the interval ahead of it would exceed his spacing rule — so
-     one more station can fit before the far lid. */
-  it("says what the dodge COSTS: more girts, not fewer", () => {
-    const antiTwistCount = (ms: PanelMember[]) => ms.filter((m) => /^anti-twist-\d+-web$/.test(m.memberId)).length;
+     Stepping the two boards a full end face apart along the joist puts their
+     corners in contact and their bodies clear, so the last overlap in a roof
+     panel is gone. Not "acceptable under his standing rule" — absent. */
+  it("leaves NOTHING overlapping in a roof panel at all", () => {
     for (const [planeWidthIn, runFt] of PLANES) {
       const braced = braceRoofPlane(planeWidthIn, runFt);
-      const before = braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panelUndodged), 0);
-      const after = braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panel), 0);
-      expect(after, `${planeWidthIn}in plane`).toBeGreaterThanOrEqual(before);
+      const placed = totalsOf(braced, (e) => e.panel);
+      expect(girtPairsIn(placed), `${planeWidthIn}in plane`).toBe(0);
+      expect([...placed.entries()], `${planeWidthIn}in plane`).toEqual([]);
     }
-    /* Measured, so the bill cannot drift unnoticed. */
+  });
+
+  /* ⚠ And it is a live difference, not a vacuous one: with the girts strided
+     from the datum instead of placed on the bays, boards really would run
+     into them. */
+  it("would still collide if the girts were strided instead of placed", () => {
+    const braced = braceRoofPlane(576, 12);
+    const strided = totalsOf(braced, (e) => e.panelUndodged);
+    expect(girtPairsIn(strided)).toBeGreaterThan(0);
+  });
+
+  it("costs no girts, where the dodge added about one in ten", () => {
+    const antiTwistCount = (ms: PanelMember[]) => ms.filter((m) => /^anti-twist-\d+-web$/.test(m.memberId)).length;
     const counts = PLANES.map(([planeWidthIn, runFt]) => {
       const braced = braceRoofPlane(planeWidthIn, runFt);
       return [
@@ -284,34 +299,37 @@ describe("what still overlaps, and whose decision it is", () => {
         braced.perPanel.reduce((n, e) => n + antiTwistCount(e.panel), 0),
       ];
     });
-    /* ⚠ **These rose when the boards moved to the exterior face
-       (2026-11-22)**: 12 -> 15, 29 -> 30 and 123 -> 122. The figure sits on a
-       band 2.37in shorter at the eave, so the bands the girts dodge are
-       different bands, and the re-datum lands differently. */
+    /* ⚠ Equal on every plane: equal bays under his 5ft maximum put the same
+       NUMBER of girts in a panel as a 5ft stride from the datum does, only
+       evenly spaced. The dodge used to make the right-hand column bigger
+       (12, 30, 50, 122 against these); it is not in the path now. */
     expect(counts).toEqual([
-      [9, 15],
-      [26, 30],
+      [9, 9],
+      [26, 26],
       [50, 50],
-      [111, 122],
+      [111, 111],
     ]);
+    for (const [strided, placed] of counts) expect(placed).toBe(strided);
   });
 
   /* The bite into the end clearance, and the trim the joists take, are both
      reported per panel so a Review Log entry can state them. */
-  it("reports the bite and the trim rather than hiding them", () => {
+  /* ⚠ **BOTH ARE ZERO NOW, AND THAT IS THE ZIGZAG PAYING OFF TWICE.**
+     The plane-wide figure was laid on a rectangle and then clipped: every
+     board lost about 4in to the joists it was cut back to, and the end boards
+     reached into an end lid by up to the clearance. A zigzag piece is DEFINED
+     from one joist's inner face to the other's, so there is nothing to clip,
+     and the bay inset holds its corners off the girts and lids — so nothing
+     bites and nothing is trimmed. The ~4in a board used to lose at each joist
+     butt was an open item on Tommy's desk; it is closed by construction. */
+  it("loses nothing to a lid or a joist any more", () => {
     for (const [planeWidthIn, runFt] of PLANES) {
       const braced = braceRoofPlane(planeWidthIn, runFt);
-      const worstBite = Math.max(...braced.perPanel.map((e) => e.lidBiteIn));
-      const worstTrim = Math.max(...braced.perPanel.map((e) => e.trimmedIn));
       const label = `${planeWidthIn}in plane`;
-      /* The boards do reach past the figure's own ends — that is what the
-         clearance is for — but never past the clearance itself. */
-      expect(worstBite, label).toBeGreaterThan(0);
-      expect(worstBite, label).toBeLessThanOrEqual(ROOF_BRACE_END_CLEARANCE_IN + 1e-9);
-      /* A joist's thickness at each end, along the board: 3in at its
-         flattest, more as the figure steepens. */
-      expect(worstTrim, label).toBeGreaterThan(2 * JOIST_2X6_THICKNESS_IN);
-      expect(worstTrim, label).toBeLessThan(8);
+      /* Float dust only — the inset is solved to a fixed point, so a corner
+         lands on the bay boundary to about 1e-15 rather than exactly. */
+      expect(Math.max(...braced.perPanel.map((e) => e.lidBiteIn)), label).toBeLessThan(1e-9);
+      expect(Math.max(...braced.perPanel.map((e) => e.trimmedIn)), label).toBeLessThan(1e-9);
     }
   });
 });
@@ -420,11 +438,13 @@ describe("the signature is what groups two braced panels", () => {
     };
   };
 
-  it("joins the repeat when two bays land on the same stations", () => {
+  it("makes every panel of one width ONE part", () => {
     const { bracing } = uniformPlane(16);
-    expect(bracing.bayCount).toBe(2);
     expect(bracing.perPanel).toHaveLength(16);
-    expect(new Set(bracing.perPanel.map((p) => p.signature)).size).toBe(8);
+    /* ⚠ Was 8 of 16, when a repeat needed two bays to land on the same
+       stations. A per-panel figure needs no coincidence: equal widths in the
+       same run carry equal boards, always. */
+    expect(new Set(bracing.perPanel.map((p) => p.signature)).size).toBe(1);
   });
 
   /* Two panels with the same signature must carry byte-identical boards, or
@@ -444,7 +464,7 @@ describe("the signature is what groups two braced panels", () => {
         expect(shape).toBe(prior);
       }
     }
-    expect(matches).toBe(8);
+    expect(matches).toBe(15);
   });
 
   /**
@@ -461,7 +481,7 @@ describe("the signature is what groups two braced panels", () => {
    * should not change quietly, and because the lever that would reduce it is
    * a choice about the panel module, not about the bracing.
    */
-  it("makes every panel of a real run its own part, and says how many", () => {
+  it("makes a real run THREE parts, where the X made it twenty-five", () => {
     const spanIn = Math.hypot(12, 4) * 12;
     const widths = realRunWidths(576);
     const bracing = planRoofRunBracing({
@@ -473,7 +493,11 @@ describe("the signature is what groups two braced panels", () => {
     });
     expect(widths).toHaveLength(25);
     expect(bracing.bayCount).toBe(3);
-    expect(new Set(bracing.perPanel.map((p) => p.signature)).size).toBe(25);
+    /* ⚠ **25 -> 3.** The run has three distinct widths — two 15.5in edges, a
+       field of 24s and a 17in tail — and the zigzag gives each of them one
+       part, wherever along the plane it sits. */
+    expect(new Set(bracing.perPanel.map((p) => p.signature)).size).toBe(3);
+    expect(new Set(widths).size).toBe(3);
   });
 });
 
@@ -601,5 +625,58 @@ describe("the signature's own contract", () => {
     const a = piece();
     const b = piece({ figure: "carrot", x1In: 24, y1In: 68.6, x2In: 0, y2In: 51.5 });
     expect(braceSignature([a, b])).toBe(braceSignature([b, a]));
+  });
+});
+
+describe("his 5ft rule, measured rather than trusted", () => {
+  /**
+   * ⚠ **THE RULE IS A MAXIMUM, AND EQUAL BAYS ARE A DIFFERENT PLACEMENT OF
+   * IT — so it is checked by MEASURING every gap, not by reading the spacing
+   * a girt was placed at.**
+   *
+   * > *"can we continue to keep the hard rule of girts must be placed every
+   * > 3 ft or less"* — Tommy, 2026-11-21, and *"OSB girts every 5' or less"*
+   * the day after.
+   *
+   * The zigzag's bays tile the BRACED REGION, which is inset from the panel's
+   * ends — by the end clearance at both, and by the lids beyond that. So a
+   * bay height under the maximum does not by itself prove the gap from the
+   * last girt to the far lid is. Every member that runs the panel's full
+   * width is a transverse stiffener (the two end lids and the girts), and the
+   * clear run between consecutive ones is the thing his rule bounds.
+   */
+  it("noRoofGirtGapExceedsTheMaximum", () => {
+    for (const [planeWidthIn, runFt] of PLANES) {
+      const braced = braceRoofPlane(planeWidthIn, runFt);
+      for (const entry of braced.perPanel) {
+        const stiffeners = entry.panel
+          .filter((m) => /lid-(start|end)-skin/.test(m.memberId) || /^anti-twist-\d+-web$/.test(m.memberId))
+          .map((m) => memberAabbIn(m))
+          .sort((a, b) => a.z0 - b.z0);
+        const label = `${planeWidthIn}in plane, ${entry.band.name}`;
+        expect(stiffeners.length, label).toBeGreaterThan(2);
+        for (let i = 1; i < stiffeners.length; i++) {
+          const gapIn = stiffeners[i]!.z0 - stiffeners[i - 1]!.z1;
+          expect({ label, over: gapIn > ROOF_ZIGZAG_MAX_BAY_IN }).toEqual({ label, over: false });
+        }
+      }
+    }
+  });
+
+  /* And it really is close to the bound rather than trivially satisfied — a
+     panel with a girt every 6in would also pass the test above. */
+  it("uses most of the maximum it is allowed", () => {
+    const braced = braceRoofPlane(576, 12);
+    const worstIn = Math.max(
+      ...braced.perPanel.flatMap((entry) => {
+        const stiffeners = entry.panel
+          .filter((m) => /lid-(start|end)-skin/.test(m.memberId) || /^anti-twist-\d+-web$/.test(m.memberId))
+          .map((m) => memberAabbIn(m))
+          .sort((a, b) => a.z0 - b.z0);
+        return stiffeners.slice(1).map((s, i) => s.z0 - stiffeners[i]!.z1);
+      }),
+    );
+    expect(worstIn).toBeGreaterThan(ROOF_ZIGZAG_MAX_BAY_IN * 0.7);
+    expect(worstIn).toBeLessThanOrEqual(ROOF_ZIGZAG_MAX_BAY_IN);
   });
 });

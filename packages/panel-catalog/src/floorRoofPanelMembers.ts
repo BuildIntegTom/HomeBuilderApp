@@ -216,6 +216,30 @@ export interface FloorRoofPanelOptions {
    */
   avoidGirtZBandsIn?: readonly (readonly [number, number])[];
   /**
+   * ⚠ **EXPLICIT ANTI-TWIST GIRT STATIONS, which REPLACE the spacing rule
+   * for this panel** — each number is a girt's NEAR face along the span.
+   *
+   * > *"Can we do both the zig zag and OSB girts every 5' or less?"* ...
+   * > *"Equal bays sounds great"* — Tommy, 2026-11-22
+   *
+   * The roof zigzag needs its girts ON its bay boundaries, so the bracing
+   * works out where they go and hands them here rather than the panel
+   * striding them from a datum and the figure dodging whatever it finds.
+   * `planRoofZigzag` is what produces them, and it divides the clear band
+   * into EQUAL bays under his 5ft maximum.
+   *
+   * ⚠ **Given, the dodge does not run at all**: there is nothing to dodge,
+   * because an odd traverse count already keeps every diagonal off every
+   * girt. `shiftedCount` and `crossesBraceCount` both come out 0, which is a
+   * true report rather than a suppressed one.
+   *
+   * ⚠ **Left out, nothing changes**: every floor panel, and any roof panel
+   * whose run refuses to be braced, still strides from the datum exactly as
+   * before. A station outside the lid is dropped here the same way the
+   * stride's would be, so a caller cannot push a girt into an end lid.
+   */
+  girtStationsIn?: readonly number[];
+  /**
    * ⚠ **A MITRED SPAN END — the panel cut on an angle IN PLAN, so the deck
    * stops at the building instead of at its bounding box.**
    *
@@ -1975,6 +1999,45 @@ export function planFloorRoofGirtStationsIn(
  * ⚠ It strips a roof's plan mitre the same way the builder does, so it does
  * not matter whether a caller hands it the raw options or the stripped ones.
  */
+/**
+ * ⚠ **The stations a caller GAVE, filtered rather than strided** — see
+ * `FloorRoofPanelOptions.girtStationsIn`.
+ *
+ * A given station is dropped, never moved, when it would run into an end lid
+ * or into a structural girt: the caller that produced it (the roof zigzag)
+ * owns where its bays are, and silently nudging one would put a girt off the
+ * bay boundary its diagonals terminate at, which is exactly the disagreement
+ * `girtStationsIn` exists to prevent. Nothing is ever SHIFTED here, so
+ * `shiftedIn` is 0 on every station and `crossesBrace` is always false.
+ */
+export function givenFloorRoofGirtStationsIn(
+  stationsIn: readonly number[],
+  ownThicknessIn: number,
+  ctx: FloorRoofGirtStationContext,
+): FloorRoofGirtStationPlan {
+  const tolerance = 1e-9;
+  const stations: FloorRoofGirtStation[] = [];
+  let droppedCount = 0;
+
+  for (const zIn of [...stationsIn].sort((a, b) => a - b)) {
+    /* The same two bounds the stride answers to: clear of the start lid (and
+       of a structural girt there, which the datum already allows for) and
+       clear of the far lid. */
+    const clearsLid =
+      zIn >= ctx.datumIn - tolerance && zIn + ownThicknessIn <= ctx.lidStartsAtIn + tolerance;
+    const clearsGirts = ctx.dropBandsIn.every(
+      ([aIn, bIn]) => zIn + ownThicknessIn <= aIn + tolerance || zIn >= bIn - tolerance,
+    );
+    if (!clearsLid || !clearsGirts) {
+      droppedCount += 1;
+      continue;
+    }
+    stations.push({ zIn, targetIn: zIn, shiftedIn: 0, crossesBrace: false });
+  }
+
+  return { stations, droppedCount };
+}
+
 export function floorRoofGirtStationPlans(options: FloorRoofPanelOptions): {
   antiTwist: FloorRoofGirtStationPlan;
   /** Floors only — *"I guess we dont need blocking between the girts on the roofs."* */
@@ -2073,12 +2136,19 @@ export function floorRoofGirtStationPlans(options: FloorRoofPanelOptions): {
     shiftBandsIn: o.avoidGirtZBandsIn ?? [],
   };
 
+  const antiTwistThicknessIn = ANTI_TWIST_WEB_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+
+  /* ⚠ **GIVEN STATIONS REPLACE THE STRIDE ENTIRELY** — see
+     `girtStationsIn`. They are still filtered against the lid and against the
+     structural girts, so this is a different PLACEMENT rule rather than an
+     escape from the panel's own geometry. */
+  const antiTwist: FloorRoofGirtStationPlan =
+    o.girtStationsIn === undefined
+      ? planFloorRoofGirtStationsIn(ANTI_TWIST_SPACING_IN, antiTwistThicknessIn, girtStationCtx)
+      : givenFloorRoofGirtStationsIn(o.girtStationsIn, antiTwistThicknessIn, girtStationCtx);
+
   return {
-    antiTwist: planFloorRoofGirtStationsIn(
-      ANTI_TWIST_SPACING_IN,
-      ANTI_TWIST_WEB_THICKNESS_IN + PLATE_2X4_THICKNESS_IN,
-      girtStationCtx,
-    ),
+    antiTwist,
     blocking:
       o.kind === "floor"
         ? planFloorRoofGirtStationsIn(BLOCKING_SPACING_IN, PLATE_2X4_WIDTH_IN, girtStationCtx)

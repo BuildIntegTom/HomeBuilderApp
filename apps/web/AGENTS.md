@@ -803,6 +803,18 @@
   widths and spans. **When a test fails on a count rather than a value, ask
   what the count was standing in for before you re-pin it.**
 
+- **2026-11-22, the roof zigzag replacing the carrot: ZERO delta.** **188
+  problems**, 141 errors / 47 warnings, every rule byte-identical
+  (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
+  `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12,
+  `immutability` 1, `purity` 1). Verified as a tuple-level diff against the
+  previous run's JSON rather than a count comparison: 0 added, 0 removed.
+
+  ⚠ **The run before it was 191, and all three were avoidable.** See the
+  lint-diff note above. A new module in `packages/` is not linted by this
+  gate at all — only `apps/web` is — so `roofZigzagBracing.ts` contributed
+  nothing either way.
+
 - **2026-11-22, the roof brace's face: ZERO delta.** **188 problems**,
   141 errors / 47 warnings, every rule byte-identical
   (`preserve-manual-memoization` 83, `no-unused-vars` 35, `refs` 29,
@@ -862,6 +874,36 @@
   = -1e9;` was sitting in `floorRoofPanelMembers.ts` afterwards. Two habits:
   give `subprocess.run` a `timeout=` so a hang counts as caught, and **`git
   status` the tree after killing any script that edits files.**
+
+- **A CENTRELINE IS NOT A BOARD, and a geometric argument about LINES has to
+  be re-checked against the SOLID** (2026-11-22, the roof zigzag). The whole
+  design rested on "an odd number of traverses per bay leaves the chain on the
+  opposite joist, so no diagonal ever lands on a girt". True of the
+  centrelines. False of the boards: a piece is `PLATE_2X4_WIDTH_IN` across, so
+  each end's corners run `(width/2)/cos(angle)` — 2.14in at 36deg — further
+  along the span than its endpoint does, straight into the girt. **24
+  brace-against-girt pairs per group on the Tank, invisible to every
+  centreline test.** Whenever a claim is about where lines meet, ask what the
+  material around them is doing.
+
+- **AN UNCONVERGED FIXED POINT READS AS A COLLISION** (same stride). The inset
+  that holds a board off a girt depends on the angle and the angle on the
+  inset, so it was iterated four times. That leaves a residual around 1e-5in,
+  which sounds like nothing — and is not, because `overlappingMemberPairs`
+  forgives a shared face only within **1e-6**. Every bay boundary reported an
+  overlap, all of them **0.0000in deep**. Fixing n first and iterating the
+  inset alone makes the map a contraction; it then lands on the exact flush
+  butt the joint is supposed to be. **If a solver feeds a tolerance-based
+  check, converge it rather than iterating a fixed count.**
+
+- **DIFF THE LINT JSON, DO NOT EYEBALL THE COUNTS** (same stride). The gate
+  came back 191 against a baseline of 188, all `no-unused-vars`. Two were real
+  (an import the rewrite orphaned, a map callback's unused index). The third
+  was **a temp probe file left behind in `apps/web/app`** — which had also
+  been quietly inflating the test count. Counting per rule would never have
+  found it; a `Counter` diff of the two runs' JSON named all three in one
+  step, including the file that should not have existed. **Keep the previous
+  run's JSON and diff (file, rule, message) tuples.**
 
 - **A COMMENT CAN STATE THE DEFECT AS ITS PREMISE, and then every test agrees
   with it** (2026-11-22, the roof brace's face). Every roof brace board in

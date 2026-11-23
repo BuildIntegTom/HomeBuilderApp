@@ -1,16 +1,15 @@
 import {
   roofBracePanelBandsFromWidths,
-  sliceRoofPlaneBracing,
-  snapRoofBracingToSeams,
 } from "@building-integrity/geometry";
 import {
   buildFloorRoofPanelMembers,
   buildRoofBraceMembers,
   JOIST_2X6_THICKNESS_IN,
   PLATE_2X4_THICKNESS_IN,
-  roofBracePiecesForPanel,
   roofBraceTopFaceClearZIn,
   ROOF_BRACE_END_CLEARANCE_IN,
+  planRoofZigzag,
+  ROOF_ZIGZAG_MAX_BAY_IN,
   type FloorRoofPanelOptions,
   type PanelMember,
   type RoofBracePiece,
@@ -67,6 +66,16 @@ export interface RoofRunPanelBracing {
    * the first copy, and the other copies sit in other bays.
    */
   signature: string;
+  /**
+   * ⚠ **WHERE THIS PANEL'S ANTI-TWIST GIRTS MUST GO** — the zigzag's bay
+   * boundaries, each one a girt's near face in the panel's own span.
+   *
+   * It travels with the boards because the two are one decision: a girt off
+   * its bay boundary is a girt a diagonal runs into. The takeoff hands this
+   * to `FloorRoofPanelOptions.girtStationsIn`, which REPLACES the spacing
+   * rule for the panel.
+   */
+  girtStationsIn: number[];
   /** How far the worst board reaches past the braced region, into an end lid. */
   lidBiteIn: number;
   /** The most any one piece lost to the joists it now bears on. */
@@ -141,7 +150,12 @@ export function planRoofRunBracing(input: RoofRunBracingInput): RoofRunBracing {
      numbers can differ by float dust once a tail has been redistributed, and a
      throw here is a throw inside a render. The widths are what the panels
      really are, so they are what the plane is. */
-  const planeWidthIn = panelWidthsIn.reduce((sum, w) => sum + w, 0);
+  /* ⚠ **The widths still become BANDS even though nothing is sliced any
+     more.** `roofBracePanelBandsFromWidths` is what turns a list of widths
+     into each panel's own `atIn` and `widthIn`, and the zigzag needs the
+     width to know its clear span. The plane's own total is no longer needed
+     at all — a per-panel figure never has to tile the plane exactly, which
+     is one whole class of float-dust refusal gone. */
   const bands = roofBracePanelBandsFromWidths([...panelWidthsIn]);
 
   /* ⚠ **THE CLEAR BAND COMES FIRST AND THE FIGURE IS BUILT ON IT.** Building
@@ -180,12 +194,34 @@ export function planRoofRunBracing(input: RoofRunBracingInput): RoofRunBracing {
     );
   }
 
-  const snap = snapRoofBracingToSeams(planeWidthIn, regionIn, bands);
-  const sliced = sliceRoofPlaneBracing(snap, bands);
+  /* ⚠ **ONE BAND FOR THE WHOLE RUN, THOUGH THE FIGURE IS NOW PER PANEL.**
+     Each panel could lay its zigzag in its own clear band, and on every roof
+     this app draws that would be the same band anyway — the band is capped by
+     the pitch and the depth, not by the width. Using the run's intersection
+     buys something a per-panel band would not: every panel's bay boundaries
+     land at the same z, so the girts form CONTINUOUS LINES across the plane
+     rather than stepping panel by panel. */
+  const zigzags = bands.map((band) =>
+    planRoofZigzag({
+      clearXFromIn: JOIST_2X6_THICKNESS_IN,
+      clearXToIn: band.widthIn - JOIST_2X6_THICKNESS_IN,
+      regionFromIn,
+      regionToIn,
+      /* ⚠ Every panel starts its chain at the SAME joist, and that is not an
+         oversight. A zigzag already contains both directions inside one panel
+         — traverse 1 leans one way, traverse 2 the other — so a panel is
+         balanced on its own and mirroring its neighbour would buy nothing but
+         a second part number for every width. */
+      startAtFarJoist: false,
+    }),
+  );
+
+  const firstRefusal = zigzags.find((z) => z.refusal !== null)?.refusal ?? null;
+  if (firstRefusal !== null) return noBracing(firstRefusal);
 
   const perPanel = bands.map((band, panelIndex) => {
-    const pieces = roofBracePiecesForPanel(sliced.slices, panelIndex, band.atIn);
-    const plan = buildRoofBraceMembers(pieces, {
+    const zigzag = zigzags[panelIndex]!;
+    const plan = buildRoofBraceMembers(zigzag.pieces, {
       panelDepthIn: depthIn,
       panelSpanIn: spanIn,
       regionFromIn,
@@ -196,22 +232,34 @@ export function planRoofRunBracing(input: RoofRunBracingInput): RoofRunBracing {
     return {
       panelIndex,
       members: plan.members,
-      signature: braceSignature(pieces),
+      signature: braceSignature(zigzag.pieces),
+      girtStationsIn: zigzag.girtStationsIn,
       lidBiteIn: plan.lidBiteIn,
       trimmedIn: plan.trimmedIn,
       withinPanelSpan: plan.withinPanelSpan,
     };
   });
 
+  const angles = zigzags.map((z) => z.angleDeg);
+  const widest = zigzags.reduce((a, b) => (b.pieces.length > a.pieces.length ? b : a), zigzags[0]!);
+
   return {
     perPanel,
     refusal: null,
-    why: snap.why,
-    snapped: snap.snapped,
-    bayCount: snap.choice.bays,
-    minMemberAngleDeg: snap.minMemberAngleDeg,
-    maxMemberAngleDeg: snap.maxMemberAngleDeg,
-    maxDriftIn: snap.maxDriftIn,
+    why:
+      `Each panel carries a continuous zigzag between its two joists, in ${widest.bayCount} bay${
+        widest.bayCount === 1 ? "" : "s"
+      } of ${widest.bayHeightIn.toFixed(1)}in — equal bays under the ${ROOF_ZIGZAG_MAX_BAY_IN}in maximum rather than a stride from a datum, so every bay in a panel is the same height and every board in it is the same board. ` +
+      `An anti-twist girt sits on every bay boundary, and each bay is cut into an ODD number of traverses (${
+        widest.traversesPerBay
+      } here) so its chain enters at one corner and leaves at the diagonally opposite one — which is what keeps every diagonal off every girt. ` +
+      `Angles run ${Math.min(...angles).toFixed(1)}-${Math.max(...angles).toFixed(1)}deg off the eave.`,
+    snapped: true,
+    bayCount: widest.bayCount,
+    minMemberAngleDeg: Math.min(...angles),
+    maxMemberAngleDeg: Math.max(...angles),
+    /* Nothing drifts: every joint is a joist corner by construction. */
+    maxDriftIn: 0,
     regionFromIn,
     regionToIn,
   };

@@ -8,7 +8,6 @@ import {
 } from "@building-integrity/geometry";
 import {
   overlappingMemberPairs,
-  roofBraceGirtAvoidBandsIn,
   roofTopAboveRooflineIn,
 } from "@building-integrity/panel-catalog";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
@@ -133,7 +132,7 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
     }
   });
 
-  it("⚠ a unique panel is a unique sheet: 61 panels on this building, 24 parts", () => {
+  it("⚠ a unique panel is a unique sheet: 61 panels on this building, 7 parts", () => {
     const takeoff = computeDeckPanelTakeoff(input());
     expect(takeoff.instances.filter((i) => i.kind === "floor")).toHaveLength(21);
     /* Both roof planes are the same length, so their 20 panels are 20 of the
@@ -149,31 +148,40 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
        per position along a plane, because each carries a different slice of
        one figure laid across the whole plane: a leg of the X climbs
        continuously from eave corner to ridge corner, so the board in the
-       third panel is at a different height from the board in the fourth and
-       the two are not interchangeable. The two planes still pair up, which is
-       why every roof group holds an even number of copies.
+       third panel is at a different height from the board in the fourth.
 
-       Nothing is wrong with it — a braced diaphragm's panels genuinely are
-       not interchangeable — but it is 20 shop sheets for a roof that was 2,
-       and that is a consequence worth seeing move rather than discovering on
-       a printed packet. The lever that would shrink it is the panel module,
-       not the bracing: equal panels in equal bays make the figure repeat bay
-       for bay (see `roofBraceAssembly.test.ts`). */
+       ⚠ **AND THE ZIGZAG GAVE IT BACK: 24 parts to 7, the roof's 20 to 3.**
+       The figure is per PANEL now, laid in the panel's own clear width
+       between its own joists, so two panels of the same width carry boards
+       identical to the thousandth of an inch wherever they sit along the
+       plane. What used to be 20 shop sheets for a roof is 3 — one per
+       distinct width. The lever really was the figure rather than the module,
+       which is the opposite of what this comment used to say. */
     expect(takeoff.groups.filter((g) => g.kind === "floor")).toHaveLength(4);
-    expect(takeoff.groups.filter((g) => g.kind === "roof")).toHaveLength(20);
-    expect(takeoff.groups).toHaveLength(24);
+    expect(takeoff.groups.filter((g) => g.kind === "roof")).toHaveLength(3);
+    expect(takeoff.groups).toHaveLength(7);
   });
 
   /* ⚠ **THE BRACING REACHES THE PANELS, which is the whole point of the
      wiring and the one thing no package test could check.** */
-  it("⚠ hands every roof panel four brace boards, and no floor panel any", () => {
+  it("⚠ hands every roof panel a whole zigzag, and no floor panel any", () => {
     const takeoff = computeDeckPanelTakeoff(input());
+    /* ⚠ **NOT FOUR ANY MORE, and the number is no longer the point.** His
+       carrot pattern happened to put four pieces in every panel; a zigzag
+       puts an ODD count in every bay and as many bays as the span needs, so
+       a 15.5in edge panel takes 10 here and a 24in field panel 6. What has
+       to hold is that every roof panel has a chain and no floor panel has
+       anything. */
     for (const group of takeoff.groups) {
-      expect({ kind: group.kind, braces: group.braceMembers.length }).toEqual({
+      const braces = group.braceMembers.length;
+      expect({ kind: group.kind, braced: braces > 0 }).toEqual({
         kind: group.kind,
-        braces: group.kind === "roof" ? 4 : 0,
+        braced: group.kind === "roof",
       });
     }
+    expect(
+      takeoff.groups.filter((g) => g.kind === "roof").map((g) => g.braceMembers.length),
+    ).toEqual([6, 6, 6]);
     /* Every board lies flat in the panel's outermost 1 1/2in — its exterior
        face, which on a roof panel is the top — so the sheathing lies flat
        over both the brace and the joists.
@@ -200,65 +208,56 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
      passed, because the end-to-end brace test builds its own options and the
      catalog's tests call the planner directly. The whole feature could have
      been unwired and the suite would have stayed green. */
-  it("⚠ wires the brace bands into the panel the takeoff BUILDS", () => {
+  it("⚠ wires the GIRT STATIONS into the panel the takeoff BUILDS", () => {
     const takeoff = computeDeckPanelTakeoff(input());
     const roof = takeoff.groups.filter((g) => g.kind === "roof");
     expect(roof.length).toBeGreaterThan(0);
 
+    /* ⚠ **THE SEAM MOVED, AND THE REASON THIS TEST EXISTS DID NOT.** It used
+       to assert `avoidGirtZBandsIn`, because the girts dodged the bracing.
+       The zigzag places the girts instead, so what has to reach `options` is
+       `girtStationsIn` — and `options` is what builds `members`, so a panel
+       whose stations never arrived would draw its girts on the plain stride
+       and put one through a diagonal. The mutation run that created this test
+       deleted the one wiring line and left every other test green; the same
+       deletion has to fail here. */
+    const byRun = new Map(takeoff.roofBracing.map((r) => [r.runIndex, r]));
     for (const group of roof) {
-      /* The bands reach `options`, which is what builds `members`. */
-      expect(group.options.avoidGirtZBandsIn, group.key).toEqual(
-        roofBraceGirtAvoidBandsIn(group.braceMembers),
-      );
+      const report = byRun.get(group.runIndex);
+      const planned = report?.perPanel.find((p) => p.members.length === group.braceMembers.length);
+      expect(group.options.girtStationsIn, group.key).toBeDefined();
+      expect(planned, group.key).toBeDefined();
+      expect([...group.options.girtStationsIn!], group.key).toEqual(planned!.girtStationsIn);
     }
-    /* ⚠ And the result is measurable in the BOARDS, which is the half that
-       cannot be faked: every girt still sharing volume with a brace is on a
-       panel that REPORTS having nowhere to put it. A girt crossing a brace
-       silently is the defect this asserts against. */
-    const girtBracePairsOf = (group: (typeof roof)[number]) => {
+
+    /* ⚠ And the CONSEQUENCE in the members, which is the half that cannot be
+       faked: no anti-twist girt shares volume with a brace board on any roof
+       panel. That is what the stations are FOR. The dodge reports nothing
+       moved and nothing is stuck, because there was never anything in the
+       way. */
+    for (const group of roof) {
       const all = [...group.members, ...group.braceMembers];
-      const ids = all.map((m) => m.memberId);
-      return overlappingMemberPairs(all).filter((pair) => {
-        const hit = ids.filter((id) => pair.includes(id));
-        return hit.some((id) => id.startsWith("anti-twist")) && hit.some((id) => id.startsWith("roof-brace"));
-      }).length;
-    };
-    for (const group of roof) {
-      const pairs = girtBracePairsOf(group);
-      if (pairs > 0) expect(group.girtDodge.crossesBraceCount, group.key).toBeGreaterThan(0);
-      if (group.girtDodge.crossesBraceCount === 0) expect(pairs, group.key).toBe(0);
-    }
-
-    /* ⚠ **MEASURED. THE STUCK CASE IS COMMON NOW, AND THIS COMMENT USED TO
-       SAY THE OPPOSITE.** It read *"this fixture is the only place the stuck
-       case shows up — none of the eight Home templates reaches it"*, which was
-       true while the boards were being laid on the panel's INTERIOR face. On
-       the real exterior face the clear band starts 2.37in later at the eave,
-       so the figure covers more of a shorter plane, and the case now reaches
-       FIVE of the nine Home template options: the Multiplex (16 stuck girts in
-       the building), both Octagons and both Courtyards. The Tank, the Tiny
-       House and the Cindy still reach none.
-
-       Three panel types on this 40 x 20 fixture, one girt each, 6 member pairs
-       — a girt at a bay's centre, where the figure's four boards tile its whole
-       span with no gap to move into. The spacing rule wins there and the
-       crossing is reported rather than the girt dropped. Tommy's standing
-       answer for these is to notch the girt, which is not built yet. */
-    const stuckPanels = roof.filter((g) => g.girtDodge.crossesBraceCount > 0);
-    expect(stuckPanels.map((g) => g.girtDodge.crossesBraceCount)).toEqual([1, 1, 1]);
-    expect(roof.reduce((n, g) => n + girtBracePairsOf(g), 0)).toBe(6);
-
-    /* ⚠ Girts really did MOVE to achieve that — a build that simply placed
-       no girts would also score zero above. */
-    const shifted = roof.reduce((n, g) => n + g.girtDodge.shiftedCount, 0);
-    const girts = roof.reduce((n, g) => n + g.girtDodge.antiTwistCount, 0);
-    expect(girts).toBeGreaterThan(0);
-    expect(shifted).toBeGreaterThan(0);
-    /* No floor panel has anything to dodge, so none of them moved. */
-    for (const group of takeoff.groups.filter((g) => g.kind === "floor")) {
-      expect(group.options.avoidGirtZBandsIn, group.key).toBeUndefined();
+      const girtBrace = overlappingMemberPairs(all).filter(
+        (pair) => /anti-twist/.test(pair) && /roof-brace/.test(pair),
+      );
+      expect(girtBrace, group.key).toEqual([]);
       expect(group.girtDodge.shiftedCount, group.key).toBe(0);
       expect(group.girtDodge.crossesBraceCount, group.key).toBe(0);
+      expect(group.girtDodge.antiTwistCount, group.key).toBeGreaterThan(0);
+    }
+
+    /* ⚠ **THE DODGE IS OFF, NOT BROKEN.** A roof panel placing its girts from
+       the zigzag has no bands to avoid, so `avoidGirtZBandsIn` is absent — a
+       different thing from being present and empty, and the distinction is
+       what keeps `planFloorRoofGirtStationsIn` out of the path entirely. */
+    for (const group of roof) {
+      expect(group.options.avoidGirtZBandsIn, group.key).toBeUndefined();
+    }
+
+    /* No floor panel has either, and its girts still come from the stride. */
+    for (const group of takeoff.groups.filter((g) => g.kind === "floor")) {
+      expect(group.options.avoidGirtZBandsIn, group.key).toBeUndefined();
+      expect(group.options.girtStationsIn, group.key).toBeUndefined();
     }
   });
 
@@ -272,12 +271,12 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
     const takeoff = computeDeckPanelTakeoff(input());
     for (const group of takeoff.groups.filter((g) => g.kind === "floor")) {
       expect(group.key).not.toContain("nobrace");
-      expect(group.key).not.toContain("carrot");
+      expect(group.key).not.toContain("zigzag");
       expect(group.key.endsWith("square")).toBe(true);
     }
     /* And a braced one really does carry it, or the key would be a lie. */
     for (const group of takeoff.groups.filter((g) => g.kind === "roof")) {
-      expect(group.key).toContain("carrot");
+      expect(group.key).toContain("zigzag");
     }
   });
 
@@ -288,7 +287,11 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
     for (const report of takeoff.roofBracing) {
       expect(report.refusal).toBeNull();
       expect(report.snapped).toBe(true);
-      expect(report.boardCount).toBe(report.panelCount * 4);
+      /* ⚠ Was `panelCount * 4`, his carrot pattern's own property. A zigzag's
+         count follows the panel's width and span, so the report's own sum is
+         what it has to agree with. */
+      expect(report.boardCount).toBe(report.perPanel.reduce((n, pp) => n + pp.members.length, 0));
+      expect(report.boardCount).toBeGreaterThan(report.panelCount);
       /* His band, and the sentence that says what snapping spent. Never a
          verdict: a sentence an engineer reads must not say pass or fail. */
       expect(report.minMemberAngleDeg).toBeGreaterThan(0);
