@@ -2131,7 +2131,39 @@ export default function Building3DView({
              shed Tiny House was 3.2in at the tile's short edge. `gableWindowFit`
              owns the decision for all three drawings: the panel keeps 16in at
              its SHORT edge and the opening is what is left under it. */
-          const fit = gableWindowFit(leftLocalIn, rightLocalIn, windowHeightIn);
+          /* ⚠ **AND IT IS ASKED ON THE ROOFLINE, NOT ON THE LIFTED TOP —
+             2026-11-23.** `leftLocalIn`/`rightLocalIn` carry `appliedLiftIn`,
+             which is this view's own business: it raises a gable panel's top
+             plate so it finishes flush with the roof's TOP surface. Handing
+             those to `gableWindowFit` made this view answer a different
+             question from the other two, which read the tile's own edges
+             (`panelInstances`: `tile.leftEdgeHeightIn - gableEaveHeightIn`).
+
+             The lift is ~16 3/8in on a 4:12 roof at 15.5in, and it lands on
+             BOTH edges, so the short edge looks a lift taller than it is and
+             the opening is allowed to grow into room that is roof thickness
+             rather than panel. Measured on the Tiny House's east gable window
+             (tile rising 62.75in / 52.75in above the eave): the elevation and
+             the shop sheet put its head at **36.75in** and this view put it at
+             **48in** — an opening 11 1/4in taller than the one being
+             fabricated, with the panel above it reshaped to match.
+
+             ⚠ **The unlifted basis is the right one and that is already on
+             record** — `seedGableWindows`' own guard judges tiles on it, and
+             `gableWindowRooflineReviewEntries` in page.tsx exists to say why
+             the lifted basis is the wrong one to judge a window on.
+
+             ⚠ **The CAP still measures lifted**, below: where the opening's
+             head goes is a fabrication question every drawing must answer the
+             same way, but how tall the panel over it is drawn is this view's
+             own, and it has to reach the lifted roofline like every other
+             tile in the row or it would leave the gap his 2026-11-19 note was
+             about. Two different questions, two different bases, on purpose. */
+          const fit = gableWindowFit(
+            tile.leftEdgeHeightIn - gableEaveHeightIn,
+            tile.rightEdgeHeightIn - gableEaveHeightIn,
+            windowHeightIn,
+          );
           const roTopZIn = fit.roTopZIn;
           const lowerMembers = buildOpeningAssemblyMembers(
             tile.widthIn,
