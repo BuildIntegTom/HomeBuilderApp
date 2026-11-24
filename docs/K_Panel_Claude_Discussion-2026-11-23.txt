@@ -1,0 +1,510 @@
+
+We are part of Building Integrity LLC, which makes straw panels similar to the european company ecococon. Are you familiar with straw panels as building components?
+Yes, I know them reasonably well. EcoCocon is probably the best-known example. Their panels are a prefabricated timber frame packed with straw compressed to a high density, about 100–110 kg/m³. The panels are around 40 cm thick and use no glues or binders. On site they’re joined into a wall system. A typical assembly is:
+Inside: clay plaster, often applied straight onto the straw. 
+Outside: wood fiber board, then a lime render or a ventilated rainscreen. 
+The approach has some well-known strengths:
+Insulation in the structure: The straw core gives roughly passive-house-level wall performance (U-values around 0.12 W/m²K) without a separate insulation layer. 
+Breathable walls: The assembly is vapor-open and moisture-buffering, so it usually needs no plastic vapor barrier. 
+Fire resistance: Once plastered, densely compressed straw chars instead of burning freely. Tested assemblies have reached fire ratings of 90–120 minutes. 
+Low embodied carbon: The panels store carbon, which is a big part of the sales pitch. 
+Factory precision: Prefab panels go up quickly and consistently compared with site-built straw bale. 
+The usual challenges are moisture control during transport, storage and construction, and detailing at openings and the base of the wall. In the US there’s also getting code officials comfortable with it. The IRC has had a straw bale appendix (AS) since 2015, but prefab panels often still need testing data or engineering judgment.
+Is this related to the wood-framed production line you’ve been working on, where parts get moved and flipped between stations? What do you want to dig into: product design, manufacturing, testing and certification, or marketing against conventional framing?
+There is a product design question we have been wrestling with: Currently we use plywood or metal straps to resist the lateral forces encountered in a building (wind, earthquake forces and so on). Ecococon uses what we are calling "K Panels" to achieve lateral shear strength, and also use a truss-like system for header panels. We are using headers made of 2x6 and 2x8 lumber, at greater expense. I would like to understand how to analyze the strength of a K panel used for lateral bracing. First, help me outline the process that we will use to determine these parameters.
+Here’s the outline I’d use. It goes from the forces the building puts on the wall, to how each panel carries them, to proving the numbers to a building official.
+1. Define the demand
+Work out wind and seismic loads under ASCE 7 for the building types you sell: risk category, wind speed and exposure, and Seismic Design Category. 
+Distribute those loads through the roof and floor diaphragms to each braced wall line. The result is a design shear per wall line (lb/ft), plus overturning at each line. 
+Choose ASD or LRFD now and stick with it. Load duration factor C_D = 1.6 applies to wind and seismic in ASD. 
+2. Define the panel and its load path
+Draw the actual geometry: plates, studs, diagonals, where the diagonals meet, and every connection. 
+Trace the load path: diaphragm → top plate or collector → braces → chords (end studs) → bottom plate → anchor bolts and hold-downs → foundation. Each link needs a number. 
+Decide what the straw is assumed to do. For the analysis, assume it carries nothing. Test later to see whether it adds stiffness or holds the braces against buckling. 
+3. Idealize the panel as a truss and solve the forces
+Treat it as a pin-jointed truss. A unit horizontal load V at the top gives the brace forces, chord tension and compression (roughly V·h/L), and the plate forces. 
+The main geometric advantage of a K: each diagonal spans only half the height, so it sits at a shallower angle. Brace force scales with 1/cos θ. On a 1.2 × 2.7 m panel, a single full-height diagonal is at about 66° (force ≈ 2.5V). A K diagonal is at about 48°, which roughly halves the force per brace. 
+The main weakness: the diagonals meet partway up a stud, not at a corner. If one brace buckles or its joint slips, the stud takes a sideways load at mid-height and has to resist it in bending. Check that case explicitly. 
+Load reverses, so every brace must work in both tension and compression. 
+4. Check the members (NDS)
+Tension: net section at bolt holes and fastener groups. 
+Compression: column stability (C_P) using the brace’s unbraced length. 
+Studs: combined bending and axial load where the K joint lands mid-height, added to their gravity load. 
+Plates: tension and compression as collectors. 
+5. Design the connections (usually what governs)
+Brace-end joints using nails, screws, bolts or metal plates, sized with the NDS yield equations. Check end and edge distances, the number of fasteners, and any eccentricity where members meet off-center. 
+Avoid joints that rely on toe-nailing or on screws pulling straight out of the wood (withdrawal). 
+Size the hold-downs for chord uplift (net of dead load), anchor bolts for sliding, and the panel-to-panel splines that transfer shear along the wall. 
+6. Check stiffness and drift
+Panel deflection = truss member deformation + connection slip. In timber trusses the slip dominates, often by a wide margin. The NDS and Eurocode 5 both give load-slip values for fasteners. 
+Compare the story drift to the ASCE 7 limits. Also compare the panel’s stiffness to the plywood walls it might share a wall line with, because stiffer walls attract more of the load. 
+7. Confirm the code path for seismic (the biggest non-math hurdle)
+Wood shear walls sheathed with structural panels are a listed system in ASCE 7 Table 12.2-1, with R = 6.5. As far as I know, K-braced timber frames aren’t listed. Possible routes: 
+Wind-governed or low-SDC markets: an engineered design under the IBC alternative-means provision (104.11) may be enough. 
+Unlisted-system category: use a conservative category such as “shear panels of all other materials,” which has a low R and height limits. 
+Full qualification: run a test program like the ICC-ES AC130 approach for prefabricated wood shear panels, which is how products such as Simpson Strong-Wall got listed, or the FEMA P695 method for a new system. 
+Ask EcoCocon what their ETA (European technical approval) is based on. It may cover only Eurocode 5 analysis and wind. Their testing approach would be a useful model. 
+8. Test to confirm and calibrate
+Connection tests: load-slip curves and capacity for your actual brace joints. 
+Full-scale racking tests (ASTM E564 static, ASTM E2126 cyclic): with and without straw, and with plaster if it’s always present. 
+From the tests, get capacity, stiffness, ductility and failure mode, then derive allowable shear per panel with the right safety factors. Compare against your current plywood or strap panels. 
+9. Package the results
+A design table for each panel type: allowable shear, stiffness, hold-down force, required connections, and any aspect-ratio limits. 
+An engineer of record signs it, and an evaluation report follows if you pursue one. 
+The header question can go through the same steps (truss analysis, connections, deflection, then testing) with gravity loads instead of lateral ones. It’s easier because there’s no seismic-system issue.
+A good next step is step 3: if you can send the K panel’s dimensions, where the diagonals meet, and how the joints are fastened, I can work out the member forces for a unit shear. Do you want this outline in a doc you can share with your team or engineer?
+Let's start with some basic parameters in the outline step 1:
+Your message ends at the colon, so I think the parameters you meant to paste didn’t come through. Here’s what step 1 needs, with typical starting values, so you can fill in or correct them.
+One decision comes first. Because you sell a product, step 1 is about the range of conditions your panel should be rated for, not one building. For example: “Rated up to 140 mph wind, Exposure C, Seismic Design Category C, buildings up to two stories.” It’s usually best to work it through for one representative building in your toughest target market, then widen the range.
+Code basis
+Parameter
+ | Typical starting value
+ | Notes
+ | 
+Code edition
+ | 2021 IBC/IRC → ASCE 7-16
+ | Check what your target jurisdictions have adopted. Some are on 2024 / ASCE 7-22.
+ | 
+Design method
+ | ASD
+ | Matches how shear wall capacities are usually published (lb/ft).
+ | 
+Risk Category
+ | II
+ | Houses and most ordinary buildings.
+ | 
+Wind
+Parameter
+ | Typical starting value
+ | Notes
+ | 
+Basic wind speed V
+ | ~105–115 mph (Midwest, Risk Cat. II)
+ | Get the exact value from the ASCE Hazard Tool for each site.
+ | 
+Exposure
+ | C (open, rural)
+ | Use B only for suburban or wooded sites. C is the safe choice for a product rating.
+ | 
+Topographic factor K_zt
+ | 1.0
+ | Higher on hills and ridges.
+ | 
+Enclosure
+ | Enclosed
+ |  | 
+Seismic
+Parameter
+ | Typical starting value
+ | Notes
+ | 
+S_S, S_1
+ | From the ASCE Hazard Tool
+ | Varies hugely. Central Missouri is low; the Bootheel (New Madrid zone) is high.
+ | 
+Site class
+ | D (default)
+ | Use this when there’s no soil report.
+ | 
+Seismic Design Category
+ | Calculated from S_DS and S_D1
+ | This is the key output. Staying in SDC A–B or C greatly simplifies the step 7 approval problem.
+ | 
+Building geometry (one representative building)
+Footprint (L × W), number of stories, wall height, roof pitch and overhangs. 
+Braced wall lines: where they are, their length, and how much of each is taken up by openings. That sets how much bracing length is available. 
+Diaphragm type: assume flexible (wood roof and floors), so loads go to each wall line by tributary area. 
+Dead loads
+Roof: about 15 psf for a typical framed roof (more for heavy roofing or a green roof). 
+Walls: this is unusual for your product. A 40 cm straw panel at about 110 kg/m³ is roughly 9 psf of straw alone. Adding the frame, wood fiber board and especially clay plaster could take the finished wall to around 20–30 psf, versus about 10 psf for a stick-framed wall. That weight increases seismic load, but it also helps resist overturning and uplift. We should weigh a real panel, or calculate its weight from your assembly. 
+From these, step 1 gives the design shear (lb/ft) and overturning at each braced wall line for wind and for seismic. The larger of the two governs. In much of Missouri I’d expect wind to govern, unless the walls are heavy and the site is in the southeast.
+Can you send a representative building (footprint, stories, wall height), its location or a target market, and your wall assembly layers? With those I’ll calculate the wind and seismic shears for each wall line.
+I am the engineer of record, a licensed professional engineer.
+Understood. Then you’ll be signing this, and I’ll talk to you as one engineer to another and skip the code basics.
+Here’s step 1 again, cut down to the decisions that actually affect the panel design:
+Product rating envelope: the maximum V and exposure, the highest SDC, and the number of stories you want the K panel rated for. That sets the target allowable unit shear, and whether step 7 is a real obstacle or can be worked around. 
+Seismic weight of the wall assembly: with clay plaster, this is the variable most likely to differ from conventional light-frame practice. If you have an as-built panel weight, or the layer thicknesses, I’ll calculate the psf. 
+Governing case: for your target markets, roughly where wind and seismic cross over. I can run envelope cases across V and S_DS once the wall weight is known. 
+Aspect ratio and design panel width: whether you’ll design on a per-panel basis (one 1.2 m module as the shear element) or on a wall-segment basis (multiple panels acting together via splines). This determines whether chord forces and hold-downs occur at every panel or only at the ends of each segment. 
+What parameters did you want to start with? Send whatever you have: envelope, weight, a representative building. I’ll get to wall-line demands and a target unit shear for the K panel to meet.
+We will do the analysis for a 115 mph basic wind speed, which covers a lot of the midwest. We will specifically ignore areas where seimsic considerations govern over wind, as that will take a special calculation. Soil site class D is ok. Topographic factor 1.0 is ok. Exposure C is conservative for more of our cases (most of our houses are in exposure B). We should use IBC 2024, ASCE 7-22 as this will apply for a long period and work in jurisdictions that are still on IBC 2021 or previous. I am most familiar with ASD design methods. If our building will be in a more restrictive category, such as 140 mph wind speed, coastal areas, seismic areas, that will need a separate calculation, or we will go back to plywood shear walls with which I am familiar. Our building footprint will vary, we should calculate a representative case: building is rectangular, 2400 square feet, 40X60 foot footprint, one story. Seismic design category will be A or B whichever is more restrictive.
+I ran the representative case. For a one-story 40×60 at 115 mph, wind is modest, and the end walls govern at about 3,830 lb ASD per wall. If the K panel ends up as an unlisted R = 2 system, though, seismic in the upper part of SDC B overtakes wind.
+Assumptions to confirm
+Plate height 10 ft, 6:12 gable roof with the ridge along the 60 ft side, so mean roof height is 15 ft. Overhangs ignored. 
+Flexible roof diaphragm, no interior shear walls, Ke = 1.0. 
+Wall dead load 28 psf. That’s my estimate: about 9 psf straw, 3 psf frame, 2 psf wood fiber board, 9 psf clay plaster and 5 psf exterior finish. A weighed panel would replace it. 
+Wind (ASCE 7-22, Ch. 28 envelope method, Exposure C)
+qh = 0.00256(0.85)(115²) = 28.8 psf. With Kd = 0.85, which 7-22 moved into the pressure equations, that’s 24.5 psf. 
+Wind perpendicular to the ridge (Case A, θ = 26.6°, coefficients interpolated between 20° and 30°): 
+Net horizontal coefficient on the walls is 0.94 in the interior zone and 1.26 in the end zone (2a = 8 ft). On the roof’s vertical projection it’s 0.35 and 0.40. 
+Diaphragm line load is 200 plf in the interior zone and 251 plf in the end zone. Both are above the 16 psf wall / 8 psf roof minimums. 
+Total is 12,420 lb (strength level). The reaction at the end-zone end wall is 6,390 lb, or 3,830 lb ASD on the 40 ft end wall. 
+Wind parallel to the ridge (Case B, end walls, gable included): total 7,230 lb, or 2,170 lb ASD on each 60 ft side wall. It doesn’t govern. 
+Torsional load cases should be exempt under Appendix D for a one-story building with a flexible diaphragm. Exposure B would cut these numbers by roughly 15–20%. 
+Seismic check
+I had a threshold wrong earlier: SDC B is 0.167 ≤ S_DS < 0.33, not up to 0.50. 
+Seismic weight W ≈ 75 kips: roof 36k, top half of the walls 28k, gables 11k. The heavy walls are almost half of it. 
+Where the seismic ASD base shear (0.7·S_DS/R·W) equals the wind ASD force, which depends on R: 
+R
+ | Short direction (end walls)
+ | Long direction (side walls)
+ | 
+6.5 (if you get equivalence to WSP shear walls)
+ | S_DS ≈ 0.92 → wind governs throughout SDC B
+ | ≈ 0.54 → wind governs
+ | 
+2 (“shear panels of all other materials,” if that’s the category you land in)
+ | S_DS ≈ 0.28 → seismic governs at the top of SDC B (4,340 lb per end wall at 0.33)
+ | ≈ 0.16 → seismic governs throughout SDC B
+ | 
+So “ignore areas where seismic governs” only works cleanly in SDC A, or if you limit the panel to S_DS ≲ 0.28 while R = 2. Alternatively, test for equivalence. The R-value question from step 7 directly changes your market envelope.
+Target capacity for the K panel (end wall, wind, 3,830 lb ASD)
+A 1.2 m module is 3.94 ft wide.
+K panels in a 40 ft end wall
+ | ASD shear per panel
+ | Unit shear
+ | Chord uplift (h/b = 2.54), before dead load
+ | 
+3
+ | 1,280 lb
+ | 325 plf
+ | 3,240 lb
+ | 
+4
+ | 960 lb
+ | 245 plf
+ | 2,430 lb
+ | 
+5
+ | 770 lb
+ | 195 plf
+ | 1,950 lb
+ | 
+6
+ | 640 lb
+ | 160 plf
+ | 1,620 lb
+ | 
+For comparison, 7/16" OSB with 8d nails at 6" on center at the edges is about 260 plf ASD (wind). So roughly 1,000 lb per panel, with chord tension around 2.5 kips, is a sensible first target for step 3. The heavy walls also help with uplift: about 28 psf × 10 ft × 3.94 ft ≈ 1,100 lb of panel self-weight is available, factored at 0.6D.
+To start step 3, I need the K-panel geometry: overall dimensions, stud and brace sizes, where the diagonals meet, and how the brace joints are fastened.
+I do not understand what this means
+"Claude wants to run a command" I do not understand
+That prompt was for the calculation in my last reply. I wrote a short Python script to check the wind and seismic numbers rather than doing the arithmetic in my head, and the app asked for your permission before running it.
+It runs in a private sandbox in Anthropic’s cloud, not on your computer, and it only did math. It didn’t read, change or send any of your files. The results are already in my previous message, so nothing is waiting on that prompt now.
+You’ll probably see the same prompt again as we go, whenever I check numbers. Approving it lets me verify the calculations, and that’s all it does. If you decline, I’ll do the math by hand in my replies, which is fine too but easier to get wrong.
+Please use Imperial units from now on, do not use metric units.
+Filing a standing preference to memory.
+Will do. Here are the metric values from earlier converted to imperial:
+Panel module width: 1.2 m ≈ 47¼ in (3.94 ft). I assume your panels are actually built to a 4 ft or 47¼ in module. Tell me which, and I’ll redo the per-panel table to match. 
+Panel thickness: 40 cm ≈ 15¾ in 
+Straw density: about 110 kg/m³ ≈ 6.9 pcf, which gives the roughly 9 psf straw weight in the wall dead load. 
+Thermal performance: U ≈ 0.12 W/m²K ≈ U-0.021 Btu/hr·ft²·°F, or about R-47. 
+For step 3, send the K-panel geometry in inches: overall dimensions, stud and brace sizes, where the diagonals meet, and how the brace joints are fastened.
+K panels will be 47.5 inches wide, 14 inches thickness, straw density 7 lbs per cubic foot, use .026 BTU/hr-ft^2
+Got it. Updated parameters:
+Width: 47.5 in (3.958 ft). Thickness: 14 in. 
+Straw weight: 7 pcf × 14/12 ft = 8.2 psf. My wall dead load estimate drops slightly to about 27 psf. That barely changes the seismic results, and wind is unaffected. 
+Thermal: U-0.026, equivalent to about R-38. 
+Revised target table for the 40 ft end wall (wind, 3,830 lb ASD, 10 ft wall height):
+K panels in end wall
+ | ASD shear per panel
+ | Unit shear
+ | Chord uplift, h/b = 2.53 (before dead load)
+ | 
+3
+ | 1,280 lb
+ | 323 plf
+ | 3,230 lb
+ | 
+4
+ | 960 lb
+ | 242 plf
+ | 2,420 lb
+ | 
+5
+ | 770 lb
+ | 194 plf
+ | 1,940 lb
+ | 
+6
+ | 640 lb
+ | 161 plf
+ | 1,610 lb
+ | 
+The panel’s own weight is about 27 psf × 10 ft × 3.96 ft ≈ 1,070 lb, or 640 lb after the 0.6D factor. Only part of that counts against the uplift at each chord, so plan on a hold-down at each chord of a K panel, or at the ends of each braced wall segment if the panels are tied together.
+For step 3, I still need the internal geometry:
+Height: 120 in, or something else? 
+Lumber sizes: studs (chords), top and bottom plates, and diagonals. With a 14 in wall, I’m guessing 2×4s set in from each face, or I-joist-style members. Tell me which. 
+K layout: where the diagonals start and meet, e.g. from both bottom corners to the midpoint of the top plate, or from the corners to the mid-height of a center stud. 
+Brace-end fastening: fastener type, size and count, and whether gusset plates are used. 
+A dimensioned sketch or photo works too, and I can read the dimensions off it.
+Height 9 feet. Lumber sizes nominal 2x4 set in from each face. K layout- from the corners to the mid-height of a center stud. Brace end fastening is something I do not yet understand. I have looked into using gusset plates, but that requires expensive tooling. Let us explore how screws can be used to fasten the diagonal braces. What would be the impact of using screws for this part? Or is there a better method available?
+With 9 ft panels the brace forces are small: about 570 lb per diagonal with four K panels in the end wall. Screws can carry that. The real issues are stiffness (slip) and fatigue under repeated load reversal, not strength. The cheapest good detail is to cut the brace ends to bear tightly into the joint and add structural screws, preferably driven at an angle.
+What I assumed for the geometry (please confirm)
+Two separate 2×4 frames, one near each face, each carrying half the panel shear. 
+Each frame has four diagonals, one from each corner, meeting at mid-height of the center stud, so it’s effectively an X brace split by the center stud. 
+Single top and bottom plates. 
+Brace run is 23 in and rise is 53¼ in, so each diagonal is about 58 in long at 67° from horizontal. 
+A correction: in my earlier outline I said the K layout gives the braces a shallower angle. In this layout it doesn’t. The angle is the same as a single full-height diagonal. The real advantage is that every load reversal puts one diagonal in tension and one in compression, so each carries about half as much as a single brace would.
+Demand at 9 ft wall height (115 mph, Exposure C)
+The end wall load drops to 3,610 lb ASD.
+K panels per end wall
+ | Shear per panel
+ | Unit shear
+ | Shear per frame
+ | Diagonal force (T or C)
+ | Chord uplift per frame
+ | 
+3
+ | 1,200 lb
+ | 304 plf
+ | 600 lb
+ | 760 lb
+ | 1,410 lb
+ | 
+4
+ | 900 lb
+ | 228 plf
+ | 450 lb
+ | 570 lb
+ | 1,060 lb
+ | 
+5
+ | 720 lb
+ | 182 plf
+ | 360 lb
+ | 455 lb
+ | 850 lb
+ | 
+6
+ | 600 lb
+ | 152 plf
+ | 300 lb
+ | 380 lb
+ | 710 lb
+ | 
+The members themselves are fine (SPF #2, C_D = 1.6):
+Tension capacity of a 2×4 is over 5,000 lb. 
+Compression is the weak link. Buckling about the 1½ in face over 58 in gives Cp ≈ 0.13, for a capacity of about 1,430 lb. That works for 4 or more panels but is tight for 3. 
+If testing shows the packed straw braces the diagonal sideways, capacity rises toward about 6,300 lb. That’s a good thing to measure. 
+What happens if you use screws
+Strength is adequate. A structural wood screw loaded sideways through a 1½ in member into SPF carries roughly 150–250 lb ASD after the 1.6 factor, depending on diameter and the product’s evaluation report. So it takes about 3–4 screws per brace end at 570 lb. 
+Stiffness is the weakness. Screws loaded sideways have to slip before they pick up load. That slip happens at all eight brace ends and turns into racking drift. Expect the panel to be noticeably softer than the truss analysis predicts, and softer than a plywood wall. That matters for drift, and if K panels share a wall line with plywood panels, the stiffer plywood takes more than its share of the load. 
+Load reversal: screws loaded sideways loosen gradually as the wood crushes under repeated wind cycles. That’s why cyclic testing (ASTM E2126) matters. 
+Splitting: a screw near the end of a diagonal cut at a steep angle is close to the end grain. Use self-drilling structural screws with their published minimum end and edge distances. 
+Better options, roughly in order of cost-effectiveness for your line
+Bearing-cut ends plus screws (recommended starting point). Cut each diagonal end to fit snugly against the stud and plate (a double miter into the corner, and a matching seat at the center stud). Compression then travels by wood-on-wood bearing, which is stiff and doesn’t slip, so the screws only carry tension. You need accurate saw cuts and a jig for the screw pattern. No special tooling. 
+Screws driven at an angle (European practice). Fully threaded screws driven at about 45° across the joint are loaded along their length, not sideways. They’re several times stiffer and stronger per screw, and they’re how much European timber prefab is done, likely including EcoCocon. Several are available in the US with ICC-ES reports, e.g. Rothoblaas VGZ, SWG ASSY and Simpson SDWS/SDCF. The design values come from each product’s evaluation report, not the NDS tables. 
+Plywood or OSB gussets. A ½ in gusset on the inner face of each frame, nailed with a pneumatic nailer, optionally with construction adhesive. It’s cheap, there’s no conflict with finishes because the gusset sits in the straw cavity, and it’s very stiff, especially glued. The cost is labor and handling. Rated sheathing with nails has well-established design values. 
+Light-gauge steel straps (e.g. Simpson LSTA/MSTA). Strap over the joint to take tension, with bearing-cut ends for compression. Inexpensive and code-recognized, but less stiff than the options above. 
+My recommendation: prototype option 1, compare it in a few racking tests against option 2 (angled screws), and keep plywood gussets as a fallback. Option 1 also suits your production line well, since accurate end cuts are something a CNC or a stop-blocked saw does cheaply.
+Four things I need before working the connection out in detail:
+Is my layout interpretation right (four diagonals meeting at the center stud), or are there only two diagonals? 
+How is each 2×4 oriented: is the 3½ in dimension through the wall thickness or in the plane of the wall? 
+Species and grade: SPF #2, or something else? 
+Single or double top plate? 
+There should only be two diagonals meeting at the center horizontal stud. The 3-1/2 in dimension is in the plane of the wall for the diagonals and the center stud. Species SPF#2. Top plate will be an LVL Laminated veneer lumber engineered wood product , 1.25 inches thick, 11.25 inches wide, oriented with the wide side horizontally, which helps with keeping the line of wall panels straight and true. We generally do not use lumber for our top plates.
+For the K panel (47.5 in wide × 9 ft tall, with a horizontal member at mid-height), which sketch matches where the two diagonals run? Pick the closest, or describe it under Other.How can I upload an image of what I am describing?
+Explaining how to attach an image file.
+You can attach the image to your next message:
+Computer: drag the image file into the chat window, or use the + (or paperclip) button next to the message box and choose the file. A screenshot copied to the clipboard can also be pasted straight into the message box with Ctrl+V or Cmd+V. 
+Phone: tap the + button next to the message box, then pick a photo or take one with the camera. 
+A phone photo of a hand sketch is fine. Mark the overall dimensions and where the diagonals start and end. If you have a shop drawing or PDF, attach that instead, and I can read dimensions off it.
+While you get that together, a few notes on what you’ve already confirmed:
+3½ in in the plane of the wall: this helps compression. The diagonal buckles about its 1½ in dimension only through the wall thickness, and the straw packed on both sides may brace it there. In the plane of the wall it buckles about the 3½ in dimension. 
+LVL top plate, 1¼ × 11¼ laid flat: this works well as a collector and helps tie the two frames together. The catch is that only 1¼ in of LVL is available to screw into. Screws driven up into the plate from the brace or stud won’t develop much withdrawal capacity. Bearing-cut brace ends against the underside of the plate are a good fit here, though, since LVL has good bearing strength across its face. I’ll also need to know whether the 11¼ in plate spans both frames in the 14 in panel, and what you use for the bottom plate. 
+K Panel.jpg
+The photo helps a lot. I read it as a classic K brace: both diagonals start at the left corners and meet at mid-height of the right-hand chord, forming a “>” shape. If there’s a short horizontal block at that meeting point, which may be what you meant by the “center horizontal stud,” it’s hidden by the straw. Let me know if I’ve got that wrong.
+This layout is better than the one I assumed last time. The diagonals are at about 49° instead of 67°.
+Truss forces (per 2×4 frame, two frames per panel)
+Diagonal run 46 in, rise 53⅜ in, length about 70½ in. 
+Each diagonal carries the full frame shear: F = 1.53 V. The upper diagonal is in compression and the lower one in tension, swapping when the wind reverses. 
+At the joint on the right chord, the horizontal components of the two diagonals cancel. Their vertical components add to 2.32 V, which travels down the chord. 
+Hold-down force at each chord is also 2.32 V. At the bottom-left corner, part of that comes directly from the diagonal, so the hold-down has to connect at the joint where the chord and diagonal meet, not just somewhere on the chord. 
+K panels per end wall
+ | Shear per frame
+ | Diagonal force (T/C)
+ | Vertical force at chord joint
+ | Hold-down per panel
+ | 
+3
+ | 600 lb
+ | 920 lb
+ | 700 lb per diagonal
+ | 2,790 lb
+ | 
+4
+ | 450 lb
+ | 690 lb
+ | 520 lb per diagonal
+ | 2,090 lb
+ | 
+5
+ | 360 lb
+ | 550 lb
+ | 420 lb per diagonal
+ | 1,670 lb
+ | 
+6
+ | 300 lb
+ | 460 lb
+ | 350 lb per diagonal
+ | 1,390 lb
+ | 
+Diagonal compression (SPF #2, C_D = 1.6): buckling through the wall thickness (1½ in dimension, le/d = 47) limits capacity to about 980 lb. That’s adequate for 4 or more panels and marginal for 3. If the straw braces the diagonal against buckling through the thickness, capacity becomes about 4,700 lb, governed by in-plane buckling. That’s worth testing.
+The K-brace weak point: if the compression diagonal buckles or its joint slips, the horizontal forces at the chord joint no longer cancel. The chord then takes a sideways load of up to V at mid-height and has to resist it in bending. A 2×4 bending about its 3½ in dimension over 9 ft resists only modestly, so the compression-buckling check matters.
+What this means for screws
+The photo shows that the chords, plates and diagonals all lie in one plane, flush with each other. No member overlaps another, so you can’t screw through one member’s face into another the normal way, which is how screws carry load well. Your choices are:
+Ordinary screws: toe-screwed, or driven through the chord into the end grain of the diagonal. Both are weak and slip a lot. NDS gives no design value for withdrawal from end grain. I wouldn’t use this for the main load path. 
+Inclined fully threaded screws: driven through the chord or plate at an angle into the diagonal, so they cross the joint and are loaded along their length. This is how European prefab handles flush joints and is likely what EcoCocon uses. It’s strong and stiff, with design values from the product’s evaluation report (e.g. Rothoblaas VGZ, SWG ASSY VG, Simpson SDWS/SDCF). Each one needs a jig to set the angle, but no press. 
+Face plates screwed or nailed on (no press needed): flat steel straps or tie plates (Simpson ST/MSTA/LSTA-type), or ½ in plywood gussets on the inner face of each frame. These carry load the efficient way, through the face, and use standard cataloged values. There’s no conflict with finishes because they face the straw cavity. 
+Recommended joint detail
+Corners: cut the diagonal end to bear into the corner, against both the plate and the chord, so compression passes by bearing. Add a flat steel strap or plate on the face, or 2 inclined screws, for the tension case: 690 lb with 4 panels. The 1¼ in LVL plate is too thin to screw into from below, but works well for bearing. 
+Mid-height chord joint: this is the hardest joint. A diagonal cut to bear on the vertical face of the chord can’t pass the vertical load by bearing. Fix it with one of these: 
+A horizontal block screwed to the chord at mid-height, with both diagonals bearing on it. The block-to-chord screws then take 2 × 520 ≈ 1,050 lb of vertical shear, through the face of the block into the face of the chord. 
+A face plate spanning both diagonals and the chord. 
+Bottom-left corner: use a hold-down that grips both the chord and the diagonal, or a face plate tying the diagonal into the chord right above the hold-down. 
+To keep going, I need:
+Is there a block at the mid-height joint? Is the meeting point at the right chord, as in the photo? 
+The bottom plate: material and size. 
+Which of the three joint approaches (inclined screws, steel face plates, plywood gussets) suits your line best? I’ll run a full joint design and the panel drift for that one. 
+There is a block at the mid-height joint. Would it be stronger if this was a horizontal stud? Bottom plate is 2x4 SPF #2. Inclined screws work best for our process. We can cut the corners so they bear against both plate and chord. The LVL top plate is connected to each straw panel top plate by four 4"X5/16" GRK structural screws driven from the top side.
+Short answer: a full-width horizontal stud wouldn’t make the panel meaningfully stronger. What matters at that joint is how the block connects to the chord, and how closely the two diagonals’ centerlines meet on the chord.
+Block vs. horizontal stud at mid-height
+The horizontal components of the two diagonals cancel at the joint, so a full-width horizontal member carries almost no axial load in the design case. 
+It would add robustness and handling stiffness while panels are moved and flipped on the line, and it braces the chords in-plane at mid-height. In-plane bracing of the chords doesn’t govern, though. 
+It doesn’t fix the real problem at that joint. The 1,045 lb vertical force (2 × 520 lb, 4-panel case) has to get from the block into the chord. A horizontal block or stud butts against the chord with its end grain, so the only ways to fasten it are toe-screws or screws into end grain, which are weak. 
+A better detail: a short vertical seat block alongside the chord, grain running vertically:
+The diagonals bear on the block’s ends with bearing parallel to grain, the strongest direction for wood. 
+Ordinary structural screws are driven from the panel’s outer edge through the 3½ in chord into the side grain of the block. That’s a standard NDS face-to-face lateral connection with no end-grain or toe-screwing. Roughly three 5/16 × 6 in structural screws should carry 1,045 lb ASD. I’ll confirm with the product’s values. 
+Keep the block short, about 4–6 in, so the diagonal centerlines still nearly meet at the chord. Every inch of offset between them puts a bending moment of about V × e into the chord. At 4 in, that’s roughly 1,800 in-lb, or about 600 psi of bending in a 2×4. Acceptable, but don’t let it grow. 
+Corner joints: bearing-cut ends plus inclined screws
+Compression: the double-bearing cut sends the horizontal component (450 lb) into the chord and the vertical component (520 lb) into the plate. 
+Tension (690 lb, 4-panel case): use two fully threaded screws per corner: 
+One driven horizontally through the chord into the diagonal, taking mainly the horizontal component. 
+One driven vertically through the plate into the diagonal, taking mainly the vertical component. 
+Both cross the diagonal’s grain at about 41–49°. That’s within the usual 30° minimum angle to grain that European screw approvals require. 
+Rough capacity: a 5/16 in screw in SPF withdraws at about 330 lb per inch of thread with C_D = 1.6. One screw per direction probably works at 4 panels, but plan on two per direction for margin and for the 3-panel case. Stagger them along the member, because the 1½ in thickness only fits one screw across it. 
+Order of assembly: the vertical screws at the top corners have to go in before the LVL goes on, which should be no problem in the factory. 
+LVL plate to panel: four 5/16 × 4 in GRK screws
+With 4 K panels, each screw carries about 900 / 4 = 225 lb ASD sideways. With 3 panels, it’s 300 lb. 
+A 5/16 GRK RSS through 1¼ in LVL into SPF should be roughly 300 lb at C_D = 1.6. So this connection is probably fine for 4 or more panels and marginal for 3. Confirm against ESR-2442. 
+These screws only carry shear. Panel uplift goes to the hold-downs at the bottom. 
+Add to the list: splices in the LVL plate along the 40 ft wall act as collector splices, and need to carry the accumulated shear across them. 
+A new issue: chord slenderness through the wall thickness
+If the chords are oriented like the diagonals (3½ in in the plane of the wall), buckling through the wall thickness gives le/d = 108 / 1.5 = 72, which exceeds the NDS limit of 50. The right chord carries about 1,045 lb of compression from bracing per frame, plus roof gravity load. Something has to brace the chords through the wall thickness: the straw, the wood fiber board, or blocking tying the two frames together. How are your chords oriented, and what ties the two frames together other than the plates?
+My suggested next step: choose a specific inclined screw (e.g. Rothoblaas VGZ, SWG ASSY VG or Simpson SDCF). I’ll look up its ICC-ES report values and size every joint, then calculate the panel drift including fastener slip. Do you have a preferred supplier?
+Each chord is braced by an internal member every 36 inches. Braces span from the inner stud to the outer stud, and from the left hand pair of studs to the right hand pair of studs. These braces are required to keep the studs straight and the panel square, the compressed straw tends to make the studs bow out so these braces resist this bowing. Please use US standards not european standards. Please use structural screws from GRK, such as the GRK RSS 5/16" screw.
+I need to correct my last recommendation: GRK’s evaluation report doesn’t support inclined RSS screws. ESR-2442 requires the screws to be installed perpendicular to the face of the side member, and says screws at an angle and screws into end grain are outside its scope. Under US standards, then, the inclined-screw joint has no code design values. You’d have to establish them by testing.
+There’s a version that works within ESR-2442 and NDS: lap the diagonals over the frame instead of setting them flush.
+Your chord bracing at 36 in fixes the slenderness problem
+With braces every 36 in, le/d through the wall thickness drops to 36 / 1.5 = 24. Compression capacity (SPF #2, C_D = 1.6) becomes about 3,500 lb, against roughly 1,045 lb from bracing plus roof gravity load. The remaining check is combined bending and axial load, because straw pressure bows the chords outward in-plane. I’ll need a value for that pressure: an estimate, or a measurement from a panel.
+Recommended: lapped diagonals with 1/4 in GRK RSS screws
+Set each diagonal against the straw-side face of the frame so its ends overlap the chord and plates. The mid-height joint becomes the two diagonals lapped onto the right chord. 
+Drive screws perpendicular through the diagonal into the chord or plate. That’s exactly what the report covers. No angled screws, no end grain, no bearing cuts. 
+Use 1/4 in screws, not 5/16 in. The report requires main-member penetration of at least 6D, not counting the tip. Through a 1½ in diagonal into a 1½ in chord, only 1½ in of penetration is available: 
+1/4 in: 6 × 0.236 = 1.42 in → meets it with a 3½ in screw, whose tip passes through into the straw. 
+5/16 in: 6 × 0.276 = 1.66 in → doesn’t meet it. 
+Lateral value: using the NDS yield equations as the report permits (root diameter 0.152 in, Fyb = 153,400 psi), Z = 150 lb (Mode IV), or 240 lb ASD with C_D = 1.6. 
+K panels per end wall
+ | Diagonal force
+ | 1/4 × 3½ in RSS per diagonal end
+ | 
+3
+ | 920 lb
+ | 4
+ | 
+4
+ | 690 lb
+ | 3
+ | 
+5
+ | 550 lb
+ | 3
+ | 
+6
+ | 460 lb
+ | 2
+ | 
+What to watch with this detail:
+Spacing: spacing and end distance parallel to grain are about 3½ in (15D, self-drilled). Three screws in one line need about 10½ in of overlap. That’s easy along the chord, but tight at the corners, so split the screws between chord and plate there. Put each row on the member centerline. Predrilling relaxes the edge distances if you need it. 
+Eccentricity: a lapped diagonal sits 1½ in out of the frame’s plane, which puts a small eccentricity into each joint. Your through-thickness braces at 36 in will handle it, but I’ll check it. 
+Geometry: the diagonal now intrudes 1½ in into the straw cavity, and may cross the left-to-right spreaders. Does that work with how you pack the straw? 
+Simpler to build: this removes the double-bearing cuts and the seat block entirely. Square-ish end cuts and a screw jig are all you need. 
+Alternatives
+Keep flush diagonals and qualify the inclined RSS joints by test. Run connection tests (ASTM D1761) and apply the results under IBC 104.11 / Chapter 17. It’s legitimate, and you’ll be racking-testing panels anyway, but it’s more work up front. 
+A seat block on its own isn’t enough. A vertical block screwed through the 3½ in chord with 5/16 × 6 in RSS (about 285 lb each, so 4 screws at 1,045 lb) carries the diagonals’ compression well. It does nothing for tension, though, so you’d still need one of the other approaches. 
+LVL-to-panel screws (5/16 × 4 in RSS through 1¼ in LVL)
+The report doesn’t tabulate an LVL side member. The NDS yield equations give about 180 lb, or 290 lb with C_D = 1.6. The demand is 225 lb per screw with 4 K panels (OK) and 300 lb with 3 (slightly over). Either use 5 screws per panel, or set a rule of at least 4 K panels per 40 ft wall.
+My calculated values are on the conservative side. For example, the NDS yield equations give 168 lb for 5/16 RSS through a 1½ in side member, where the report’s table lists 236–239 lb. Before relying on any of these numbers, check them against the original ESR-2442 tables. My extracted copy had flattened tables, and I matched values to rows and columns by position.
+If you go with lapped diagonals, the next step is the panel drift calculation: truss deformation plus screw slip at the NDS load/slip modulus. That tells us how stiff the K panel is compared with a plywood wall.
+Let's explore a plate on the outer face of the diagonal and the chord.
+Searched the web, ran a command
+Plates on the outer face of each frame work well. The forces are small, so a 16-gauge plate with ordinary connector nails is enough, and it needs no press. The fabricator cuts and punches the plates, and your crew nails them with a positive-placement connector nailer, a standard pneumatic tool.
+How it would work
+Plate: 16 gauge (0.060 in) galvanized flat plate with pre-punched nail holes. It lies on the outer face of the chord and diagonal (and the top or bottom plate at the corners), which only needs those faces flush with each other. 
+Two frames: the exterior frame’s plates sit under the wood fiber board; the interior frame’s plates sit under the clay plaster. 1/16 in plus nail heads shouldn’t interfere with siding. 
+Keep the bearing-cut ends. The diagonal pushes into the joint by bearing, so the plate only carries tension. That also keeps nail slip out of the compression half of each load cycle. 
+Stock or custom: stock plates exist, e.g. Simpson’s HTP37, which is designed to resist tension when installed on the side of 2x4 or larger members and is 16 ga, 3 in wide and 7 in long. Catalog loads are for straight end-to-end splices, though, not a corner joint. For your geometry, I’d have plates custom-cut and design the nailing directly to NDS. strongtie 
+Nail values (NDS yield equations, steel side plate)
+0.148 × 1½ in connector nail through 16 ga steel into SPF: Z = 111 lb (Mode IIIs), or 178 lb ASD with C_D = 1.6. 
+The 1½ in nail gives 1.44 in penetration, which meets the 6D minimum. Check my value against NDS Table 12P before relying on it. 
+Nails per joint
+Each joint has two nail groups: one into the diagonal, and one into the chord/plate.
+Joint
+ | 3 K panels
+ | 4 K panels
+ | 
+Top and bottom corners: into diagonal / into chord + plate
+ | 6 / 6
+ | 4 / 4
+ | 
+Mid-height: into each diagonal
+ | 6 each
+ | 4 each
+ | 
+Mid-height: into chord (net vertical force)
+ | 8
+ | 6
+ | 
+The horizontal components of the two diagonals cancel inside the mid-height plate, so the chord group only carries the vertical load: 1,045 lb with 4 panels. 
+Plate sizes: about 6 × 8 in at the corners and about 6 × 12 in at mid-height, with two rows of nails on the 3½ in faces. 16 gauge has plenty of tension capacity for these loads. 
+Things to be aware of
+One-sided plate: the force acts about ¾ in off the member centerline, which twists the joint out of plane. At 690 lb that’s about 540 in-lb, which the 36 in through-thickness braces and the straw can easily resist. Pressed truss plates are always installed on both faces for this reason, so this detail should be confirmed by test. 
+Stiffness: using the NDS load/slip modulus for wood-to-metal (270,000 D^1.5 ≈ 15,400 lb/in per nail), nail slip plus truss deformation gives roughly 0.15–0.2 in of top-of-panel drift at design load (4-panel case), plus hold-down slip. That’s comparable to a plywood wall at the same unit shear, a good sign for mixing K panels with plywood panels. Real slip under cyclic load is usually larger, so racking tests will give the true figure. 
+Bottom-left corner: the plate ties the diagonal into the chord right above the hold-down. With 4 panels, the hold-down on the chord takes about 2,090 lb per panel. 
+Next, I can draw the corner and mid-height plates with nail layouts and edge distances, so you can get fabrication quotes and build a test panel.
+Please proceed with drawing
+Planning the plate's outline and nail layout
+I’ll lay out the plates to suit the worst case (3 K panels per wall) and produce a dimensioned drawing, plus DXF cutting files for the fabricator.
+Created 3 files, shared 2 files, and 22 more steps
+K-Panel Steel Plate Details
+Artifact·Only you
+I’ve put the drawings on a page you can share with your fabricator, and sent DXF cutting files: P1_corner_plate.dxf and P2_mid_plate.dxf. The design comes down to two plate shapes, six plates per K panel, all fastened with standard connector nails. No press is needed.
+The plates
+Plate
+ | Where it goes
+ | Size
+ | Holes
+ | 
+P1 corner plate
+ | Top-left corner. The bottom-left corner uses the same part flipped over.
+ | 8 1/16" × 10 5/16"
+ | 12 holes: 6 into the diagonal, 3 into the chord, 3 into the frame plate
+ | 
+P2 mid-height plate
+ | On the right chord where the two diagonals meet
+ | 7 13/16" × 16 11/16"
+ | 22 holes: 6 into each diagonal, 10 into the chord
+ | 
+Per K panel: two frames, each with two P1 and one P2, so 4 × P1 and 2 × P2. 
+Steel: 16 gauge Grade 33, G185 galvanized, with 11/64" holes. 
+Nails: 0.148 × 1½" connector nails, 88 per panel. 
+Changes from my last message
+Frame height: I took the 2×4 frame as 106¾" tall below the LVL plate. That makes the diagonal angle 49.6°, and the diagonal force rises slightly to 927 lb for the 3-panel case. 
+Chord nails at mid-height: I raised these from 8 to 10. Eight nails came out at 99% of capacity, which is too tight. With 10, every nail group is at 87% or less. 
+Before you order parts
+Check my nail value of 111 lb per nail against NDS Table 12P. I calculated it from the yield equations. 
+Confirm my assumptions: the frame height, that the top and bottom plates have their 3½" side in the plane of the wall like the diagonals, and that the members are flush on the plated face. 
+The bottom-left P1 covers the chord face up to about 10½" above the bottom of the frame. Put the hold-down above that, or on another face of the chord. 
+A prototype panel for racking tests is the natural next step once the plates are made. The page lists the remaining open items, including the LVL plate screws.
