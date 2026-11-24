@@ -426,3 +426,169 @@ target:
   the restraint the le/d = 24 assumption needs is a question for Larry.
 - That the 3-panel marginal cases matter in practice. The app builds four GRK
   screws per LVL joint already, which is the 4-panel rule by accident.
+
+---
+
+# Addendum — Larry's comment, and Tommy's predrilling answer
+
+Added 2026-11-23, same day, after Tommy relayed Larry's own TLDR and his answer
+to Larry's open question. **This section changes the reading above in one
+important way: the app already contains the detail Larry could not find.**
+
+## Larry's TLDR, and the one new reason in it
+
+> *"we miffed on figuring out how to assemble the K-Panels with screws for
+> various reasons - mostly because the screws end up spaced too closely together
+> at the corners where the braces come together. This would probably split the
+> diagonal braces."*
+
+That is a **different headline reason** from the three the transcript developed.
+It is present in the transcript, but buried: *"spacing and end distance parallel
+to grain are about 3½ in (15D, self-drilled). Three screws in one line need
+about 10½ in of overlap. That's easy along the chord, but tight at the
+corners,"* and *"a screw near the end of a diagonal cut at a steep angle is
+close to the end grain."* Larry has promoted it to the governing problem.
+
+His other points:
+
+- **The 16 ga plates go on BOTH faces**, about 8 x 10in. *"need to go on the
+  inside as well as the outside of the K-panel."* The transcript drew one plate
+  per frame on each frame's outer face — 4 x P1 + 2 x P2, 6 plates and 88 nails
+  per panel. Larry's sentence reads two ways and the count differs by 2x:
+  - **(a)** both frames' outer faces — which is what the transcript already drew
+  - **(b)** both faces of every joint — **12 plates, ~176 nails per panel**
+
+  **(b) is the likely intent**, because it resolves the transcript's own open
+  risk: the one-sided plate's ¾in eccentricity, and *"pressed truss plates are
+  always installed on both faces for this reason."* But a plate on the straw
+  side of each frame is a plate buried in the cavity. **Ask Larry which.**
+- **"3 or 4 such panels would be needed within a typical one story wall."**
+  Confirms the panel count from the engineer himself — but **3 is the case the
+  transcript found marginal**, and not for the diagonals: the four 5/16 GRK
+  screws into the LVL top plate are at 225 lb each with 4 panels (OK) and
+  **300 lb with 3 panels against ~290 lb capacity (over)**. At 3 panels it needs
+  a fifth screw. Larry quoting "3 or 4" without flagging that is worth raising.
+- **"I'm still not happy with the results"** — said twice. **So nothing about
+  the steel-plate detail should be built into this app.** It is a working
+  hypothesis the engineer of record is dissatisfied with.
+- **"I am sure Ecococon uses screws somehow but I can't figure out how yet."**
+
+## Tommy's answer, and why it is right
+
+> *"I'm 100% sure ecococon predrills their holes for big screws."*
+
+**This is not a new hypothesis — it is the decision Tommy already made for his
+own panels, and this app has been building to it for a month.** From
+`fastenerCapacity.ts`, quoting him verbatim:
+
+> *"Each end of each 2x4 on the diagonals has 2 5/16in GRKs 4in screws
+> **predrilled and driven**."* — Tommy, 2026-10-25
+
+Mechanically it is the right answer to the problem Larry named. Splitting is
+what drives the large self-drilled spacing and end-distance requirements; a lead
+hole removes the wedging that splits, and both the NDS and European practice
+relax the geometry requirements accordingly. The transcript even raised it and
+dropped it in half a sentence: *"Predrilling relaxes the edge distances if you
+need it."* Larry's governing problem is a geometry-factor problem, and
+predrilling is the lever on geometry factors.
+
+⚠ **One thing to check before relying on it:** whether ESR-2442 permits,
+prohibits or is silent on predrilling for the RSS line. Its published values are
+tied to the as-tested self-drilled installation. If predrilling falls outside
+the report, the connection leaves Table 3 and is designed as an NDS Chapter 12
+dowel-type connection instead — which **this app is already equipped for**:
+`ndsYieldLimitZ` recomputes the same connection from first principles using only
+Dr and Fyb, and was built as the conservative cross-reference for an engineer
+who declines test-based values. It would become the primary route.
+
+## And the app's brace-end detail answers Larry's blocker outright
+
+This is the headline of the addendum. Larry's assistant assumed the diagonal
+lies **flush in the frame plane**, so there is no face to screw through — which
+is what killed screws and forced the steel plate. **Tommy's detail does not
+assume that.** From the same module, his 2026-11-20 instruction:
+
+> *"Diagonal bracing ends should have a 4-in grk going through the inch and a
+> half stud leaving 2 and 1/2 in of penetration into the bracing piece. This
+> applies to both walls and roof."*
+
+A brace end is a **true plumb cut flush to the stud's own face**, so a screw
+driven **level through the stud** travels **in the plane of the panel**, enters
+that cut face and runs **lengthwise into the member**. The depth available that
+way is the brace's 3½in width divided by the sine of its slope — **over 5in on a
+typical brace** — not its 1½in thickness.
+
+| Larry's blocker | Tommy's detail |
+|---|---|
+| Inclined screws are outside ESR-2442's scope | The screw is driven **level, perpendicular to the stud's face**. In scope. |
+| 5/16 RSS fails the 6D minimum — needs 1.656in, has 1.5in | Penetration is **2.375in** (3.875 − 1.5), because the screw runs lengthwise into the brace through its plumb-cut face. **6D = 1.656in. It passes.** |
+| Flush members leave no face to screw through | The stud's face **is** the face. No lap needed, so the no-overlap rule is not violated either. |
+| Screws crowd at the corner and split the diagonal | **Still live.** See below. |
+
+**So Larry's option 2 is not dead, and it does not need 1/4in screws.** It needs
+the brace end cut plumb to the stud face and the screw driven level through the
+stud — which is what the shop already does. Worth putting in front of him
+directly, because he abandoned screws on the strength of a geometry assumption
+the product does not have.
+
+⚠ **Honest caveat on the comparison above:** Tommy's detail is for the app's own
+brace figures (the carrots, the zigzag), where a diagonal lands on a stud and a
+plate. Larry's `>` K lands **two** diagonals on one chord at mid-height, and his
+corner joints land a diagonal into the corner between a chord and a plate. The
+geometry that gives 2.375in of penetration should transfer, but **the corner
+crowding Larry is actually complaining about is a property of his K's topology,
+not of the screw**, and nothing above shows it dissolved. What transfers is the
+refutation of "there is no face to screw through" and of "5/16 cannot reach 6D".
+
+## The two factors the app takes as 1.0 are the two Larry puts pressure on
+
+`fastenerCapacity.ts:649`, one line, carrying both:
+
+> *"CM, Ct, Cg, **CΔ** and **Ceg** are all taken as 1.0 — dry service, standard
+> temperature, a single-fastener check, and spacings far above Table 5's
+> minimums."*
+
+**1. C_eg — end grain.** The screw enters a cut face and runs *lengthwise* into
+the brace. That is the geometry NDS's end-grain factor exists for. Larry's
+assistant was explicit that end grain is the weak direction. If **C_eg = 0.67**
+applies to this connection, **every brace-end number in the app is about a third
+too high** — and the module already records that the detail clears Table 3's
+minimum penetration *"by nothing at all"*, so there is no margin to absorb it.
+
+**2. C_Δ — geometry.** The app's justification is *"spacings far above Table 5's
+minimums."* Larry's TLDR says the opposite is true exactly where it matters:
+*"the screws end up spaced too closely together at the corners where the braces
+come together."* **If Larry is right about the corner, C_Δ = 1.0 is false at the
+most heavily loaded joint in the panel.** Predrilling is the lever that could
+restore it, which is the second reason Tommy's instinct matters.
+
+**These two are the highest-value questions to put to the engineer of record,**
+because each is one sentence for him and a one-third swing for the app. Neither
+needs a test program. Both are checkable against the NDS and ESR-2442 today.
+
+## What this does and does not change above
+
+- **§4's conclusion is softer than it looked.** The steel plate is one route the
+  engineer is explicitly unhappy with, not the answer. The screwed route is
+  alive on geometry the transcript did not know about.
+- **§7's new-parts table is provisional.** If the screwed detail survives, the
+  P1/P2 plates and 88–176 connector nails never enter the app at all.
+- **§6(c), the hold-down, is unaffected and still the clearest missing part.**
+  2,090–2,790 lb per panel exists whatever fastens the diagonals.
+- **§5's "36in girt spacing is structural" is unaffected.**
+- **§8's roof point gets sharper.** Tommy's instruction ends *"This applies to
+  both walls and roof."* So the roof's zigzag nodes already have a brace-end
+  screw detail — and they inherit both the C_eg question and, at a zigzag node
+  where two boards step corner-to-corner by width/cos θ, the C_Δ crowding
+  question too. The roof may be the worse case, since it has no plywood and the
+  nodes are where the chain turns.
+
+## The three questions for Larry, in order of value
+
+1. **Does C_eg apply to a brace-end screw** that enters a plumb-cut face and
+   runs lengthwise into the member? One sentence from him; a third of the
+   capacity for the app.
+2. **Does predrilling buy back the corner spacing** — and does ESR-2442 allow
+   it, or does the connection move onto the NDS route? He has the report.
+3. **Plates on both faces of each joint, or one per frame?** 6 plates vs 12.
+   Only matters if the plate route survives at all.
