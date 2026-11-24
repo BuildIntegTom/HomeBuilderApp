@@ -23,6 +23,50 @@
   deoptimised the styling of ... page.tsx as it exceeds the max of 500KB");
   anything else, or an empty JSON, means the gate did not run. An empty
   result is not a clean result, and it is easy to read as one.
+- ⚠ **THE COMPILER RULES CAN GO SILENT ON `page.tsx` AND STILL LOOK LIKE A
+  PASS — measured 2026-11-24.** A run came back with
+  `preserve-manual-memoization` **83 → 0**, `refs` 2 → 0, `purity` 1 → 0,
+  `immutability` 1 → 0 on `page.tsx`, while every other rule in the repo was
+  byte-identical. That reads like a 87-problem improvement. It is the React
+  Compiler **bailing out of `LayoutEditor` entirely** and reporting nothing.
+
+  ⚠ **It is environmental, not a code change, and here is how that was
+  settled**: lint HEAD's own `page.tsx` under the same conditions. Copy it
+  aside under a different name and lint that one file —
+
+  ```
+  git show HEAD:apps/web/app/page.tsx > apps/web/app/__tmp_head.tsx
+  (cd apps/web && node --max-old-space-size=6144 ../../node_modules/eslint/bin/eslint.js app/__tmp_head.tsx -f json)
+  ```
+
+  — and it came back with the same 3 as the edited file. **The baseline had
+  degraded, not the diff.** Everything else on `page.tsx` matched exactly
+  (`no-unused-vars` 14, `exhaustive-deps` 11, `no-unescaped-entities` 15,
+  `set-state-in-effect` 3), so the change still measured a true zero delta —
+  it was just measured against a gate that had lost a rule family on both
+  sides.
+
+  ⚠ **The cause is MEMORY, and this machine has 8GB.** `--max-old-space-size=6144`
+  asks for a 6GB heap on an 8GB box; that run had ~3GB actually free. The
+  tell is the clock: AGENTS.md's own earlier note records a single-file
+  `page.tsx` run finishing in **about a minute** at 6144. This one took
+  **12m25s** — twelve times slower — and then skipped the compiler pass.
+
+  ⚠ **This is a WORSE failure than the 4GB one documented below it.** At 4GB
+  the gate wrote a zero-byte file, which is obviously broken. Here it writes a
+  complete, well-formed, plausible JSON with one rule family quietly missing.
+  Both say "an empty result is not a clean result"; this one adds **a SMALLER
+  result is not a better result**. `preserve-manual-memoization` on `page.tsx`
+  sat at 90 across fourteen runs from 2026-11-19 to 2026-11-23 — if it moves
+  by tens, suspect the gate before the diff.
+
+  **So, before trusting a run:** close the dev server AND the browser preview,
+  check free memory (`Get-CimInstance Win32_OperatingSystem`), and sanity-check
+  that `page.tsx` still reports ~83 `preserve-manual-memoization`. If it
+  reports a handful, the compiler bailed and the correctness rules
+  (`refs`, `purity`, `immutability`) measured nothing — say the gate is
+  unverified rather than reading zero as clean.
+
 - **Measure a lint DELTA, not a total, and count WARNINGS too.** This app
   carries pre-existing errors (94 across the editor files as of
   2026-09-25), so "eslint reported errors" means nothing on its own.

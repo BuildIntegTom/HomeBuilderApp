@@ -13602,13 +13602,13 @@ export default function LayoutEditor() {
    * carries. That is also why it costs no new member building: those member
    * lists are already built for the sheets.
    *
-   * ⚠ **The brace centre connector is counted apart from the rest.** It is
-   * the one member in the catalog whose own comment calls it illustrative
-   * rather than to scale, and a chevron panel has always reported its two legs
-   * clipping it. Rolling those in with real parts would mean every braced
-   * building opens with a red line it cannot act on, and the real finding
-   * underneath would be invisible. Nothing is filtered out — they are counted
-   * and named as what they are.
+   * ⚠ **Nothing is counted apart from anything else — 2026-11-24.** The
+   * brace centre connector used to be, on the grounds that its own comment
+   * called it illustrative rather than to scale. It was not: the cut list
+   * filters nothing by role, so it shipped as a real 2x4 with a real length,
+   * and the Panel Editor refused the same pair this memo excused. Its ends
+   * were cut to the brace's pitch instead and the pair is gone, so the
+   * special case is gone with it.
    */
   /**
    * ⚠ **Gable tiles that could not take the dual bevel, and why.**
@@ -13795,44 +13795,33 @@ export default function LayoutEditor() {
   ]);
 
   const memberOverlapReviewEntries = useMemo(() => {
-    const isIllustrative = (pair: string) => pair.includes("brace_center_connector");
+    /* ⚠ **No pair is waved through any more — 2026-11-24.** This memo used
+       to split its findings in two and tell him that every
+       `brace_center_connector` pair was *"illustrative rather than to scale
+       — not a real part to go and fix."* That was false twice over: nothing
+       in `panelCutList` filters by role, so the connector always shipped on
+       the shop sheet as a real 2x4 with a real cut length, and the Panel
+       Editor refused the very same pair outright. One geometry cannot have
+       two verdicts. The connector's ends were cut to the brace's pitch
+       instead (see `buildBracedCenterConnector`), the pair went away, and the
+       excuse went with it. */
     const reports = panelFabricationGroups
       .map((group) => ({ name: group.distinctName, pairs: overlappingMemberPairs(group.members) }))
       .filter((report) => report.pairs.length > 0);
     if (reports.length === 0) return [];
-    const real = reports
-      .map((report) => ({ name: report.name, pairs: report.pairs.filter((pair) => !isIllustrative(pair)) }))
-      .filter((report) => report.pairs.length > 0);
-    const illustrative = reports.reduce((n, report) => n + report.pairs.filter(isIllustrative).length, 0);
     /* Bounded on purpose: a Review Log note is read, not scrolled. The count
        in the label is the whole number either way. */
     const LIST_LIMIT = 8;
-    const listed = real.slice(0, LIST_LIMIT).map((report) => `${report.name} (${report.pairs.join("; ")})`);
-    const moreCount = real.length - listed.length;
-    const illustrativeSentence =
-      illustrative === 0
-        ? ""
-        : `A further ${illustrative} pair${illustrative === 1 ? "" : "s"} involve \u0060brace_center_connector\u0060, the short post a chevron's two legs meet at mid-panel, whose own definition calls it illustrative rather than to scale — counted here, but not a real part to go and fix. `;
-    if (real.length === 0) {
-      return [
-        {
-          label: `${illustrative} illustrative member overlap${illustrative === 1 ? "" : "s"} — no real part affected`,
-          status: "pending-BI-confirmation" as const,
-          note:
-            illustrativeSentence +
-            "No panel in this building has two real parts in the same volume.",
-        },
-      ];
-    }
+    const listed = reports.slice(0, LIST_LIMIT).map((report) => `${report.name} (${report.pairs.join("; ")})`);
+    const moreCount = reports.length - listed.length;
     return [
       {
-        label: `⚠ ${real.length} panel type${real.length === 1 ? "" : "s"} with two members in the same volume — not buildable as drawn`,
+        label: `⚠ ${reports.length} panel type${reports.length === 1 ? "" : "s"} with two members in the same volume — not buildable as drawn`,
         status: "pending-BI-confirmation" as const,
         note:
           `His standing rule is that nothing may overlap: "It doesn't make sense to allow any overlapping because these need to possible to build." ` +
           `Each pair below is two members whose boxes share real volume, measured as prisms rather than as bounding boxes. Real carpentry would notch one into the other; this app models notching nowhere, so the shop would have to be told which board loses material and the drawing does not say. ` +
           `By unique fabricated panel: ${listed.join(" · ")}${moreCount > 0 ? ` · and ${moreCount} more` : ""}. ` +
-          illustrativeSentence +
           `⚠ Two known causes, both his own open questions rather than defects to patch here: a diagonal brace crossing a RING girt (a ring runs a rail the whole width of the face a brace runs down, where a bar bit only 3.5in at each end), and the optional nailer on a panel wide enough to already carry a centre nailer stud — the same board asked for twice. ` +
           `No panel was changed to produce this entry, and none should be changed to silence it.`,
       },

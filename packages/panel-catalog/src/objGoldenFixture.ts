@@ -154,6 +154,37 @@ function goldenGablePanelMembers(): PanelMember[] {
 
 function asCaptured(members: PanelMember[]): PanelMember[] {
   return members.map((m) => {
+    /* ⚠ **The chevron's centre connector AS IT WAS when the fixture was
+       captured — a plain square-ended vertical box.** On 2026-11-24 its two
+       ends were cut to the brace's own pitch, so it stopped being a box and
+       became a trapezoid prism. That is a change of SHAPE, and the fixture
+       pins the EXPORTER, not the panel.
+
+       Nothing is lost by holding it: a trapezoid prism is the one shape this
+       fixture already covers most heavily — eight brace trapezoids across the
+       two braced panels here — while a plain vertical box is a shape the
+       connector was, at capture, one of the few examples of.
+
+       Rebuilt from the live member rather than hardcoded, so it stays honest
+       about where the braces are: the captured box ran between the two
+       braces' CENTRELINE crossings at mid-width, and each face is a straight
+       line, so the mean of that face's two edge corners is exactly the
+       centreline crossing it used to read. */
+    if (m.memberId === "brace_center_connector" && m.position.trapezoidCornersIn) {
+      const zs = m.position.trapezoidCornersIn.map((c) => c.zIn).sort((a, b) => a - b);
+      const bottomZIn = (zs[0]! + zs[1]!) / 2;
+      const topZIn = (zs[2]! + zs[3]!) / 2;
+      return {
+        ...m,
+        actualDimsIn: { ...m.actualDimsIn, lengthIn: topZIn - bottomZIn },
+        position: {
+          xIn: m.position.xIn - m.actualDimsIn.thicknessIn / 2,
+          yIn: 0,
+          zIn: bottomZIn,
+          rotationDeg: 0,
+        },
+      };
+    }
     if (!/^girt_\d+_web$/.test(m.memberId)) return m;
     const nowIn = m.actualDimsIn.widthIn;
     return {

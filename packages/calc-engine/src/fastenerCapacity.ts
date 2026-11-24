@@ -646,7 +646,44 @@ export function fastenerCapacityInputs(): DerivationInput[] {
       value: CD_WIND_SEISMIC,
       unit: "",
       status: "code-constant",
-      note: "NDS Table 2.3.2. Applies to the wood value only. CM, Ct, Cg, CΔ and Ceg are all taken as 1.0 — dry service, standard temperature, a single-fastener check, and spacings far above Table 5's minimums.",
+      note: "NDS Table 2.3.2. Applies to the wood value only. CM, Ct and Cg are all taken as 1.0 — dry service, standard temperature, a single-fastener check. CΔ and Ceg have their own rows below, because they are open.",
+    },
+    /* ⚠ **THE TWO FACTORS LARRY'S K-PANEL WORK PUTS PRESSURE ON — 2026-11-24.**
+       These used to sit inside the CD note above, buried in a list of five
+       factors taken as 1.0 as though they were all equally settled. They are
+       not. Each is one sentence from the engineer of record and each is worth
+       about a THIRD of every brace-end number in this app, and the detail
+       already clears Table 3's minimum penetration by nothing at all — so
+       there is no margin to absorb either of them. They are split out and
+       flagged so the Shear Derivation sheet carries the question to whoever
+       reads it. See `docs/k-panel-implications-2026-11-23.md`.
+
+       Tommy, 2026-11-24: *"The discussion on 1.0 versus .67 or whatever to be
+       flagged for later."* Flagged, and NOT changed: moving either to 0.67 on
+       my own reading would quietly cut the app's capacity by a third on an
+       argument no engineer has made. */
+    {
+      label: "Ceg — end grain",
+      value: 1,
+      unit: "",
+      status: "pending-BI-confirmation",
+      note:
+        "⚠ OPEN. NDS 12.5.2 puts Ceg at 0.67 for a dowel driven into END GRAIN. This app's brace end is a true plumb cut " +
+        "flush to the stud's face, so the screw runs LENGTHWISE into the brace from that cut face — which is close to the " +
+        "geometry the factor exists for. Taken as 1.0 pending the engineer of record. At 0.67 every brace-end capacity here " +
+        "is about a third too high.",
+    },
+    {
+      label: "CΔ — geometry",
+      value: 1,
+      unit: "",
+      status: "pending-BI-confirmation",
+      note:
+        "⚠ OPEN. Justified as spacings far above Table 5's minimums, which holds for a brace landing on a stud and a plate. " +
+        "Larry's 2026-11-23 K panel report says the opposite at the joint that matters: “the screws end up spaced too closely " +
+        "together at the corners where the braces come together. This would probably split the diagonal braces.” Predrilling, " +
+        "which this app's shop note has specified since 2026-10-25, is the lever on it — but whether it buys the spacing back " +
+        "under ESR-2442 is his call, not this file's.",
     },
     {
       label: "Both members the same species",

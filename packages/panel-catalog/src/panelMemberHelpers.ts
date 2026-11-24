@@ -1295,13 +1295,7 @@ export function computeBraceTrapezoidCornersIn(
     plumbMinus,
   ];
 
-  let signedArea2x = 0;
-  for (let i = 0; i < 4; i++) {
-    const c = corners[i]!;
-    const next = corners[(i + 1) % 4]!;
-    signedArea2x += c.xIn * next.zIn - next.xIn * c.zIn;
-  }
-  return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
+  return normalizeQuadWindingIn(corners);
 }
 
 /** This end meets ANOTHER brace at a shared peak/foot point, rather than a
@@ -1467,6 +1461,24 @@ export function computeHeaderBraceTrapezoidCornersIn(
     endCorner(-1, "A"),
   ];
 
+  return normalizeQuadWindingIn(corners);
+}
+
+/**
+ * One winding for every four-cornered cut this file produces, in the panel's
+ * width/height plane.
+ *
+ * ⚠ Not a tidy-up: `memberLocalCornersIn` pairs corner `i` with corner
+ * `i + 4` to build a prism's side faces, and `BOX_FACES` names those quads in
+ * a fixed order. A quad handed over wound the other way still describes the
+ * same board to the overlap audit — `polygonsOverlap` does not care — but it
+ * hands the renderer and the .obj exporter their side faces inside out. Every
+ * producer here therefore normalises before returning, and this is the one
+ * copy of that rule rather than the four it was written as.
+ */
+export function normalizeQuadWindingIn(
+  corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D],
+): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] {
   let signedArea2x = 0;
   for (let i = 0; i < 4; i++) {
     const c = corners[i]!;
@@ -2309,13 +2321,7 @@ export function computeBraceBoardCornersIn(
 
   // Same winding normalization every other corner producer here uses, so the
   // face table and the OBJ exporter see a consistent orientation.
-  let signedArea2x = 0;
-  for (let i = 0; i < 4; i++) {
-    const c = corners[i]!;
-    const next = corners[(i + 1) % 4]!;
-    signedArea2x += c.xIn * next.zIn - next.xIn * c.zIn;
-  }
-  return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
+  return normalizeQuadWindingIn(corners);
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   buildSkins,
   computeBraceEndCutAngleDeg,
   computeBraceBoardCornersIn,
+  normalizeQuadWindingIn,
 } from "./panelMemberHelpers";
 
 const MAX_GIRT_BAY_IN = 36; // Tommy: another girt row if bays exceed 36in
@@ -352,11 +353,11 @@ export function buildDiagonalBraces(
  * panel") — connects where the upper and lower chevron braces' own
  * centerlines cross the panel's horizontal midline (`X = widthIn/2`), so
  * the bracing assembly reads as one continuous vertical spine down the
- * panel's center instead of 2 separate diagonal pieces. Uses the
- * chevron braces' plain centerline endpoints (not their trapezoid
- * corners) — a simplified square-cut first pass, no birdsmouth notch
- * matching each brace's own tilt yet (consistent with this file's
- * existing "illustrative, not to scale" joints elsewhere). `role:
+ * panel's center instead of 2 separate diagonal pieces. Both ends are cut
+ * to the brace's own pitch and land flat on its bearing face, so the board
+ * is a TRAPEZOID with two plumb long edges of different lengths — see the
+ * comment on `trapezoidCornersIn` in the body for what the square-ended
+ * first pass cost and why this is not a length change. `role:
  * "blocking"`, not `"brace"`, so it's excluded from fastener-weight's
  * brace-screw rule and the shear-capacity racking estimate — the same
  * "no fastener rule specified yet" precedent already used for Column/
@@ -397,12 +398,44 @@ function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount:
   const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, studSide, middleRowBarBottomZIn, bottomPlate2x4ZIn, legacyPanelEdgeAnchor);
 
   const centerXIn = widthIn / 2;
-  function crossZAt(x1: number, z1: number, x2: number, z2: number): number {
-    const t = (centerXIn - x1) / (x2 - x1);
-    return z1 + t * (z2 - z1);
+  const leftXIn = centerXIn - PLATE_2X4_THICKNESS_IN / 2;
+  const rightXIn = centerXIn + PLATE_2X4_THICKNESS_IN / 2;
+  /* The Z of a brace's own BEARING FACE at a given X. Each `braceEndpoints`
+     pair is the brace's reference edge, and `computeBraceBoardCornersIn` grows
+     the board away from it toward its plate — so the lower brace's reference
+     edge IS its top face and the upper brace's IS its underside. The two faces
+     this connector lands on are therefore these two lines exactly. */
+  function faceZAt(atXIn: number, x1: number, z1: number, x2: number, z2: number): number {
+    return z1 + ((atXIn - x1) / (x2 - x1)) * (z2 - z1);
   }
-  const bottomCrossZIn = crossZAt(lowerX1, lowerZ1, lowerX2, lowerZ2);
-  const topCrossZIn = crossZAt(upperX1, upperZ1, upperX2, upperZ2);
+
+  /* ⚠ **BOTH ENDS ARE CUT TO THE BRACE'S OWN PITCH — 2026-11-24.**
+     › *"a centered trapezoid 2x4 running vertical from the bottom part of
+     › each carrot to the top trapezoid's inner edge."* — Tommy
+
+     This board used to be a square-ended box from one brace CENTRELINE
+     crossing to the other. Its centreline length was right and its ends were
+     not: a bearing face sloped at the brace's pitch climbs about 2.9in across
+     this board's own 1 1/2in width, so a square end buried one corner in the
+     brace and left the same gap at the other. Measured bite per end, chevron,
+     120in tall: **2.036in at a 24in panel, 1.462in at 32 1/4in, 0.950in at
+     48in** — narrower panel, steeper brace, deeper bite. That pair was the
+     app's last standing member overlap, and it was a real part: nothing in
+     `panelCutList` filters by role, so the shop sheet carried it as a 2x4,
+     58 1/2in, **Square**, which cannot go in.
+
+     Reading each face at this board's two EDGES rather than at its centreline
+     makes it a trapezoid — same centreline length, both ends landing flat on
+     the wood they bear on. On a 32 1/4in panel: 58.500in on the centreline,
+     55.576in up one edge and 61.424in up the other. The same convention the
+     braces themselves have always used. */
+  const trapezoidCornersIn = normalizeQuadWindingIn([
+    { xIn: leftXIn, zIn: faceZAt(leftXIn, lowerX1, lowerZ1, lowerX2, lowerZ2) },
+    { xIn: rightXIn, zIn: faceZAt(rightXIn, lowerX1, lowerZ1, lowerX2, lowerZ2) },
+    { xIn: rightXIn, zIn: faceZAt(rightXIn, upperX1, upperZ1, upperX2, upperZ2) },
+    { xIn: leftXIn, zIn: faceZAt(leftXIn, upperX1, upperZ1, upperX2, upperZ2) },
+  ]);
+  const centerZIn = trapezoidCornersIn.reduce((sum, c) => sum + c.zIn, 0) / 4;
 
   return {
     memberId: "brace_center_connector",
@@ -410,15 +443,33 @@ function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount:
     speciesGrade: LUMBER_SPECIES_GRADE,
     plySpec: null,
     nominalSize: "2x4",
-    actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: topCrossZIn - bottomCrossZIn },
+    /* Longest point to longest point, as every trapezoid in this app is
+       bought and cut — see `braceLongestEdgeIn`. */
+    actualDimsIn: {
+      thicknessIn: PLATE_2X4_THICKNESS_IN,
+      widthIn: PLATE_2X4_WIDTH_IN,
+      lengthIn: braceLongestEdgeIn(trapezoidCornersIn),
+    },
     orientation: "vertical",
-    position: { xIn: centerXIn - PLATE_2X4_THICKNESS_IN / 2, yIn: 0, zIn: bottomCrossZIn, rotationDeg: 0 },
+    /* ⚠ `trapezoidDepthIn`, because this one does NOT lie flat: it stands on
+       edge, 1 1/2in across the panel's face and 3 1/2in into the cavity, so
+       the audit would otherwise measure a solid 2in shallower than the one it
+       draws. `xIn`/`zIn` are the trapezoid's centre, as every trapezoid
+       member's position is. */
+    position: {
+      xIn: centerXIn,
+      yIn: PLATE_2X4_WIDTH_IN / 2,
+      zIn: centerZIn,
+      rotationDeg: 0,
+      trapezoidCornersIn,
+      trapezoidDepthIn: PLATE_2X4_WIDTH_IN,
+    },
     role: "blocking",
     qty: 1,
     notes:
-      "Chevron-only — connects the upper and lower diagonal braces where each one's own centerline crosses " +
-      "the panel's horizontal center, on the exterior wythe. A simplified square-cut first pass (no birdsmouth " +
-      "notch matching each brace's own tilt yet).",
+      "Chevron-only — connects the upper and lower diagonal braces, on the exterior wythe. Both ends are cut " +
+      "to the brace's own pitch and land flat on its bearing face, so the board is a trapezoid: its two long " +
+      "edges are plumb and differ in length. Cut it longest point to longest point.",
   };
 }
 

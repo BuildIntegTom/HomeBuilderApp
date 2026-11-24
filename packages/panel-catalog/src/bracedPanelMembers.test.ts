@@ -1,6 +1,7 @@
 import { PLATE_2X4_THICKNESS_IN } from "./panelMemberHelpers";
 import { describe, expect, it } from "vitest";
 import { describeBraceEndCuts } from "./panelMemberHelpers";
+import { overlappingMemberPairs } from "./memberPrism";
 import {
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
@@ -322,8 +323,9 @@ describe("buildBracedPanelMembers", () => {
     expect(connector).toBeDefined();
     expect(connector!.role).toBe("blocking");
     expect(connector!.orientation).toBe("vertical");
-    expect(connector!.position.xIn).toBeCloseTo(WIDTH_IN / 2 - 0.75, 6); // centered on the panel's own midline
-    expect(connector!.position.yIn).toBe(0); // exterior wythe only
+    expect(connector!.position.xIn).toBeCloseTo(WIDTH_IN / 2, 6); // its trapezoid's CENTRE, on the panel's own midline
+    expect(connector!.position.yIn).toBe(1.75); // exterior wythe, standing on edge 3 1/2in into the cavity
+    expect(connector!.position.trapezoidDepthIn).toBe(3.5);
     const mirroredConnector = chevronMirrored.find((m) => m.memberId === "brace_center_connector");
     expect(mirroredConnector).toBeDefined();
     // Same X (still centered on the midline) — only the underlying brace
@@ -331,6 +333,45 @@ describe("buildBracedPanelMembers", () => {
     expect(mirroredConnector!.position.xIn).toBeCloseTo(connector!.position.xIn, 6);
     expect(hatch.find((m) => m.memberId === "brace_center_connector")).toBeUndefined();
     expect(hatchMirrored.find((m) => m.memberId === "brace_center_connector")).toBeUndefined();
+  });
+
+  it("⚠ the connector's ends are cut to the brace's pitch, so it lands flat and overlaps nothing", () => {
+    /* The defect this pins: the connector used to run square-ended from one
+       brace CENTRELINE crossing to the other. Its centreline length was right
+       and its ends were not — a face sloped at the brace's pitch climbs about
+       2.9in across this board's own 1 1/2in width, so a square end buried one
+       corner in the brace and left the same gap at the other. It was on the
+       cut list as "Square", and it could not go in.
+
+       Pinned at THREE widths because the bite scales with the brace's pitch:
+       a narrower panel is a steeper brace and was a deeper bite (measured
+       before the fix: 2.036in at 24in, 1.462in at 32 1/4in, 0.950in at 48in). */
+    for (const widthIn of [24, 32.25, 48]) {
+      const members = buildBracedPanelMembers(widthIn, DEPTH_IN, HEIGHT_IN, false, "chevron", false);
+      const connector = members.find((m) => m.memberId === "brace_center_connector")!;
+      const corners = connector.position.trapezoidCornersIn!;
+      expect(corners).toHaveLength(4);
+
+      // Two plumb long edges, at the board's own two x faces.
+      const xs = [...new Set(corners.map((c) => Math.round(c.xIn * 1e6) / 1e6))].sort((a, b) => a - b);
+      expect(xs).toHaveLength(2);
+      expect(xs[1]! - xs[0]!).toBeCloseTo(1.5, 6);
+      expect((xs[0]! + xs[1]!) / 2).toBeCloseTo(widthIn / 2, 6);
+
+      // Different lengths up each edge — that difference IS the bevel.
+      const zAt = (x: number) => corners.filter((c) => Math.abs(c.xIn - x) < 1e-6).map((c) => c.zIn).sort((a, b) => a - b);
+      const [leftLo, leftHi] = zAt(xs[0]!) as [number, number];
+      const [rightLo, rightHi] = zAt(xs[1]!) as [number, number];
+      expect(rightHi - rightLo).toBeGreaterThan(leftHi - leftLo + 1);
+
+      // The centreline length is UNCHANGED by the fix — it was never wrong.
+      expect((leftHi - leftLo + (rightHi - rightLo)) / 2).toBeCloseTo(58.5, 6);
+      // Bought and cut longest point to longest point.
+      expect(connector.actualDimsIn.lengthIn).toBeCloseTo(Math.max(leftHi - leftLo, rightHi - rightLo), 6);
+
+      // And the pair the panel editor used to refuse is gone.
+      expect(overlappingMemberPairs(members)).toEqual([]);
+    }
   });
 
   it("mirrored chevron's center connector derives its crossing points from the mirrored (right-stud) brace endpoints, not the unmirrored ones", () => {

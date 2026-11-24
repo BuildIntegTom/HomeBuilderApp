@@ -194,11 +194,14 @@ const BASELINE: Record<string, number> = {
      the panel edge to the opposite post's face. Every brace had been running
      into the post it reached past. A hatch panel is now clean outright.
 
-     The chevron's remaining two are its legs clipping `brace_center_connector`,
-     the vertical post the two legs meet at mid-panel — the same shape of
-     problem as a diagonal crossing a centre nailer stud, and it wants the
-     same answer. */
-  "braced chevron": 2,
+     ⚠ 2 → 0 on 2026-11-24, and that was the app's LAST standing member
+     overlap. The chevron's two were its legs clipping
+     `brace_center_connector`, the vertical post the two legs meet at
+     mid-panel — and the cause was never the post's length but its SQUARE
+     ENDS, bearing on a face sloped at the brace's own pitch. Cut both ends to
+     that pitch and the board lands flat: same centreline length, nothing in
+     anything else. See `buildBracedCenterConnector`. */
+  "braced chevron": 0,
 };
 
 describe("⚠ no member occupies the same space as another", () => {
@@ -780,10 +783,11 @@ const SWEEP_FINDINGS: Record<string, string[]> = {
     "girt_N_bar_right x blocking_N_exterior @ 47.5..144",
     "girt_N_bar_right x blocking_N_interior @ 47.5..144",
   ],
-  "braced chevron": [
-    "diagonal_brace_lower_ext x brace_center_connector @ 32..144",
-    "diagonal_brace_upper_ext x brace_center_connector @ 32..144",
-  ],
+  /* ⚠ Emptied 2026-11-24 with the connector's bevelled ends, and emptied at
+     EVERY height in the sweep — which matters, because the square-ended bite
+     scaled with the brace's pitch and so was worst on the panels this sweep
+     exists to catch. */
+  "braced chevron": [],
 
   /* ⚠ **Finding 1 is FIXED**, in all three styles and both orientations: the
      single girt row drops to the sloped top plate's own underside instead of
