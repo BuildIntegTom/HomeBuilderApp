@@ -129,16 +129,68 @@ route. Larry has the report; we don't.
   roughly 290 lb of capacity** — over. A three-panel wall wants a fifth screw,
   or a rule of at least four K panels per 40ft wall. He quoted "3 or 4" without
   flagging it.
-- **Plates on both faces — ambiguous, 2× either way.** *"need to go on the
-  inside as well as the outside of the K-panel."* Either (a) both frames' outer
-  faces, which is what his transcript drew — 6 plates, 88 nails per panel; or
-  (b) both faces of every joint — **12 plates, ~176 nails**. (b) resolves the
-  one-sided ⅜in eccentricity his own write-up flags, but buries a plate in the
-  straw cavity. **Ask him which.**
+- **Plates on both faces — ~~ambiguous~~ ANSWERED, and the answer is no.**
+  *"need to go on the inside as well as the outside of the K-panel."* Either
+  (a) both frames' outer faces, which is what his transcript drew — 6 plates,
+  88 nails per panel; or (b) both faces of every joint — **12 plates, ~176
+  nails**. (b) resolves the one-sided ⅜in eccentricity his own write-up flags.
+  **It is refused on manufacturing grounds — see below.**
 
 ⚠ **Build nothing from the plate detail.** He said *"I am still not happy with
 the results"* twice. It is a working hypothesis its own author is dissatisfied
 with.
+
+---
+
+## ⚠ NOTHING GOES ON THE STRAW SIDE — the constraint that settles it
+
+**Tommy, 2026-11-24:**
+
+> *"I think he was wanting to put steel plates on each side of the brace
+> member, one of which right next to the straw — which I do not want to design
+> like that, because I can't really compress straw into the frame if the
+> pieces are there."*
+
+**This is not a preference; it is the fabrication sequence this app has
+modelled from the start, and Larry's two-sided detail contradicts it.** Three
+places already say so in the repo:
+
+- `panelRecipe.ts`, quoting him 2026-10-25: *"The diagonals for each panel are
+  added after it comes out of the compression table via panel surgery."* —
+  *"A member added after pressing IS a composition. The panel leaves the table
+  as a plain box and then gets routed and fitted."*
+- The same file on HOW: *"Inside the panels depth — the straw router bit'ed
+  out a little groove for a wooden member to sit where straw was."*
+- `data.ts`, the Braced Panel's own description: *"diagonal bracing carved
+  into the finished compressed panel afterward."*
+
+**So the order is: fill, compress, then route and fit.** Anything on the
+EXTERIOR face can be let into a routed groove after pressing, which is what
+every brace in this app already is. Anything on the **straw side of the
+interior frame** has to be there *before* the straw is, and then there is no
+way to pack the cavity around it — Tommy's sentence exactly. You cannot route
+to it from outside either; the groove would have to go clean through the
+panel.
+
+⚠ **So option (b) is dead, and the one-sided eccentricity Larry's write-up
+flags stays unresolved by that route.** If plates come back at all they are
+6, not 12, and the eccentricity needs a different answer. Worth telling him
+in these terms rather than as a preference: it is the compression table that
+refuses it, not the drawing.
+
+⚠ **AND IT IS A GENERAL RULE WORTH STATING ONCE:** a part this app can add to
+a braced panel must be reachable from a face after pressing. That is already
+true of every brace, tie and nailer modelled today. **It has not been written
+down anywhere as a rule, and it should be** — it is the thing that makes
+"panel surgery" a real constraint rather than a description.
+
+⚠ **One existing part to check against it.** The chevron's
+`brace_center_connector` stands on edge — 1½in across the face but **3½in
+into the cavity**, where the braces it joins are 1½in. It is still reachable
+from the exterior face, so it does not break the rule, but it asks for a
+groove more than twice as deep as any other surgery member. **Is that routable
+in practice?** If not, the connector wants to lie flat like everything else.
+Nobody has been asked.
 
 ---
 
@@ -164,4 +216,8 @@ at 980 lb a three-panel wall is marginal; at 4,700 it is not close.
 - **2026-11-24** — Tommy: screws are probably fine. `Ceg` and `CΔ` split out of
   the `CD` note into their own flagged rows so the Shear Derivation sheet carries
   the question to whoever reads it. Nothing numeric changed.
-- *(next: Larry's answers)*
+- **2026-11-24, later** — Sheet sent; **Larry read it.** No answer yet on
+  `Ceg`/`CΔ`. Tommy ruled out the straw-side plate on compression grounds —
+  see the section above. Note-passing stays as it is for now; connecting
+  Larry's own Claude to this repo is **undecided**, not declined.
+- *(next: Larry's answers on `Ceg`, `CΔ`, and ESR-2442 on predrilling)*
