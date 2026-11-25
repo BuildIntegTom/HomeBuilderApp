@@ -76,6 +76,38 @@ const CASES: { name: string; members: PanelMember[] }[] = [
       return [...buildFloorRoofPanelMembers(o), ...buildRoofPanelCapMembers(o, "eave", 4)];
     })(),
   },
+  /* ⚠ **THE MITRED ROOF PANEL — an octagon's, and it CRASHED this audit,
+     2026-11-24.** Every roof case above is square in plan, and a mitre is
+     what makes a member OBLIQUE, which is what routes a pair through
+     `convexSolidsOverlap` instead of the 2D path. That function walked
+     `BOX_FACES` for both solids — a silent assumption of eight corners — and
+     the tall end's bearing wedge is a TRIANGULAR section ring, six corners.
+     `corners[7]` was `undefined` and it threw, taking the page down the
+     moment anyone drew an Octagon from the Home tiles. Tommy: *"octagons are
+     unable to work on the browser."*
+
+     So this case exists to make the suite reach what a Home tile reaches.
+     ⚠ **The numbers are the 16ft Octagon's own leading corner**, lifted from
+     `floorRoofPanelMitre.test.ts`' `LEADING` — what `deckPanelCut` measures
+     on that building — rather than a pull-back invented here. An invented
+     mitre reports overlaps the app would never build, which is worse than no
+     case at all. */
+  {
+    name: "roof panel as installed, mitred",
+    members: (() => {
+      const o = {
+        kind: "roof" as const,
+        widthIn: 28.125,
+        depthIn: D,
+        lengthIn: 192,
+        structuralGirtEnds: [],
+        pitchIn12: 4,
+        bearingSeatDepthIn: D,
+        mitreIn: { startNearIn: 56.25, startFarIn: 28.125, endNearIn: 56.25, endFarIn: 28.125 },
+      };
+      return [...buildFloorRoofPanelMembers(o), ...buildRoofPanelCapMembers(o, "eave", 4)];
+    })(),
+  },
   /* Previously unchecked, for want of a test that could see a diagonal. */
   { name: "braced chevron", members: buildBracedPanelMembers(48, D, H, false, "chevron", false) },
   { name: "braced hatch", members: buildBracedPanelMembers(48, D, H, false, "hatch", true) },
@@ -257,6 +289,7 @@ describe("⚠ no member occupies the same space as another", () => {
       "floor panel",
       "roof panel",
       "roof panel as installed",
+      "roof panel as installed, mitred",
       "braced hatch",
       /* ⚠ 1 → 0 on 2026-11-01. The gable's single overlap was its sloped top
          plate clipping its own skin, and it went when the skin, the plates

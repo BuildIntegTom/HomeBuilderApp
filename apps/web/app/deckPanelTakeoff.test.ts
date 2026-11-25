@@ -484,6 +484,16 @@ describe("⚠ the floor deck is cut to the building it sits on", () => {
     roofGableEndInsetIn: 0,
   });
 
+  /** ⚠ **The same octagon with its roof CUT to the footprint**, which is
+   *  what the app does and what `octagonInput` above leaves off. That one
+   *  missing flag is why no test here reached the crash recorded below: with
+   *  it off, a roof panel keeps its bounding box and no member is oblique, so
+   *  no pair ever takes the 3D overlap path. */
+  const cutOctagonInput = (ft: number): DeckPanelTakeoffInput => ({
+    ...octagonInput(ft),
+    roofCutToFootprint: true,
+  });
+
   it("⚠ a BOX is untouched, down to its panel widths", () => {
     /* THE safety property: every rectangle building in the app goes through
        this code, and the cut must be invisible to it. 15.5in edge panels,
@@ -499,6 +509,90 @@ describe("⚠ the floor deck is cut to the building it sits on", () => {
     for (const g of takeoff.groups.filter((g) => g.kind === "floor")) {
       expect(g.options.mitreIn, "a box has no mitred panel").toBeUndefined();
     }
+  });
+
+  it("⚠ THE OVERLAP AUDIT RUNS ON AN OCTAGON AT ALL — it used to throw, 2026-11-24", () => {
+    /* ⚠ **This is the test that was missing, and the app crashed for want of
+       it.** Tommy: *"octagons are unable to work on the browser."* Drawing
+       either Octagon tile took the whole page down with
+       **`Cannot read properties of undefined (reading '0')`** out of
+       `normalsOf`, inside `page.tsx`'s own `deckMemberOverlapReviewEntries`.
+
+       `convexSolidsOverlap` walked `BOX_FACES` for both solids — a silent
+       assumption that a member is eight corners in box topology. A roof
+       panel's tall end carries a bearing wedge whose section ring is a
+       TRIANGLE (6 corners), so `corners[7]` was `undefined`.
+
+       ⚠ **Why nothing caught it, and it needed BOTH halves.** A rectangle
+       building has the 6-corner wedge but no mitre, so no member is oblique
+       and no pair ever reaches the 3D path. An octagon is mitred, which makes
+       members oblique, which is what routes them there. Every roof case in
+       `memberOverlap.test.ts` was square in plan; every mitre fixture was a
+       FLOOR panel, which has no wedge. The crash lived exactly in the gap
+       between two well-tested things.
+
+       So this asserts the only thing that actually matters: the audit
+       COMPLETES on the real building the Home tile draws. What it finds is
+       pinned below it. */
+    for (const ft of [16, 32]) {
+      const roof = computeDeckPanelTakeoff(cutOctagonInput(ft)).groups.filter((g) => g.kind === "roof");
+      expect(roof.length, `${ft}ft octagon has roof groups`).toBeGreaterThan(0);
+
+      /* ⚠ Both halves asserted on the SAME group, not merely present
+         somewhere in the building — a mitred panel over here and a wedge over
+         there is the arrangement that passed for months. */
+      const crashShaped = roof.filter(
+        (g) =>
+          g.options.mitreIn !== undefined &&
+          [...g.members, ...g.braceMembers].some((m) => /wedge-end-cheek/.test(m.memberId)),
+      );
+      expect(crashShaped.length, `${ft}ft: a mitred roof panel that also carries a wedge`).toBeGreaterThan(0);
+
+      for (const group of roof) {
+        expect(() => overlappingMemberPairs([...group.members, ...group.braceMembers]), group.key).not.toThrow();
+      }
+    }
+  });
+
+  it("⚠ AND WHAT IT FINDS, now that it can look: a mitred roof panel's joists run into its end lids", () => {
+    /* Pinned separately from the crash above, because they are two different
+       claims — that the audit runs, and what it says once it does.
+
+       ⚠ **This is a real defect and it is NOT the crash fix's doing.** It was
+       always there; `convexSolidsOverlap` threw before it could report it, so
+       the building that had the most to say was the one that could not speak.
+       With the throw gone the Review Log says it out loud on both Octagon
+       tiles: *"2 deck panel types with two members in the same volume — these
+       pairs are NOT accounted for by the roof bracing and nobody has
+       explained them."*
+
+       The shape of it: a mitre pulls a roof panel's plan corners back, the
+       joists and the end lids are cut for that pull-back separately, and
+       where the cut is deepest they end up in each other — plus the end lid's
+       own skin against its own faces. A rectangle never shows it because a
+       rectangle has no mitre.
+
+       ⚠ **Pinned, NOT accepted.** The count is here so that fixing it reads
+       as this list getting shorter, and so that a NEW overlap elsewhere
+       cannot hide inside a number nobody wrote down. Chasing the geometry is
+       its own stride. */
+    const offenders: Record<number, number> = {};
+    for (const ft of [16, 32]) {
+      let groupsWithPairs = 0;
+      for (const group of computeDeckPanelTakeoff(cutOctagonInput(ft)).groups.filter((g) => g.kind === "roof")) {
+        const pairs = overlappingMemberPairs([...group.members, ...group.braceMembers]);
+        if (pairs.length > 0) {
+          groupsWithPairs++;
+          // Every pair names a joist or a lid — if something else appears, it
+          // is a different defect and must not be absorbed into this one.
+          for (const pair of pairs) {
+            expect(pair, `${ft}ft ${group.key}`).toMatch(/joist-|lid-|web-/);
+          }
+        }
+      }
+      offenders[ft] = groupsWithPairs;
+    }
+    expect(offenders).toEqual({ 16: 2, 32: 2 });
   });
 
   it("⚠ an octagon's floor deck is the OCTAGON's area, not its bounding square", () => {

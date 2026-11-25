@@ -1,5 +1,5 @@
 import type { PanelMember } from "./componentSchema";
-import { BOX_FACES, memberBoxSizeIn, memberLocalCornersIn } from "./panelMemberHelpers";
+import { memberBoxSizeIn, memberFaceIndices, memberLocalCornersIn } from "./panelMemberHelpers";
 
 /**
  * ⚠ EVERY MEMBER IN THIS APP IS A PRISM: a convex polygon extruded along one
@@ -222,10 +222,36 @@ function plainBoxPrismAlongX(member: PanelMember): Prism | null {
  * Degenerate axes (parallel edges) are skipped, as they are in the 2D version.
  * A shared face is contact rather than overlap, same `EPS` and same meaning.
  */
-function convexSolidsOverlap(a: [number, number, number][], b: [number, number, number][]): boolean {
-  const edgesOf = (corners: [number, number, number][]) => {
+/**
+ * ⚠ **EVERY SOLID BRINGS ITS OWN FACES — 2026-11-24.**
+ *
+ * This used to walk `BOX_FACES` for both solids, which is a silent assumption
+ * that every member is eight corners in box topology. Most are. A SECTION
+ * prism is not: its ring can be a pentagon (10 corners) or a **triangle** (6),
+ * and `memberFaceIndices` has said so in its own comment since the day it was
+ * written — *"its ring can be a TRIANGLE (the tall end's bearing wedge),
+ * which `BOX_FACES`' fixed 4-and-4 table cannot describe."* The renderer and
+ * the .obj exporter both ask it; only this function did not.
+ *
+ * On a 6-corner wedge `BOX_FACES` reaches `corners[7]`, which is `undefined`,
+ * and `normalsOf` threw **`Cannot read properties of undefined (reading '0')`**
+ * — taking the whole page down the moment anyone drew an Octagon, because an
+ * octagon's roof panels are plan-mitred, a mitre makes them oblique, and
+ * oblique is what routes a pair through here. Reported by Tommy, 2026-11-24:
+ * *"octagons are unable to work on the browser."*
+ *
+ * Asking each member for its own faces fixes it for every ring size at once,
+ * and keeps one answer about a member's shape instead of two.
+ */
+function convexSolidsOverlap(
+  a: [number, number, number][],
+  facesA: number[][],
+  b: [number, number, number][],
+  facesB: number[][],
+): boolean {
+  const edgesOf = (corners: [number, number, number][], faces: number[][]) => {
     const out: [number, number, number][] = [];
-    for (const face of BOX_FACES) {
+    for (const face of faces) {
       for (let i = 0; i < face.length; i++) {
         const p = corners[face[i]! - 1]!;
         const q = corners[face[(i + 1) % face.length]! - 1]!;
@@ -234,9 +260,10 @@ function convexSolidsOverlap(a: [number, number, number][], b: [number, number, 
     }
     return out;
   };
-  const normalsOf = (corners: [number, number, number][]) => {
+  const normalsOf = (corners: [number, number, number][], faces: number[][]) => {
     const out: [number, number, number][] = [];
-    for (const face of BOX_FACES) {
+    for (const face of faces) {
+      if (face.length < 3) continue;
       const p = corners[face[0]! - 1]!;
       const q = corners[face[1]! - 1]!;
       const r = corners[face[2]! - 1]!;
@@ -247,9 +274,14 @@ function convexSolidsOverlap(a: [number, number, number][], b: [number, number, 
     return out;
   };
 
-  const axes: [number, number, number][] = [...normalsOf(a), ...normalsOf(b)];
-  const ea = edgesOf(a);
-  const eb = edgesOf(b);
+  /* A solid with no faces (a degenerate ring under 3 points — `memberFaceIndices`
+     returns `[]`) has no separating axes of its own and would otherwise be
+     reported as overlapping everything it shares a bounding region with. */
+  if (facesA.length === 0 || facesB.length === 0) return false;
+
+  const axes: [number, number, number][] = [...normalsOf(a, facesA), ...normalsOf(b, facesB)];
+  const ea = edgesOf(a, facesA);
+  const eb = edgesOf(b, facesB);
   for (const p of ea) {
     for (const q of eb) {
       axes.push([p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]]);
@@ -294,7 +326,16 @@ function convexSolidsOverlap(a: [number, number, number][], b: [number, number, 
  */
 export function membersOverlap(a: PanelMember, b: PanelMember): { overlaps: boolean; mixedAxes: boolean } {
   if (memberIsOblique(a) || memberIsOblique(b)) {
-    return { overlaps: convexSolidsOverlap(memberLocalCornersIn(a), memberLocalCornersIn(b)), mixedAxes: false };
+    /* ⚠ Each solid's OWN faces, not `BOX_FACES` — see `convexSolidsOverlap`. */
+    return {
+      overlaps: convexSolidsOverlap(
+        memberLocalCornersIn(a),
+        memberFaceIndices(a),
+        memberLocalCornersIn(b),
+        memberFaceIndices(b),
+      ),
+      mixedAxes: false,
+    };
   }
 
   let pa = memberPrism(a);
