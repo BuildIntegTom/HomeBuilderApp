@@ -293,6 +293,7 @@ export interface FloorRoofPanelOptions {
    while all three gates passed. */
 import { NO_FLOOR_ROOF_MITRE, type FloorRoofPanelMitre } from "./floorRoofPanelMitreTypes";
 import { applyRoofPlanMitre } from "./roofPlanMitre";
+import { planRoofMitreEndPlates } from "./roofMitreEndPlate";
 export { NO_FLOOR_ROOF_MITRE, type FloorRoofPanelMitre };
 
 /**
@@ -2248,12 +2249,40 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
     /* ⚠ **The PITCH, because the cut is plumb and the panel is tilted.**
        Without it the mitre is the one cut in this panel that is square to the
        roof surface instead of vertical — see `plumbSpanSlopeOf`. */
-    return applyRoofPlanMitre(members, {
+    /* ⚠ **A MITRED END IS CLOSED BY ITS OWN PLATE — his answer, 2026-11-25.**
+       The cut saws the end lid off, and what replaces it is one dual-bevelled
+       plate on the cut face rather than whatever sliver of the old lid the saw
+       happened to leave. So the surviving pieces of that end's lid come out
+       and the plate goes in. Only the LID goes — the bearing wedge and the
+       webs are structure, not closure, and they stay cut.
+
+       ⚠ **And the STRUCTURE is cut to a deeper plane than the plate's face**,
+       so the plate has its 2 1/4in to sit in, exactly as a square panel's lid
+       does. See `roofMitreEndPlate.ts`, which has the measurement that forced
+       it and the assumption to revisit if he wants the surviving sliver kept
+       instead. */
+    const plate = planRoofMitreEndPlates(
+      {
+        widthIn: o.widthIn,
+        lengthIn: o.lengthIn,
+        depthIn: o.depthIn,
+        pitchIn12: o.pitchIn12,
+        joistThicknessIn: JOIST_2X6_THICKNESS_IN,
+      },
+      roofMitre,
+    );
+
+    const cut = applyRoofPlanMitre(members, {
       widthIn: o.widthIn,
       lengthIn: o.lengthIn,
-      mitreIn: roofMitre,
+      mitreIn: plate.structuralMitre,
       pitchIn12: o.pitchIn12,
-    }).members;
+    });
+
+    const kept = cut.members.filter(
+      (member) => !plate.replacedEnds.some((atEnd) => member.memberId.startsWith(`lid-${atEnd}-`)),
+    );
+    return [...kept, ...plate.plates];
   }
   return members;
 }
