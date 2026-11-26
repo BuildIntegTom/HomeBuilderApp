@@ -7146,6 +7146,63 @@ The brief asked for this to be checked rather than assumed, because the Panelize
 - **⚠ Top bar & navigation reorganisation — two questions blocking a stage, and nine smaller ones**, in that section's own "Open Items — Top Bar & Navigation Reorganisation". **Both blocking questions were ANSWERED by Tommy 2026-09-26** — the acting-as switcher moves into Account while the company name stays on the bar (so the "visible at all times" decision is satisfied, not reversed), and Role nests as two clearly headed groups with the "not a permission" line kept prominent. U2 is unblocked. Still open: whether the keyhole still hides out-of-scope edit tabs, **what a twelve-item top bar should do now that it is MEASURED and does NOT fit** — U1 measured it 2026-09-28 (`apps/web/harness/ui-reorg-u1/evidence-projection.json`, and the built bar in `evidence-u1-as-built.json`): twelve controls want **~1634px of viewport / 1594.2px of row content as built** (~1618 / 1577.5 was the projection figure) and fit at no width in the brief, with `Print` pushed off screen at 360px and the acting-as company cut to 20px at 768 and at 1200. **⚠ AND THE BAR NOW HAS A FOURTH NUMBER THAT NEEDS HIS CONFIRMATION: `1454px`**, added 2026-09-28 when the shed order was corrected, because at 1200px U1's Design and View menus left **zero characters** of the acting-as company name at all four roles. 1454 is the bisected width at which those two cost the name nothing; 1381px (chip at its cap) and 1226px (first visible character) are the measured alternatives if he prefers a truncated-but-present name at a narrower width. **⚠ AND THE FINDING HE MOST NEEDS: Design and View therefore do not exist at 710px (his own viewport), nor at 1280 or 1366 — the sidebar `ViewerDial` is the real view control for him and for most users, and the top-bar menus are a wide-monitor affordance.** What else sheds is still Tommy's decision with those numbers in hand, the `2D Floor Plan` → `Plan View` rename, whether Print shows a value when active, whether the view dial's wheel and rustle sound survive at desktop width, where `Project name` belongs, whether Read Me becomes a note, what Design/View do on the non-Wall tabs, and **ten pre-existing sidebar buttons labelled *Open* that are wired to a toggle and therefore close the sheet they name** (counted 2026-09-28; owned by U5).
 - **Report bug / feature request backend — FLAGGED FOR LATER by Tommy (2026-09-26), not an open question.** *"Right now it goes to a note that is easy enough… Let's consider backend improvements to that as a flagged thing to do later."* The near-term surface is a sticky note carrying the existing `/report-bug` wording verbatim plus the current view's name. What a later decision needs to answer is written out in the reorganisation section: where a report goes, whether it needs its own table and RLS (every existing RLS pattern is company-scoped; a bug report is not obviously a company's property), whether the reporter's identity is attached (reports can come from signed-out guests), and whether any project state travels with it — which would make a bug report a data export and put it inside the redaction model.
 
+## The proposal's only picture had no roof, no floor and no foundation (2026-11-26) — FIXED
+
+**Found in the first thirty seconds of the January template-readiness pass**, by
+drawing the Tiny House and opening the Price page — which is what a stranger
+does.
+
+`BuildingSummaryRender` spreads `{...props}` straight into `Building3DView`, so
+its own interface is the ONLY thing deciding what the captured picture knows
+about. `Building3DView` defaults `showFloorPanels = false` and
+`showRoofPanels = false`, and **neither prop had ever been forwarded**. So the
+static rendering on the Project Summary — the one image on the fabricator
+proposal, on every building this app has ever drawn — showed walls and gable
+tiles standing open to the sky, while the panel table beside it read
+*"19 wall + 14 gable + 7 tilted gable + 13 floor + 12 roof"*.
+
+⚠ **The file's own doc comment had already named the failure mode**, about a
+different prop: *"A summary image that disagreed with the model would be the
+quietest kind of wrong."* Same family as the roof-brace face defect of
+2026-11-22 — prose that contradicts the code beside it is a defect report, not
+decoration.
+
+### What was added, and why those values
+
+Eight props, taken from the live `Building3DView` call site verbatim:
+`showFloorPanels`, `showRoofPanels`, `roofPitchIn12`, `roofEaveHeightFt`,
+`roofForm`, `roofGableEndInsetIn`, `gableEndsFullHeight`, `crossTiltWallIds`.
+The four roof values come straight out of `deckPanelTakeoffInput`, as the live
+view takes them — two calls to one pure function can only disagree if they are
+given different inputs.
+
+⚠ **The two gates are the SCOPE flags, not the layer toggles.** The live view
+uses `floorsEnabled && showFloorDeck3D`; this uses `floorsEnabled` alone. The
+toggles exist so somebody can lift a deck off and look inside, and a printed
+proposal should show what is built. `roofEnabled` was already forwarded on
+exactly that basis.
+
+### And a second instance, found by diffing the two call sites end to end
+
+The live view passes **65** props and the summary **43**. Twenty of the missing
+twenty-two are interaction handlers and viewer toggles, which a static capture
+is right not to have. The other six are the **Bale Foundation**:
+`isBaleFoundationFloor`, its four dimension props and `floorBottomSkinEnabled`.
+Picking Bale Foundation changed the live model and left the proposal's picture
+showing a building with nothing under it. Added too.
+
+⚠ **The reusable lesson is about the shape, not the props.** A component that
+spreads its whole props object into a heavier child, but re-declares every
+field in its own interface, will silently lose every prop the child gains
+afterwards — with no type error, because they are all optional. Diff the two
+call sites whenever one of them grows.
+
+### Verified
+
+Browser, at 1080x720 natural capture size: Tiny House gained its roof deck and
+floor deck; The Tank (48 roof panels) likewise; switching to Bale Foundation
+put the rim framing under the walls. No console errors.
+
 ## The hidden canvas that never stopped drawing (2026-10-03) — BUILT, branch `frameloop`
 
 **One line of behaviour, two bugs, and the second one was not the one anybody was looking for.** The Project Summary's static 3D rendering is produced by `BuildingSummaryRender`, which mounts a full `Building3DView` inside a react-three-fiber `<Canvas>` parked at `position: fixed; left: -9999px` and grabs one frame as a PNG. `page.tsx` mounts it **unconditionally whenever a footprint exists** — it is not inside a `StickyNote`, so unlike every other heavy surface in this app it is alive for the entire session.

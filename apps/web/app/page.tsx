@@ -19199,6 +19199,34 @@ export default function LayoutEditor() {
               wallPlanMitreByWallId={wallPlanMitreByWallId}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
+              /* ⚠ **The decks, 2026-11-26.** See this component's own prop
+                 doc: they had never been forwarded, so the proposal's only
+                 picture showed no floor and no roof on any building. The
+                 values are the SCOPE flags rather than
+                 `floorsEnabled && showFloorDeck3D` as the live view uses,
+                 because the layer toggles are for looking inside and this
+                 image gets printed. */
+              showFloorPanels={floorsEnabled}
+              showRoofPanels={roofEnabled}
+              /* ⚠ Straight out of `deckPanelTakeoffInput`, exactly as the
+                 live view takes them — two calls to one pure function can
+                 only disagree if they are given different inputs, and a
+                 summary image that disagreed with the model would be the
+                 quietest kind of wrong. */
+              roofPitchIn12={deckPanelTakeoffInput.roofPitchIn12}
+              roofEaveHeightFt={deckPanelTakeoffInput.roofEaveHeightFt}
+              roofForm={deckPanelTakeoffInput.roofForm}
+              roofGableEndInsetIn={deckPanelTakeoffInput.roofGableEndInsetIn}
+              gableEndsFullHeight={gableRowsCloseOverRoof}
+              crossTiltWallIds={crossTiltWallIds}
+              /* ⚠ The Bale Foundation's framing — the same omission as the
+                 decks above, and the live view's own values verbatim. */
+              isBaleFoundationFloor={isBaleFoundationFloor}
+              baleFoundationTopDepthIn={baleFoundationTopDepthIn}
+              baleFoundationBottomDepthIn={baleFoundationBottomDepthIn}
+              baleFoundationGapIn={baleFoundationGapIn}
+              baleFoundationFieldSpacingIn={baleFoundationFieldSpacingIn}
+              floorBottomSkinEnabled={hasSteelClaySkin}
               groundInteriorBearingWalls={groundInteriorBearingWalls}
               secondStoryInteriorBearingWalls={secondStoryInteriorBearingWalls}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}

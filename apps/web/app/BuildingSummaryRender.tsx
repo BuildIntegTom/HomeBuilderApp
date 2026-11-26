@@ -53,6 +53,54 @@ export interface BuildingSummaryRenderProps {
     }[]
   >;
   roofEnabled?: boolean;
+  /* ⚠ **THE FLOOR AND ROOF DECKS — ADDED 2026-11-26, AND THEY HAD NEVER BEEN
+     FORWARDED AT ALL.** `showFloorPanels` and `showRoofPanels` default to
+     `false` in `Building3DView`, and nothing here passed them, so the static
+     rendering on the Project Summary drew walls and gable tiles only — on
+     every building, since this component was written. The panel table
+     directly beside the picture was meanwhile saying "13 floor + 12 roof" on
+     a Tiny House. This file's own doc comment called that case *"the quietest
+     kind of wrong"*.
+
+     ⚠ They are gated on the SCOPE flags (`floorsEnabled` / `roofEnabled`),
+     NOT on the layer toggles beside the live 3D view. Those toggles exist so
+     somebody can lift a deck off and look inside; a printed proposal should
+     show what is built, and `roofEnabled` above is already forwarded on
+     exactly that basis.
+
+     The remaining four are what the deck takeoff needs to place the panels on
+     a real slope — see `computeDeckPanelTakeoff`'s inputs. Without a pitch
+     there is no plane to lay a roof deck on and it is withheld. */
+  showFloorPanels?: boolean;
+  showRoofPanels?: boolean;
+  roofPitchIn12?: number;
+  roofEaveHeightFt?: number;
+  roofForm?: "shed" | "peaked";
+  roofGableEndInsetIn?: number;
+  /** The roof-top lift on a gable row — forwarded so the rows the summary
+   *  already drew still meet the deck it now draws above them. */
+  gableEndsFullHeight?: boolean;
+  crossTiltWallIds?: Set<string>;
+  /* ⚠ **THE BALE FOUNDATION — THE SAME OMISSION, FOUND BY DIFFING THE TWO
+     CALL SITES.** The live view takes six props that draw the Bale
+     Foundation's rim rings and field stacks and none of them reached here,
+     so picking Bale Foundation (the Floor tab's own default option, per B7's
+     note) changed the live model and left the proposal's picture showing a
+     building with nothing under it.
+
+     ⚠ Found only because the decks above were fixed first and the list was
+     then diffed end to end — the other 20 props the live view holds back are
+     interaction handlers and viewer toggles, which a static capture is right
+     not to have. The lesson is in the shape: this component spreads
+     `{...props}` straight into `Building3DView`, so its interface is the ONLY
+     thing deciding what the picture knows about, and a prop added to the live
+     view is silently absent here forever after. */
+  isBaleFoundationFloor?: boolean;
+  baleFoundationTopDepthIn?: number;
+  baleFoundationBottomDepthIn?: number;
+  baleFoundationGapIn?: number;
+  baleFoundationFieldSpacingIn?: number;
+  floorBottomSkinEnabled?: boolean;
   /** B34 stride 3b — forwarded so the captured summary image shows the
    *  dividing walls at the same height the live model does. Without them the
    *  Project Summary's own picture would be the only place in the app still
