@@ -2,6 +2,7 @@ import type { MemberRole, PanelMember } from "./componentSchema";
 import {
   computeBraceEndCutAngleDeg,
   describeBraceEndCuts,
+  faceAcrossFieldOf,
   memberBoxSizeIn,
   type BraceEndCut,
 } from "./panelMemberHelpers";
@@ -227,13 +228,43 @@ function lengthLabelFor(member: PanelMember): string {
 }
 
 /** Both end cuts, sorted the way `dimensionsFor` already sorts them so the
- *  angle column and the note can never list them in different orders. */
+ *  angle column and the note can never list them in different orders.
+ *
+ *  ⚠ The FAR face goes in too. Without it every cut is read off one elevation
+ *  quad, and a member that leans out of that plane — every dual-bevelled gable
+ *  plate, every plan-mitred octagon board — is drawn as a raked section of
+ *  itself and reads wider than it is. See `BraceEndCut.modelAcrossIn`. */
 function endCutsFor(member: PanelMember): BraceEndCut[] {
   if (member.position.trapezoidCornersIn === undefined) return [];
   const order = { level: 0, plumb: 1, angled: 2 };
-  return describeBraceEndCuts(member.position.trapezoidCornersIn)
+  const farCornersIn = member.position.trapezoidFarCornersIn;
+  const depthIn = member.position.trapezoidDepthIn ?? memberBoxSizeIn(member).yIn;
+  return describeBraceEndCuts(
+    member.position.trapezoidCornersIn,
+    farCornersIn ? { farCornersIn, depthIn } : undefined,
+  )
     .slice()
     .sort((a, b) => order[a.kind] - order[b.kind]);
+}
+
+/**
+ * ⚠ **THE STOCK THE SAW CROSSES AT AN ANGLED END** — the jig block's own leg,
+ * and what the model is weighed against.
+ *
+ * `widthIn` was passed here for every member, and `faceAcrossFieldOf` records
+ * why that was wrong on nearly all of them: a cut list draws a member in
+ * ELEVATION, so the face the rake crosses spans the member's X and Z extents
+ * while its width runs through the panel's depth. A gable stud raked 18.43deg
+ * loses a 1½in x ½in wedge; the sheet printed 3½in x ~1³⁄₁₆in, a jig for a
+ * board laid the other way round.
+ *
+ * Falls back to `widthIn` for the two orientations whose drawn face does not
+ * show the board's length at all (no builder emits one today) — deliberately
+ * the reading that keeps the CHECK loud rather than one that guesses quietly.
+ */
+function faceAcrossIn(member: PanelMember): number {
+  const field = faceAcrossFieldOf(member);
+  return member.actualDimsIn[field ?? "widthIn"];
 }
 
 /**
@@ -433,10 +464,11 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
         const ends =
           endCutsFor(first).length === 0
             ? ""
-            : // The STOCK width, because the jig block is cut from stock — see
+            : // The STOCK, because the jig block is cut from stock — see
               // `missingTriangleFor`, which was built off the modelled face first
-              // and found it disagreeing by up to 1/32in on a real brace.
-              cutNoteForEnds(endCutsFor(first), first.actualDimsIn.widthIn);
+              // and found it disagreeing by up to 1/32in on a real brace. WHICH
+              // stock dimension is `faceAcrossIn`'s question, and not `widthIn`.
+              cutNoteForEnds(endCutsFor(first), faceAcrossIn(first));
         const mitre = planMitreFor(first);
         /* ⚠ A board can be bevelled, mitred in plan AND square-ended all at
            once — a top plate whose rake happens to be zero on a diagonal

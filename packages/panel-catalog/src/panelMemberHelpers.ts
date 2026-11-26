@@ -1542,11 +1542,134 @@ export function braceLongestEdgeIn(corners: [PanelSpacePoint2D, PanelSpacePoint2
   return e01 + e23 > e12 + e30 ? Math.max(e01, e23) : Math.max(e12, e30);
 }
 
+/**
+ * The far face of a member whose solid is its near face swept through the
+ * panel's depth — the second half of the geometry a cut note needs.
+ */
+export interface OutOfPlaneFace {
+  /** The same corners at the other depth extreme, in the same order. */
+  farCornersIn: readonly PanelSpacePoint2D[];
+  /** How far through the panel's depth the sweep runs, inches. */
+  depthIn: number;
+}
+
+/**
+ * ⚠ **HOW FAR THE SOLID LEANS ACROSS ITS OWN LENGTH over the panel's depth** —
+ * the one number that turns a near-face drawing back into a board.
+ *
+ * ## The derivation, because the obvious guess is wrong
+ *
+ * A member's near face is a quad in the elevation plane; the solid is that quad
+ * swept through the depth `D`, **sheared** by `(dx, dz)` — `dz` is the compound
+ * bevel (`compoundBevelFor`), `dx` the plan mitre (`planMitreFor`). With the
+ * drawn length's unit direction `u = (ux, uz)`, the across direction in the
+ * plane `(-uz, ux)`, and `P` the face's across-extent, the board's two long
+ * faces are spanned by `a = (L*ux, 0, L*uz)` and `d = (dx, D, dz)`, so
+ *
+ * ```
+ * n = a x d = ( -L*uz*D , L*(uz*dx - ux*dz) , L*ux*D )
+ * offset . n = P*L*D*(uz^2 + ux^2) = P*L*D
+ * |n|        = L*sqrt(D^2 + (uz*dx - ux*dz)^2)
+ * ```
+ *
+ * and the true separation of those faces — the board's own dimension — is
+ *
+ * ```
+ * trueAcross = P / sqrt(1 + ((uz*dx - ux*dz) / D)^2)
+ * ```
+ *
+ * ⚠ **It is NOT `cos(mitre) * cos(bevel)`.** `uz*dx - ux*dz` is the 2D cross
+ * product of the board's own length with the shear, so **only the shear
+ * component PERPENDICULAR to the length counts** — a shear along a board's
+ * length slides it, it does not thicken it. A board raked square to the fall is
+ * untouched by a bevel however steep. That is also why the bevel and the plan
+ * mitre collapse into one term instead of two factors: they are two components
+ * of a single lean, and a member can carry both at once.
+ *
+ * Returns that cross product (inches of lean over `depthIn`). Zero when the
+ * solid is a true prism, which is every member of every box building.
+ */
+export function faceShearAcrossIn(
+  corners: readonly PanelSpacePoint2D[],
+  outOfPlane: OutOfPlaneFace,
+  lengthDir: readonly [number, number],
+): number {
+  const { farCornersIn, depthIn } = outOfPlane;
+  if (!(depthIn > 0) || farCornersIn.length !== corners.length) return 0;
+  /* The biggest movement between the two faces on each axis, read the same way
+     `compoundBevelFor` and `planMitreFor` read them so the three cannot
+     disagree about which lean a member has. */
+  let dx = 0;
+  let dz = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const near = corners[i]!;
+    const far = farCornersIn[i]!;
+    const ax = far.xIn - near.xIn;
+    const az = far.zIn - near.zIn;
+    if (Math.abs(ax) > Math.abs(dx)) dx = ax;
+    if (Math.abs(az) > Math.abs(dz)) dz = az;
+  }
+  const [ux, uz] = lengthDir;
+  return uz * dx - ux * dz;
+}
+
+/**
+ * ⚠ **WHICH `actualDimsIn` FIELD RUNS ACROSS THE MEMBER'S DRAWN FACE** — the
+ * inverse of `memberBoxSizeIn`'s **Y** case, and the stock dimension a cut note
+ * must be built from.
+ *
+ * A cut list reads a member's end cuts off its ELEVATION, so the face it draws
+ * spans the member's X and Z extents and the panel's depth (Y) points out of
+ * the page. The board's length is one of the two in-plane extents; **whichever
+ * of thickness and width is not the Y one is the other**, and that is the stock
+ * the saw crosses and the jig block is cut from.
+ *
+ * ⚠ **Reaching for `widthIn` instead was wrong on almost every member this app
+ * builds, and the sheet said so 60 times.** A stud stands on edge
+ * (`memberBoxSizeIn`: X=thickness, Y=width), a plate and a skin lie flat
+ * (Y=width) — all three are drawn on their 1½in or ¾in face while their width
+ * runs through the wall. Only a braced panel's diagonal brace at 90deg (Y=thickness)
+ * is really drawn on its wide face, which is the member this file's jig note
+ * was first measured against. Measured on the 16ft Octagon's gable row: 60 of
+ * the 76 rows carrying an angled end printed a waste triangle 3½in or 15½in
+ * across where the cut crosses 1½in or ¾in, each one carrying the CHECK that
+ * correctly reported the sheet disagreeing with the model.
+ *
+ * Returns null for the two `horizontal` cases whose Y extent is the LENGTH: the
+ * drawn face does not show the board's length at all, so there is no honest
+ * reading to give. No current builder emits one — and a caller that meets one
+ * should keep the CHECK loud rather than pick a field.
+ */
+export function faceAcrossFieldOf(member: PanelMember): "thicknessIn" | "widthIn" | null {
+  const rotationDeg = member.position.rotationDeg;
+  const { orientation } = member;
+  if ((orientation === "diagonal" || orientation === "vertical") && rotationDeg === 90) return "widthIn";
+  if (orientation === "vertical" || orientation === "diagonal") return "thicknessIn";
+  if (orientation === "horizontal" && rotationDeg === 90) return null;
+  if (orientation === "horizontal" && rotationDeg === 180) return null;
+  if (orientation === "horizontal") return "widthIn";
+  return "thicknessIn"; // "flat"
+}
+
 export interface BraceEndCut {
   kind: "plumb" | "level" | "angled";
   /** Bevel angle off a square crosscut (perpendicular to the board's own
    * length), degrees, always in [0,90]. */
   angleDeg: number;
+  /**
+   * ⚠ **The modelled board's TRUE across-the-cut dimension at this end** —
+   * what `missingTriangleFor` weighs the stock against, and the only figure in
+   * this interface that knows the board is a solid rather than a drawing.
+   *
+   * `cutEdgeLengthIn * cos(angleDeg)` is the across-extent of the NEAR FACE,
+   * which equals the board's own dimension only while the board lies flat in
+   * the elevation plane. Give `describeBraceEndCuts` the far face and the depth
+   * and this carries the sheared reading instead — see `faceShearAcrossIn`.
+   *
+   * Absent when nobody supplied the far face, in which case
+   * `missingTriangleFor` falls back to the single-plane identity.
+   */
+  modelAcrossIn?: number;
   /**
    * The cut edge's own length — the distance the saw actually travels across
    * the face.
@@ -1595,6 +1718,7 @@ const SQUARE_TOLERANCE_IN = 1e-6;
  */
 export function describeBraceEndCuts(
   corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D],
+  outOfPlane?: OutOfPlaneFace,
 ): [BraceEndCut, BraceEndCut] {
   function edgeVec(a: PanelSpacePoint2D, b: PanelSpacePoint2D): [number, number] {
     return [b.xIn - a.xIn, b.zIn - a.zIn];
@@ -1612,18 +1736,46 @@ export function describeBraceEndCuts(
   const sqx = longEdge[1] / squareLen;
   const sqz = -longEdge[0] / squareLen;
 
+  /* How much of the out-of-plane shear lands ACROSS this board rather than
+     along it, and so how much the near face's across-extent is inflated. ONE
+     factor for both ends: it is the board's own slant, not the end's.
+     ⚠ `undefined`, not 1, when there is no solid to measure — a caller with
+     one face in hand gets the single-plane identity rather than a reading that
+     pretends to know, and a depth of zero can never reach a division. */
+  const shearFactor =
+    outOfPlane && outOfPlane.depthIn > 0
+      ? Math.hypot(
+          1,
+          faceShearAcrossIn(corners, outOfPlane, [longEdge[0] / squareLen, longEdge[1] / squareLen]) /
+            outOfPlane.depthIn,
+        )
+      : undefined;
+
   function describe(edge: [number, number]): BraceEndCut {
     const edgeLen = len(edge);
+    const isPlumb = Math.abs(edge[0]) < SQUARE_TOLERANCE_IN;
+    const isLevel = Math.abs(edge[1]) < SQUARE_TOLERANCE_IN;
+    const kind = isPlumb ? "plumb" : isLevel ? "level" : "angled";
+    /* ⚠ **A ZERO-LENGTH CUT EDGE IS NOT AN ANGLE OF ZERO, AND IT IS NOT NaN.**
+       Two coincident corners mean the board has run out to a point at this end
+       — measured on the 16ft Octagon's SW gable sliver plate, whose shop sheet
+       read *"~NaN° off square ... waste triangle 3½" x ~NaN""*. Dividing by it
+       put that NaN on a cut list. The end is reported square (there is no edge
+       to rake) with an across of zero, which is what makes the CHECK fire on
+       the real fault: a board modelled with no width at all. */
+    if (edgeLen < SQUARE_TOLERANCE_IN) {
+      return { kind, angleDeg: 0, cutEdgeLengthIn: 0, modelAcrossIn: 0 };
+    }
     const ex = edge[0] / edgeLen;
     const ez = edge[1] / edgeLen;
     const dot = ex * sqx + ez * sqz;
     const cross = ex * sqz - ez * sqx;
     let angleDeg = Math.abs((Math.atan2(cross, dot) * 180) / Math.PI);
     if (angleDeg > 90) angleDeg = 180 - angleDeg;
-    const isPlumb = Math.abs(edge[0]) < SQUARE_TOLERANCE_IN;
-    const isLevel = Math.abs(edge[1]) < SQUARE_TOLERANCE_IN;
-    const kind = isPlumb ? "plumb" : isLevel ? "level" : "angled";
-    return { kind, angleDeg, cutEdgeLengthIn: edgeLen };
+    /* The near face's own across-extent, then de-sheared back to the solid. */
+    const inPlaneAcrossIn = edgeLen * Math.cos((angleDeg * Math.PI) / 180);
+    const modelAcrossIn = shearFactor === undefined ? undefined : inPlaneAcrossIn / shearFactor;
+    return { kind, angleDeg, cutEdgeLengthIn: edgeLen, modelAcrossIn };
   }
 
   return [describe(shortEdgeA), describe(shortEdgeB)];
