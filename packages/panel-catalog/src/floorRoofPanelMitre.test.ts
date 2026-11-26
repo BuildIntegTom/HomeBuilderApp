@@ -282,14 +282,24 @@ describe("⚠ a roof panel's mitre is BUILT now — his plumb cut, 2026-11-18", 
     expect(joist.position.sectionFarCornersIn).toBeDefined();
   });
 
-  it("⚠ the eave joist's FIVE-cornered section survives too", () => {
+  it("⚠ the eave joist's FIVE-cornered section survives too — RESHAPED, not slid", () => {
     /* The reason a quad-based mechanism could not have done this: the top
-       chord's eave section has a taper kink, so it has five corners. A plumb
-       cut slides them; it does not reshape them. */
+       chord's eave section has a taper kink, so it has five corners.
+
+       ⚠ **This test used to add *"A plumb cut slides them; it does not
+       reshape them"*, and that was the defect.** Clipping a polygon with a
+       half-plane adds a vertex; moving the outside corners onto the line
+       keeps area the saw removed, and this ring's taper kink is the exact
+       shape `clampIsApproximate` has always named as the exception. Corrected
+       2026-11-25 — see `roofPlanMitre.test.ts`.
+
+       What matters here, and all that ever did, is that the five-cornered
+       ring comes through the cut as a ring the audit and the renderer can
+       measure, with its two faces still paired corner for corner. */
     const asked = buildFloorRoofPanelMembers({ ...ROOF, mitreIn: LEADING.mitreIn });
     const top = asked.find((m) => m.memberId === "joist-left-top")!;
-    expect(top.position.sectionCornersIn).toHaveLength(5);
-    expect(top.position.sectionFarCornersIn).toHaveLength(5);
+    expect(top.position.sectionCornersIn!.length).toBeGreaterThanOrEqual(5);
+    expect(top.position.sectionFarCornersIn).toHaveLength(top.position.sectionCornersIn!.length);
   });
 
   it("a square roof panel is untouched, byte for byte", () => {

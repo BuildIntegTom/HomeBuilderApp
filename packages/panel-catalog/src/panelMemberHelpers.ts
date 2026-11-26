@@ -190,6 +190,33 @@ export function memberBoxSizeIn(member: PanelMember): { xIn: number; yIn: number
   return { xIn: l, yIn: w, zIn: t }; // "flat"
 }
 
+/**
+ * ⚠ **WHICH `actualDimsIn` FIELD IS THIS MEMBER'S X EXTENT** — the inverse of
+ * `memberBoxSizeIn`'s X case, and the only honest way to SHORTEN a member
+ * across the panel's width.
+ *
+ * It is three different fields depending on orientation and rotation: a flat
+ * sheet's X is its `lengthIn`, a lid face board's (horizontal at 180deg) is
+ * its `widthIn`, and a joist's (vertical) is its `thicknessIn`. A caller that
+ * reached for `lengthIn` would resize a lid face board through its DEPTH and
+ * leave its width across the panel untouched — the piece would change size on
+ * the cut list in the wrong direction and not move at all in the model.
+ *
+ * Kept beside `memberBoxSizeIn` so the two cannot drift; `boxXExtentIsLength`
+ * is here so a caller that ALSO rewrites `lengthIn` can see the collision
+ * rather than silently lose one of the two numbers.
+ */
+export function boxXExtentFieldOf(member: PanelMember): "thicknessIn" | "widthIn" | "lengthIn" {
+  const rotationDeg = member.position.rotationDeg;
+  const { orientation } = member;
+  if ((orientation === "diagonal" || orientation === "vertical") && rotationDeg === 90) return "widthIn";
+  if (orientation === "vertical" || orientation === "diagonal") return "thicknessIn";
+  if (orientation === "horizontal" && rotationDeg === 90) return "thicknessIn";
+  if (orientation === "horizontal" && rotationDeg === 180) return "widthIn";
+  if (orientation === "horizontal") return "lengthIn";
+  return "lengthIn"; // "flat"
+}
+
 /** Every box/trapezoid-prism member's 6 quad faces, as 1-indexed corner
  * references into the 8-corner array `memberLocalCornersIn` returns — this
  * table is purely topological (which corner-index belongs to which face)

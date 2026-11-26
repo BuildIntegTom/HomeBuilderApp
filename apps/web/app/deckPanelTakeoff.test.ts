@@ -554,45 +554,48 @@ describe("⚠ the floor deck is cut to the building it sits on", () => {
     }
   });
 
-  it("⚠ AND WHAT IT FINDS, now that it can look: a mitred roof panel's joists run into its end lids", () => {
+  it("⚠ AND NOTHING IS IN THE SAME VOLUME — the mitred roof panel is clean, 2026-11-25", () => {
     /* Pinned separately from the crash above, because they are two different
        claims — that the audit runs, and what it says once it does.
 
-       ⚠ **This is a real defect and it is NOT the crash fix's doing.** It was
-       always there; `convexSolidsOverlap` threw before it could report it, so
-       the building that had the most to say was the one that could not speak.
-       With the throw gone the Review Log says it out loud on both Octagon
-       tiles: *"2 deck panel types with two members in the same volume — these
-       pairs are NOT accounted for by the roof bracing and nobody has
-       explained them."*
+       ⚠ **WHAT IT SAID WHEN IT FIRST RAN: 21 pairs on one panel.** Written
+       here because the number is the evidence, and because it was reported as
+       *"2 deck panel types with two members in the same volume"* on BOTH
+       Octagon tiles for a day — the eave lid skin inside both left joists,
+       the tall-end lid inside three of its own face boards, an anti-twist web
+       inside its own two flanges. It was always true; `convexSolidsOverlap`
+       threw before it could say so, so the building with the most to report
+       was the one that could not speak.
 
-       The shape of it: a mitre pulls a roof panel's plan corners back, the
-       joists and the end lids are cut for that pull-back separately, and
-       where the cut is deepest they end up in each other — plus the end lid's
-       own skin against its own faces. A rectangle never shows it because a
-       rectangle has no mitre.
+       ⚠ **Three defects behind it, all in `roofPlanMitre.ts`** (2026-11-25):
 
-       ⚠ **Pinned, NOT accepted.** The count is here so that fixing it reads
-       as this list getting shorter, and so that a NEW overlap elsewhere
-       cannot hide inside a number nobody wrote down. Chasing the geometry is
-       its own stride. */
-    const offenders: Record<number, number> = {};
+       1. **The cut was not plumb.** It bounded Z, which on a TILTED panel is
+          a cut square to the roof surface. The plumb plane is
+          `zIn + yIn * pitch/12` — 5.17in of span across 15 1/2in at 4:12,
+          zero at the top face where every drawn number is measured.
+       2. **A cut shortens a board across the WIDTH too.** A board the plane
+          had gone clean past at one of its X faces kept its full width, as a
+          wedge sweeping the panel: the eave lid skin claimed all 20.375in
+          where 0.755in of it survives.
+       3. **A clamp is not a clip.** Moving corners onto the cut line is the
+          true cut only where the crossing edge runs at constant depth, which
+          a plain box ring breaks — an anti-twist web kept its whole 15 1/2in
+          depth where the cut leaves 0.72in.
+
+       ⚠ So this now asserts ZERO, which is the standing no-overlapping-members
+       rule, and it keeps the count in the assertion rather than a boolean so
+       that a regression reads as a number. */
+    const offenders: Record<number, string[]> = {};
     for (const ft of [16, 32]) {
-      let groupsWithPairs = 0;
+      const pairs: string[] = [];
       for (const group of computeDeckPanelTakeoff(cutOctagonInput(ft)).groups.filter((g) => g.kind === "roof")) {
-        const pairs = overlappingMemberPairs([...group.members, ...group.braceMembers]);
-        if (pairs.length > 0) {
-          groupsWithPairs++;
-          // Every pair names a joist or a lid — if something else appears, it
-          // is a different defect and must not be absorbed into this one.
-          for (const pair of pairs) {
-            expect(pair, `${ft}ft ${group.key}`).toMatch(/joist-|lid-|web-/);
-          }
+        for (const pair of overlappingMemberPairs([...group.members, ...group.braceMembers])) {
+          pairs.push(`${group.key}: ${pair}`);
         }
       }
-      offenders[ft] = groupsWithPairs;
+      offenders[ft] = pairs;
     }
-    expect(offenders).toEqual({ 16: 2, 32: 2 });
+    expect(offenders).toEqual({ 16: [], 32: [] });
   });
 
   it("⚠ an octagon's floor deck is the OCTAGON's area, not its bounding square", () => {

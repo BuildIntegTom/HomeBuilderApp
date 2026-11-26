@@ -18,6 +18,7 @@ import {
   computeTrussWebAngleDeg,
   computeTrussWebPeakCount,
   describeBraceEndCuts,
+  boxXExtentFieldOf,
   memberBoxSizeIn,
   memberFaceIndices,
   memberLocalCornersIn,
@@ -767,5 +768,53 @@ describe("formatPlySpecLabel", () => {
   it("passes an unrecognised spec through rather than throwing or dropping it", () => {
     expect(formatPlySpecLabel("1in_marine")).toBe("1in marine");
     expect(formatPlySpecLabel("")).toBe("");
+  });
+});
+
+describe("⚠ which dims field is a member's extent ACROSS THE PANEL'S WIDTH", () => {
+  /* `boxXExtentFieldOf` is the inverse of `memberBoxSizeIn`'s X case, and the
+     roof's plan mitre uses it to SHORTEN a board across the width. If the two
+     ever disagree, a cut writes a new size into a field the model does not
+     read from — the piece changes on the cut list and not in the building, or
+     the other way round, and no other gate can see it. So this checks the
+     round trip over every orientation and rotation the mapping knows. */
+  const ORIENTATIONS = ["flat", "horizontal", "vertical", "diagonal"] as const;
+  const ROTATIONS = [0, 90, 180] as const;
+
+  const member = (orientation: (typeof ORIENTATIONS)[number], rotationDeg: number): PanelMember => ({
+    memberId: "m",
+    material: "dimensional_lumber",
+    speciesGrade: null,
+    plySpec: null,
+    nominalSize: "2x4",
+    /* Three distinct values, so which one came back is unambiguous. */
+    actualDimsIn: { thicknessIn: 1.5, widthIn: 3.5, lengthIn: 96 },
+    orientation,
+    position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg },
+    role: "stud",
+    qty: 1,
+  });
+
+  it("names the field `memberBoxSizeIn` actually reads the X extent from", () => {
+    for (const orientation of ORIENTATIONS) {
+      for (const rotationDeg of ROTATIONS) {
+        const m = member(orientation, rotationDeg);
+        const label = `${orientation}/${rotationDeg}`;
+        expect(m.actualDimsIn[boxXExtentFieldOf(m)], label).toBe(memberBoxSizeIn(m).xIn);
+      }
+    }
+  });
+
+  it("⚠ and rewriting that field is what moves the X extent — the whole point", () => {
+    for (const orientation of ORIENTATIONS) {
+      for (const rotationDeg of ROTATIONS) {
+        const m = member(orientation, rotationDeg);
+        const trimmed: PanelMember = {
+          ...m,
+          actualDimsIn: { ...m.actualDimsIn, [boxXExtentFieldOf(m)]: 7.25 },
+        };
+        expect(memberBoxSizeIn(trimmed).xIn, `${orientation}/${rotationDeg}`).toBe(7.25);
+      }
+    }
   });
 });

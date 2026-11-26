@@ -17987,14 +17987,38 @@ export default function LayoutEditor() {
                   its bounding box, so a panel over an octagon's corner facet
                   is a trapezoid. `spanIn` above is the ENVELOPE it is laid out
                   in; these are the two numbers a saw needs. */}
+              {/* ⚠ **THE LAST TWO SENTENCES WERE ONLY TRUE OF THE FLOOR, and
+                  this paragraph was printing them on roof panels too — fixed
+                  2026-11-25.** A FLOOR panel's mitred end lid is re-built to
+                  run along the cut (his *"one bevelled board"*, 2026-11-15).
+                  A ROOF panel is not: it is built square and then cut by a
+                  plumb plane, *"i imagined roof panels to be cut plumb
+                  vertically when plan view looking down on the building"* —
+                  so nothing is re-oriented and the end lid is simply sawn
+                  off where the plane passes it. The sheet said the opposite
+                  of what the panel is. */}
               {group.options.mitreIn ? (
                 <>
                   <strong>This panel is mitred in plan</strong>{" "}
                   — its ends are cut on an angle so the deck
                   stops at the building rather than overhanging it, which makes it a trapezoid rather than a
-                  rectangle. Each joist is cut to its own length and bevelled to meet the rim flush, and the
-                  angled lid&apos;s 2x4s run <em>along</em> the cut rather than across the width. Every
-                  member carries its own bevel angle and long/short points in the cut list.{" "}
+                  rectangle. Each joist is cut to its own length and bevelled to meet the rim flush.{" "}
+                  {group.kind === "floor" ? (
+                    <>
+                      The angled lid&apos;s 2x4s run <em>along</em> the cut rather than across the width.{" "}
+                    </>
+                  ) : (
+                    <>
+                      <strong>The cut is a plumb plane through the panel as built</strong>, so nothing is
+                      re-oriented to follow it — which means the end lid is sawn off wherever the plane
+                      passes it, and the boards it consumed are not in the cut list below. Build what is
+                      listed. <strong>What closes that cut face has not been decided:</strong>{" "}
+                      on the floor it is one bevelled board run along the cut, and whether a roof wants the same thing,
+                      or nothing because the next facet&apos;s panel lands against it, is an open question
+                      for Building Integrity.{" "}
+                    </>
+                  )}
+                  Every member carries its own bevel angle and long/short points in the cut list.{" "}
                 </>
               ) : null}
               It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}

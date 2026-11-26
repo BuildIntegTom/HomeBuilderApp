@@ -2245,7 +2245,15 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   }
 
   if (roofMitre) {
-    return applyRoofPlanMitre(members, { widthIn: o.widthIn, lengthIn: o.lengthIn, mitreIn: roofMitre }).members;
+    /* ⚠ **The PITCH, because the cut is plumb and the panel is tilted.**
+       Without it the mitre is the one cut in this panel that is square to the
+       roof surface instead of vertical — see `plumbSpanSlopeOf`. */
+    return applyRoofPlanMitre(members, {
+      widthIn: o.widthIn,
+      lengthIn: o.lengthIn,
+      mitreIn: roofMitre,
+      pitchIn12: o.pitchIn12,
+    }).members;
   }
   return members;
 }
