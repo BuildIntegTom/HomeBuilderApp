@@ -67,6 +67,33 @@
   (`refs`, `purity`, `immutability`) measured nothing — say the gate is
   unverified rather than reading zero as clean.
 
+  ⚠ **IT HAPPENED AGAIN ON 2026-11-26, and the recipe above worked a second
+  time — use it rather than re-deriving it.** Same signature exactly:
+  `preserve-manual-memoization` 83 → **0**, `refs` 2 → 0, `purity` 1 → 0,
+  `immutability` 1 → 0, with `no-unused-vars` 14, `set-state-in-effect` 3,
+  `exhaustive-deps` 11 and `no-unescaped-entities` 15 byte-identical. The
+  change under test was **76 added lines and no deletions**, so "87 problems
+  better" was obviously the gate rather than the diff.
+
+  ⚠ **The threshold is tighter than the 2026-11-24 entry implies.** That one
+  had ~3GB free; this one had **2.1GB free of 7.9GB** and bailed the same way.
+  Treat anything under ~4GB free as a gate that will not be trusted, and free
+  memory BEFORE starting rather than diagnosing afterwards — closing the
+  browser pane and waiting for vitest to exit are the two cheap wins, and
+  **vitest and lint must not overlap** (vitest alone held this box at 1.7GB
+  free).
+
+  ⚠ **Two practical notes on running the HEAD copy.** Lint the two or three
+  CHANGED FILES only, not the whole app — all 83 of the rule live in
+  `page.tsx`, so a targeted run reproduces the number, finishes in a few
+  minutes instead of fifteen, and needs far less heap. And when diffing the
+  probe against the real file, **the message BODY contains the file's own
+  path**, so a naive `(file, rule, message)` tuple diff reports every row as
+  both added and removed; normalise `__tmp_head.tsx` → `page.tsx` inside the
+  message text as well as in the filename, or compare `(line, column, rule)`
+  instead. Here that artifact showed as a spurious +3/−3 on
+  `set-state-in-effect` whose three rows had identical lines and columns.
+
 - **Measure a lint DELTA, not a total, and count WARNINGS too.** This app
   carries pre-existing errors (94 across the editor files as of
   2026-09-25), so "eslint reported errors" means nothing on its own.
