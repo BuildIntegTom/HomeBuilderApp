@@ -112,11 +112,11 @@ export interface MissingTriangle {
    * point. The other leg. */
   alongIn: number;
   /**
-   * How far the modelled cut edge disagrees with this stock width, in inches.
+   * How far the modelled board disagrees with this stock width, in inches.
    *
-   * ⚠ Non-zero means the member's modelled face is not exactly parallel-sided,
-   * so the model's own idea of "across the face" differs from the stock a shop
-   * would cut the jig out of. See `missingTriangleFor`.
+   * ⚠ Non-zero means the member's modelled board really is not the stock the
+   * jig would be cut from — its face is not parallel-sided, or it has run out
+   * to a sliver. See `missingTriangleFor`.
    */
   modelDisagreementIn: number;
 }
@@ -150,8 +150,51 @@ export function missingTriangleFor(cut: BraceEndCut, stockWidthIn: number): Miss
   return {
     acrossIn: stockWidthIn,
     alongIn: stockWidthIn * Math.tan(rad),
-    modelDisagreementIn: Math.abs(cut.cutEdgeLengthIn * Math.cos(rad) - stockWidthIn),
+    modelDisagreementIn: modelDisagreementIn(cut, stockWidthIn),
   };
+}
+
+/**
+ * ⚠ **THE DISAGREEMENT, MEASURED OFF THE SOLID AND NOT OFF THE DRAWING.**
+ *
+ * `cutEdgeLengthIn * cos(angle)` is the across-extent of the member's NEAR
+ * FACE. That identity holds **in one plane only**: a board that leans out of
+ * the elevation plane is drawn as a raked section of itself, so its face reads
+ * wider than the board is. `describeBraceEndCuts` undoes that lean when it is
+ * given the far face — see `BraceEndCut.modelAcrossIn` and `faceShearAcrossIn`
+ * for the derivation — and this prefers that reading whenever it exists.
+ *
+ * ⚠ **Measured 2026-11-25 on the 16ft Octagon's gable row.** Of its 112
+ * cut-list rows, 76 carry a trapezoid face and **60 carried this CHECK** — and
+ * it was false on all but two. Two separate faults, and the lean is the
+ * SMALLER of them:
+ *
+ * | compared against | rows still flagged |
+ * |---|---|
+ * | `widthIn`, in-plane identity (what shipped) | **60** |
+ * | the stock dimension that really crosses the face | 8 |
+ * | ...and the lean undone as well | **2** |
+ *
+ * ⚠ **The 60 break down 52 / 6 / 2, and the lean is the 6.** Fifty-two were
+ * the wrong FACE alone — `widthIn` against a board drawn on its 1½in or ¾in
+ * face, which is `faceAcrossFieldOf`'s subject and reads 2in or 14¾in out by
+ * itself. Six are the dual-bevelled gable plates, **0.038968in** apiece on
+ * solids that measure exactly 1.5000in; that one is the lean. The last two are
+ * real. Both fixes were needed: either alone still leaves the sheet warning
+ * about parts that are right.
+ *
+ * The 2 that remain are the gable sliver plates, whose faces are **triangles**
+ * — long edges not parallel, one of them 2.96in across on 1½in stock and the
+ * other run out to a point. Those are the fault this CHECK exists to report,
+ * so they keep it.
+ *
+ * Falls back to the single-plane identity when nobody measured the solid, which
+ * is honest: with only one face in hand that identity is the best available
+ * reading, and for a board that genuinely lies flat it is also the exact one.
+ */
+function modelDisagreementIn(cut: BraceEndCut, stockWidthIn: number): number {
+  const modelAcrossIn = cut.modelAcrossIn ?? cut.cutEdgeLengthIn * Math.cos((cut.angleDeg * Math.PI) / 180);
+  return Math.abs(modelAcrossIn - stockWidthIn);
 }
 
 /**
@@ -188,7 +231,19 @@ function orientationPhrase(kind: BraceEndCut["kind"]): string {
  * the missing triangle (what you build the jig from).
  */
 export function describeEndCutForShop(cut: BraceEndCut, stockWidthIn: number): string {
-  if (cut.angleDeg < EXACT_EPS) return `Square crosscut — ${orientationPhrase(cut.kind)}.`;
+  if (cut.angleDeg < EXACT_EPS) {
+    const square = `Square crosscut — ${orientationPhrase(cut.kind)}.`;
+    /* ⚠ **A square end still gets the CHECK when the BOARD is wrong.** Nothing
+       is raked here, so there is no jig and no triangle — but a member modelled
+       at a width its stock does not have is a part that will not fit, and the
+       early return used to swallow exactly that. It is how the 16ft Octagon's
+       run-out gable plate (zero inches across) reached a sheet saying only
+       "Square crosscut". */
+    const outIn = modelDisagreementIn(cut, stockWidthIn);
+    return outIn >= JIG_MODEL_TOLERANCE_IN
+      ? `${square} ${modelCheckSentence(outIn)}`
+      : square;
+  }
   const tri = missingTriangleFor(cut, stockWidthIn)!;
   const note =
     `${formatShopDegrees(cut.angleDeg)} off square — ${orientationPhrase(cut.kind)}. ` +
@@ -198,12 +253,18 @@ export function describeEndCutForShop(cut: BraceEndCut, stockWidthIn: number): s
   // ⚠ Said out loud on the sheet rather than rounded away — see
   // JIG_MODEL_TOLERANCE_IN.
   if (tri.modelDisagreementIn >= JIG_MODEL_TOLERANCE_IN) {
-    return (
-      `${note} CHECK: the modelled face is ${formatShopInches(tri.modelDisagreementIn)} off this stock width, ` +
-      `so confirm the panel geometry before cutting a jig to it.`
-    );
+    return `${note} ${modelCheckSentence(tri.modelDisagreementIn)}`;
   }
   return note;
+}
+
+/** One wording for the one warning, so the raked and the square end cannot
+ *  word it differently. */
+function modelCheckSentence(outIn: number): string {
+  return (
+    `CHECK: the modelled board is ${formatShopInches(outIn)} off this stock width, ` +
+    `so confirm the panel geometry before cutting a jig to it.`
+  );
 }
 
 /**
@@ -220,10 +281,16 @@ export function describeEndCutForShop(cut: BraceEndCut, stockWidthIn: number): s
  * ⚠ **Without this the sheet is unbuildable and does not say so.** The cut
  * list reads a member's end cuts off its elevation geometry, where a compound
  * bevel is invisible; what reached the shop was the mitre alone, plus the
- * generic "CHECK: the modelled face is off this stock width" that fires when
- * the modelled face stops being parallel-sided. Measured on the 16ft Octagon:
- * 21 more parts carrying that CHECK and not one of them naming the angle a
- * shop would have to set.
+ * generic "CHECK: the modelled face is off this stock width". Measured on the
+ * 16ft Octagon: 21 more parts carrying that CHECK and not one of them naming
+ * the angle a shop would have to set.
+ *
+ * ✅ **And that CHECK was false on every one of them.** Two causes, and this
+ * note only guessed at the smaller one: the lean a compound bevel puts on a
+ * board does make its drawn face read wider than the board is — but the bulk
+ * of the figure was the stock dimension it was compared against. Closed
+ * 2026-11-25. See `modelDisagreementIn` for the measurement and
+ * `faceAcrossFieldOf` for the larger half.
  *
  * The missing wedge is given the same way every other jig in this file is —
  * the triangle the cut REMOVES, because the jig block is its negative.
