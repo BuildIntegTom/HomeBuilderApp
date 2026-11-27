@@ -118,3 +118,61 @@ building form (a).**
    window per 12ft of wall at random. For a *pre-design* this may be wrong:
    should a template be deterministic?
 3. **Form (a)'s water path**, above.
+
+---
+
+# Addendum — his answers, later the same day (2026-11-26)
+
+## Two of the three standing questions are now closed
+
+**1. Perm ratings — ANSWERED by research, not by him.** He said *"enter
+research mode"*, and the numbers exist. Measured at 1.5 in: clay/earth
+**10.7–21.9 US perms**, lime **7.8–14.0 US perms**, both far above the 3-perm
+code floor. Full transcription of the primary tables, with sources, in
+`docs/plaster-perm-and-shear-research-2026-11-26.md`. **The two "not
+computable" rows should print a measured range plus a citation plus
+`pending-BI-confirmation`.** Printing nothing currently reads as "this wall has
+no vapour performance", which is the opposite of the truth.
+
+**2. Determinism — CLOSED, he wants the randomness.** *"There's just something
+kind of super actually fun about random seeding. If you click on that path, it
+IS a random seed, a unique house to you."* Do not add a fixed seed. The path
+for serious work is to save the design or send it off. Consequence to remember:
+a browser A/B on a template is never a controlled comparison.
+
+**3. Courtyard-side water path — still open, and still worth asking.** This was
+my question and he asked me to restate it, which I have; it has not been
+decided. Form (b) of the ring roof does not depend on it. Form (a) does.
+
+## New items he added
+
+- **Separate, explicitly non-structural shear indicators.** His framing:
+  *"additional sheer value indicators that most certainly do not need to be
+  used/somewhat separate calculation estimate."* The research supports exactly
+  this shape — plaster shear stays OUT of the shear derivation sheet, and a
+  labelled comparison figure sits beside it. See §4 of the research doc for why
+  a pre-plastered panel cannot claim the code table's values as-is (the
+  collision is the mesh lap requirement, not the plaster).
+- **⚠ Type S lime is not a structural binder.** IRC Appendix S §104.4.6.2
+  requires hydraulic or natural hydraulic lime. His 3-coat exterior spec uses
+  Type S. Cheap to change at spec time, impossible after. **Flag before any
+  wall gets plastered.**
+- **Printable building-guide sections** — execution technique for DIYers and
+  contractors, as their own print options. He will paste his current detail
+  guide in to plan this. §5 of the research doc already lists ten citable,
+  checkable instructions (mesh laps, mesh depth, staple gauge and spacing, felt
+  placement, binder, bottom-edge support, mixed plasters, aspect ratio, wind
+  uplift, coatings) that can seed it.
+- **Floor and roof panel widths editable from the elevation view**, with
+  visible snapping points, so floors, walls and roofs can be hand-aligned.
+  ⚠ The gesture already exists for wall panels; floors and roofs are absent
+  from the elevation drawing entirely. The alignment *indicator* is separable
+  from the editing and is the higher-value half.
+- **Tip4urTime proposal integration, February**, gated on January. Prerequisite
+  is share/save/import being solid and safe, plus the security pass he asked
+  for himself.
+
+## Sequencing note
+
+None of the above displaces the tiers. His stated first big goal is unchanged:
+all pre-design templates presentable by January, Tiny House first.
