@@ -57,3 +57,4 @@ export * from "./installSequence";
 export * from "./panelKey";
 export * from "./panelNumber";
 export * from "./strawFillBox";
+export * from "./plasterShearReference";

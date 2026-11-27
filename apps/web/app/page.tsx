@@ -200,6 +200,8 @@ import {
   toReviewLog,
   validateVaporOpenness,
   vaporOpennessDisplay,
+  plasterShearIndicator,
+  type PlasterBinder,
   type PanelWeightBreakdown,
   type Season,
 } from "@building-integrity/calc-engine";
@@ -13502,6 +13504,40 @@ export default function LayoutEditor() {
      without a lint run that actually reports the compiler family. */
   const vaporCheckDisplay = vaporOpennessDisplay(vaporCheck);
 
+  /**
+   * **THE PLASTER SHEAR COMPARISON — engineer's sheet only, 2026-11-26.**
+   *
+   * Tommy: *"I would be curious to think about adding additional sheer value
+   * indicators that most certainly do not need to be used/somewhat separate
+   * calculation estimate for if 7lbs/cuft straw actually has any sheet
+   * associated with it as well as exterior plaster."*
+   *
+   * ⚠⚠ **NOTHING STRUCTURAL READS THIS.** `estimatedTotalShearLb` and the
+   * B18 derivation sheet count bracing, screws and plywood, and they are
+   * untouched by it. This answers only "what would this wall be worth if it
+   * were the site-plastered straw-BALE wall the code tested", and
+   * `plasterShearIndicator` returns `applicable: false` with its reasons on
+   * every single call — see its own doc comment.
+   *
+   * ⚠ Computed only when a plaster is actually the selected exterior finish.
+   * Per Tommy's own install guide the primary BI exterior is Mento/Adhero
+   * over wood-fibre board behind a rainscreen, which is not plaster at all,
+   * and there is nothing to compare in that case.
+   *
+   * ⚠ A plain const, not a `useMemo` — same reasoning as `vaporCheckDisplay`
+   * directly above.
+   */
+  const plasterShearBinder: PlasterBinder | null =
+    exterior.id === "lime-plaster" ? "lime" : exterior.id === "clay-plaster" ? "clay" : null;
+  const plasterShearComparison =
+    plasterShearBinder === null || !footprint
+      ? null
+      : plasterShearIndicator({
+          wallLengthFt: footprint.walls.reduce((sum, w) => sum + w.lengthFt, 0),
+          wallHeightFt,
+          binder: plasterShearBinder,
+        });
+
   // Reported, never refused, and never at load: a stored design containing a
   // panel narrower than the shop minimum opens and prints exactly as before,
   // and shows up here instead. Both stories, since a second-story wall is
@@ -20337,6 +20373,49 @@ export default function LayoutEditor() {
                     {vaporCheckDisplay.label}
                   </td>
                 </tr>
+                {/* ⚠ COMPARISON ONLY, and the row says so in its own label
+                    rather than relying on a footnote further down the page.
+                    This figure is NOT part of the building's shear capacity —
+                    that is `estimatedTotalShearLb` and the B18 derivation
+                    sheet, which count bracing, screws and plywood and know
+                    nothing about plaster. Engineer role only. */}
+                {plasterShearComparison !== null && (
+                  <tr>
+                    <td>
+                      Plaster shear — <em>reference only, not used</em>
+                    </td>
+                    <td>
+                      {plasterShearComparison.indicativePlf === null ? (
+                        <>
+                          No comparison available for this wall.
+                          <br />
+                          <span className={styles.note}>
+                            {plasterShearComparison.inapplicabilityReasons.join(" ")}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          A site-plastered straw-<em>bale</em> wall of this length would rate about{" "}
+                          <strong>
+                            {Math.round(plasterShearComparison.indicativePlf)} plf
+                          </strong>{" "}
+                          ({Math.round(plasterShearComparison.indicativeTotalLb!).toLocaleString()} lb
+                          total), per IRC Appendix S Table 106.16 row{" "}
+                          {plasterShearComparison.row!.designation} —{" "}
+                          {plasterShearComparison.row!.binder} plaster at{" "}
+                          {plasterShearComparison.row!.thicknessEachSideIn}in each side with{" "}
+                          {plasterShearComparison.row!.mesh} mesh.
+                          <br />
+                          <span className={styles.note}>
+                            <strong>Your wall is not that wall, and nothing here uses this
+                            number.</strong>{" "}
+                            {plasterShearComparison.inapplicabilityReasons.join(" ")}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )}
                 <tr>
                   <td>Target moisture content (install)</td>
                   <td>

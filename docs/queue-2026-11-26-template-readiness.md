@@ -233,3 +233,56 @@ written to catch. **The rule needs a third outcome ("both sides far above
 retarder territory, direction immaterial") before this result is shown to
 anyone.** Pinned in `permeability.test.ts` so nobody quietly reorders the
 layers or nudges a measured number to make it green.
+
+---
+
+# Addendum 3 — four decisions, two builds (2026-11-26, later)
+
+## Decided
+
+1. **Vapour-open threshold = 5 perms, CONFIRMED.** *"Five is great. I like it
+   keep it."* Status moves `pending-BI-confirmation` → `confirmed`, and the
+   note still records that Claude proposed it and that no code clause states
+   it as a threshold — a confirmed value whose provenance gets smoothed over
+   is worse than a pending one, because nobody re-examines it.
+2. **Lime binder = NHL, CONFIRMED.** *"Yeah I guess we have to go with NHL."*
+   NHL 3.5 or 5; sand:lime ratios unchanged at 3:1 / 2.5:1 / 2:1.
+3. **The four untracked .docx files stay untracked.** *"You can leave them if
+   you do not think they're useful."* They are superseded Claude outputs; the
+   live guide is the PDF he supplied. Not committed, not gitignored, not
+   raised again.
+4. **R5 form (a) dropped** (addendum 2).
+
+## Built this stride
+
+**The plaster shear comparison.** Table 106.16 in the catalog, the calc in
+calc-engine, and a row in the **engineer-only** Assembly Performance note.
+⚠ `applicable` is the literal `false` on every call and five inapplicability
+reasons ship *with* the number. Nothing structural reads it. Verified on the
+Tiny House: 80ft × row C2 = 36,000 lb, caveats printed beneath.
+
+## Queued, specced, not built
+
+**The mismatch indicator** — full build spec in
+`docs/queue-mismatch-indicator.md`. ⚠ Split deliberately: draw the floor and
+roof seam bands and mark alignment **read-only** first (job A); wire the
+existing drag to them only after (job B), if he still wants it once the
+picture exists. The drag gesture already exists for wall panels; floors and
+roofs are simply absent from the elevation view.
+
+## ⚠ New finding from his install guide — needs his call
+
+He supplied the official 28-page install guide. **It has no exterior plaster
+section at all.** The primary BI exterior in his own guide is Intello +
+Mento/Adhero + wood-fibre board + rainscreen — the Pro Clima path, both
+layers already `confirmed` in the catalog.
+
+**But the app defaults to `clay-plaster` interior and `lime-plaster`
+exterior.** The default disagrees with his own published system, and it
+changes the price and the printed assembly on every new project. **Which
+should be the default?** Not switching it unilaterally.
+
+Good news in the same finding: the guide's membrane-over-straw build is NOT
+condemned by the research's "no membrane between straw and plaster" rule.
+That rule protects the structural bond on a plastered bale wall, and BI
+panels never claim plaster shear.

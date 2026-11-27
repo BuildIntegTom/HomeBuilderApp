@@ -223,8 +223,15 @@ describe("vaporOpennessDisplay — the three-way verdict, in one place", () => {
     expect(shown.label).toContain("PASS");
   });
 
-  it("carries pending-BI-confirmation on the threshold, because Claude chose it and not Tommy", () => {
-    expect(vaporOpenBothSidesThresholdPerm.status).toBe("pending-BI-confirmation");
-    expect(vaporOpenBothSidesThresholdPerm.note).toContain("Claude's judgment");
+  /* ⚠ Was pending-BI-confirmation from the moment it was written until
+     Tommy confirmed it the same day — "Five is great. I like it keep it." —
+     having been told in as many words that Claude proposed the number and
+     that no code clause states it as a threshold. The note must keep saying
+     so: a confirmed value whose provenance has been smoothed over is worse
+     than a pending one, because nobody re-examines it. */
+  it("is confirmed by Tommy, and the note still records that Claude proposed it", () => {
+    expect(vaporOpenBothSidesThresholdPerm.status).toBe("confirmed");
+    expect(vaporOpenBothSidesThresholdPerm.note).toContain("Tommy, 2026-11-26");
+    expect(vaporOpenBothSidesThresholdPerm.note).toContain("Claude proposed this number");
   });
 });

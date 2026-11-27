@@ -163,12 +163,23 @@ better shear skin.
 > in accordance with Table 105.14 or Table 105.15 shall use a binder comprised
 > of **hydraulic or natural hydraulic lime**."*
 
-Tommy's spec is **Type S slaked lime** — allowed as *lime plaster* generally
+Tommy's spec was **Type S slaked lime** — allowed as *lime plaster* generally
 (§104.4.6.1 lists Type N/S hydrated, hydraulic, NHL and quicklime) but **NOT
 permitted as a structural lime plaster**. To claim the 330/450 plf rows he
-would need **NHL** (NHL 3.5 or 5), not Type S hydrated. This is a real,
-actionable finding and it is cheap to fix at spec time, expensive to fix after
-a wall is up.
+would need **NHL** (NHL 3.5 or 5), not Type S hydrated.
+
+> ✅ **DECIDED 2026-11-26 — Tommy: *"Yeah I guess we have to go with NHL."***
+> The binder changes to **NHL 3.5 or 5**. The sand:lime ratios are unchanged:
+> **3:1 base, 2.5:1 float, 2:1 finish.**
+>
+> ⚠ Two consequences to carry forward. First, **every perm figure in §1 was
+> measured on non-hydraulic lime**, so they are the best available numbers for
+> an NHL render rather than measurements of one; NHL cures harder and denser,
+> which generally reads as somewhat *tighter*, so 7.8 is the end of the range
+> to stand on. Second, **NHL is a different material to work**, not a
+> drop-in — shorter working time, a real set rather than a slow carbonation,
+> and it is unforgiving about being retempered. That belongs in the how-to
+> section, not just the spec line.
 
 Corroborating why the binder matters: the 2003 plaster tests used a
 non-Type-S high-calcium hydrated lime and got about **half** the expected
