@@ -238,6 +238,41 @@ export const fabricationMinPanelWidthIn: CatalogValue<number> = {
   note: "Tommy, 2026-09-24, unhedged: \"I can't make any panels that are left to right elevation view shorter than 2'. This project is a 14\" thick panel.\" First-hand statement of what Building Integrity's own shop can fabricate, with his own axis (left to right, elevation view) kept because that axis has been misread once already. Nothing here is inferred: he gave a number, a unit and an axis.",
 };
 
+/**
+ * The perm rating at or above which a finish layer is treated as too
+ * vapour-open to be acting as a retarder — so the "exterior must be more
+ * vapour-open than the interior" rule stops applying and the assembly is
+ * reported as open in both directions instead of PASS/FAIL.
+ *
+ * ⚠ **ADDED 2026-11-26 because filling in clay and lime's measured perm
+ * values made the app's DEFAULT wall print a red FAIL.** Clay interior
+ * measures 10.7 perms and lime exterior 7.8, so the exterior is the tighter
+ * side and a rule asking only "is exterior > interior?" fails it. Both
+ * numbers are far above retarder territory and the wall dries freely in both
+ * directions, so that FAIL was misleading — and a check that cries wolf on
+ * the default configuration teaches a reader to ignore it.
+ *
+ * ⚠ **Claude picked this number, not Tommy, and not a code clause that
+ * states it as a threshold.** The reasoning: IRC Appendix S §105.6.1 sets 5
+ * perms as the minimum for a water-resistive barrier behind an exterior
+ * finish, so a layer at or above 5 perms is one the code itself is content to
+ * let moisture through. It is also comfortably clear of Class II (0.1–1.0
+ * perm) and sits mid-Class-III (1.0–10). Choosing 5 rather than 10 is
+ * deliberate: at 10 the rule would still fail the default wall, which is the
+ * exact result being corrected, and picking a threshold to make one
+ * configuration pass would be reasoning backwards.
+ *
+ * ⚠ **This governs what the app tells somebody about moisture in their
+ * walls, which is the most consequential thing it says.** Confirm the
+ * threshold, or replace the whole pass/fail with a dew-point/WUFI-style
+ * check, before anyone relies on it.
+ */
+export const vaporOpenBothSidesThresholdPerm: CatalogValue<number> = {
+  value: 5,
+  status: "pending-BI-confirmation",
+  note: "Claude's judgment of 2026-11-26, NOT Tommy's and NOT a stated code threshold — see this value's own doc comment for the full reasoning and why 5 rather than 10. Anchored on IRC Appendix S §105.6.1's 5-perm minimum for a water-resistive barrier behind an exterior finish, i.e. the permeance the code is content to let moisture through. Needs confirming, or superseding with a real hygrothermal check. See docs/plaster-perm-and-shear-research-2026-11-26.md §1.",
+};
+
 export const columnMinWidthIn = 16.75;
 // 424mm on the mfr spec sheet (16.7in, rounds to 16¾\" at nearest 1/8in) —
 // already satisfied today: Column's real built width (COLUMN_TOTAL_WIDTH_IN,
@@ -1604,10 +1639,13 @@ export const wallAssemblyLayers: WallAssemblyLayer[] = [
     id: "clay-plaster",
     side: "interior",
     label: "Clay plaster direct-on-straw (paper + lath)",
-    permWinter: null,
-    permSummer: null,
+    // ⚠ NOT season-variable, unlike Intello Plus below. A plaster's perm
+    // rating is a material property; only a smart membrane changes with RH.
+    // Both seasons therefore carry the same number deliberately.
+    permWinter: 10.7,
+    permSummer: 10.7,
     status: "pending-BI-confirmation",
-    note: "No numeric perm rating given in spec yet.",
+    note: "10.7 US perms at 1.5in thickness. ⚠ **MEASURED RANGE IS 10.7–21.9 US perms** and this entry takes the LOW end, which is the conservative choice for a drying calculation. Low end: Minke's clay earth plaster, 612 ng/(Pa·s·m²) at 38mm = 16.0 US perm-inch, as tabulated in Straube's CMHC/EBNet report Table 2.4. High end: that same report's OWN tests, Table 4.1, Earth Plaster 1/2/3 at 1,259/1,133/1,073 ng = 21.9/19.7/18.7 US perms, average of triplicates at 38 ± 1mm. The spread is wide for nominally the same material because mix, sand, cure and protocol all move it — printing one number would be false precision, which is why the range is here and should be shown. Protocol was ASTM E96 \"used as a basis but some modifications were required\", so these are not clean E96 certificates. For context the code floor is 3 US perms for plaster on a bale wall (5 for a water-resistive barrier behind an exterior finish, IRC Appendix S §105.6.1), so clay clears it 3.5–7×. ⚠ Whatever is painted over it governs: the same report measured oil paint dropping a 1:1:6 stucco to ~0.6 perms (\"oil paint can render a typical stucco a vapour barrier\"), while limewash and wheat-stabilized clay paint barely moved it (19.2 and 20.9 perms). Pending because this is published third-party test data on somebody else's mix, not a rating for Building Integrity's own clay. See docs/plaster-perm-and-shear-research-2026-11-26.md.",
   },
   {
     id: "intello-plus",
@@ -1625,10 +1663,11 @@ export const wallAssemblyLayers: WallAssemblyLayer[] = [
     id: "lime-plaster",
     side: "exterior",
     label: "Lime plaster direct-on-straw (paper + lath)",
-    permWinter: null,
-    permSummer: null,
+    // ⚠ Not season-variable — see the clay-plaster note above.
+    permWinter: 7.8,
+    permSummer: 7.8,
     status: "pending-BI-confirmation",
-    note: "No numeric perm rating given in spec yet.",
+    note: "7.8 US perms at 1.5in thickness. ⚠ **MEASURED RANGE IS 7.8–14.0 US perms**, low end taken as the conservative choice. Low end: Minke's lime plaster, 445 ng/(Pa·s·m²) at 38mm = 11.6 US perm-inch (Straube CMHC/EBNet Table 2.4). High end: that report's own test of a **1:3 lime:sand** mix, 804 ng = 14.0 US perms at 38mm (Table 4.1, average of triplicates). ⚠ **That 1:3 mix IS Tommy's own base coat** — his exterior recipe is Sand 3 : Lime 1, the same thing, and the Plaster Master already defaults to it. His float (2.5:1) and finish (2:1) are richer in lime, and the report's Figure 2.2 shows rising lime content RAISING permeance (\"Pure lime:sand stuccos were the most permeable tested\"), so the built-up 3-coat system should sit at or above 14.0, not below. Code floor is 3 US perms, so lime clears it 2.6–4.7×. ⚠ **Lime measures LESS permeable than clay in both sources** (445 vs 612 in Minke; 804 vs 1,073–1,259 in EBNet's own tests) — consistently 40–55% tighter. That is a real material fact, and it means the app's default clay-interior + lime-exterior pairing has a tighter exterior than interior, which `validateVaporOpenness` flags. See that function's own note on why a blunt pass/fail is the wrong test when BOTH layers are far above vapor-retarder territory. ⚠ **A separate structural catch, not a perm issue: Type S lime is not a structural binder.** IRC Appendix S §104.4.6.2 requires \"a binder comprised of hydraulic or natural hydraulic lime\" for lime plaster on structural walls; Type S slaked is permitted as lime plaster generally (§104.4.6.1) but forfeits the 330/450 plf shear rows of Table 106.16. Cheap to change at spec time, impossible once a wall is plastered. Pending for the same reason as clay. See docs/plaster-perm-and-shear-research-2026-11-26.md.",
   },
   {
     id: "mento",

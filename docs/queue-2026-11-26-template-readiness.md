@@ -176,3 +176,60 @@ decided. Form (b) of the ring roof does not depend on it. Form (a) does.
 
 None of the above displaces the tiers. His stated first big goal is unchanged:
 all pre-design templates presentable by January, Tiny House first.
+
+---
+
+# Addendum 2 — R5 settled, and three builds approved (2026-11-26)
+
+## R5 is now ONE form, and the water question is closed
+
+> *"R5 form a doesn't sound that cool, we can drop the trusses idea. I like the
+> ring shed where the inner walls are taller and the outer walls are the lower
+> slope of the shed roof. This building in a general sense should look like a
+> cinder cone volcano."*
+
+**Form (a) — the trussed ring gable — is dropped. Remove it from R5 rather
+than leaving it listed as a stretch goal.** The courtyard roof is a ring shed:
+tall inner ring (load-bearing), low outer ring, plane falling down and outward,
+cinder-cone silhouette.
+
+⚠ **This closes the courtyard-side water path question for good.** It only
+existed because form (a) sent a second slope back into the courtyard. The
+outward slope decided on 2026-10-22 stands, for the reason it was given then.
+Tier 4's remaining work is the Review Log entry, then form (b) through the
+takeoff seam — now the only courtyard roof path there is.
+
+## Three things he approved for building
+
+1. **The mismatch indicator** — *"I like the mismatch indicator!"* A visible
+   mark in the elevation view where a floor seam, a wall joint and a roof seam
+   do or do not stack. ⚠ Separable from, and higher value than, the drag
+   editing; the drag gesture already exists for wall panels.
+2. **Disclaimer on the printed page** — *"Disclaimer on the page is an absolute
+   must."* There is already a four-role disclaimer system
+   (`roleDisclaimers`, `footerDisclaimerFor`, admin/engineer/fabricator/public)
+   with a test pinning each role's text verbatim. The work is getting it onto
+   the printed/exported proposal, not inventing it.
+3. **The plaster research into the app**, for engineers AND as a plastering
+   how-to section of the building detail guide — *"It would be nice to have in
+   the app calculations shown and source shown."*
+
+## Done in this stride
+
+Clay and lime now carry measured perm values with their citations in the
+catalog note, replacing `permWinter: null` + *"No numeric perm rating given in
+spec yet."* **These two are `DEFAULT_WALL_INTERIOR_LAYER_ID` and
+`DEFAULT_WALL_EXTERIOR_LAYER_ID`, so every project in the app's history has
+printed "not computable" on this row by default.**
+
+⚠ **A finding that needs his call, surfaced by filling the numbers in:** lime
+measures *less* vapour-open than clay in both independent sources (445 vs 612
+ng in Minke; 804 vs 1,073–1,259 in Straube/EBNet's own tests). So the default
+clay-inside/lime-outside wall has a tighter exterior than interior, and
+`validateVaporOpenness` — which asks only *"is exterior > interior?"* — returns
+**false** for it. Both layers are 7.8 and 10.7 perms, an order of magnitude
+above vapour-retarder territory, so this is not the failure that rule was
+written to catch. **The rule needs a third outcome ("both sides far above
+retarder territory, direction immaterial") before this result is shown to
+anyone.** Pinned in `permeability.test.ts` so nobody quietly reorders the
+layers or nudges a measured number to make it green.

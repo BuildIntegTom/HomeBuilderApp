@@ -199,6 +199,7 @@ import {
   MM_PER_IN,
   toReviewLog,
   validateVaporOpenness,
+  vaporOpennessDisplay,
   type PanelWeightBreakdown,
   type Season,
 } from "@building-integrity/calc-engine";
@@ -13483,6 +13484,23 @@ export default function LayoutEditor() {
     () => validateVaporOpenness(interior, exterior, season),
     [interior, exterior, season],
   );
+  /* ⚠ The verdict's WORDS and whether it is a failure both come from
+     `vaporOpennessDisplay`, not from reading `vaporCheck.passes` here. The
+     three surfaces that print this row each used to carry their own copy of
+     the branch, and the `bothSidesOpen` outcome added 2026-11-26 would have
+     had to be hand-copied into all three. Do not re-inline it.
+
+     ⚠ A plain const, NOT a `useMemo`, and deliberately so. `vaporCheck` is
+     already memoized above, and this is two numeric comparisons and a
+     string — memoizing it would buy nothing. It was written as a `useMemo`
+     first, and the reason it is not one now is that this file's React
+     Compiler lint rules (`preserve-manual-memoization` and friends, 83
+     problems at baseline) cannot be measured on this machine: the compiler
+     silently gives up under ~4 GB free and reports 0 instead, so a new hook
+     here would have shipped with its lint status genuinely unknown. Removing
+     the hook removes the question. Do not "optimize" this back into one
+     without a lint run that actually reports the compiler family. */
+  const vaporCheckDisplay = vaporOpennessDisplay(vaporCheck);
 
   // Reported, never refused, and never at load: a stored design containing a
   // panel narrower than the shop minimum opens and prints exactly as before,
@@ -19419,14 +19437,11 @@ export default function LayoutEditor() {
               ? `${permResult.permTotal!.toFixed(2)} perm (${season})`
               : "not computable — one or both finishes lack a numeric perm rating"
           }
-          vaporCheckLabel={
-            vaporCheck.computable
-              ? vaporCheck.passes
-                ? "PASS — exterior is more vapor-open than interior"
-                : "FAIL — exterior is not more vapor-open than interior"
-              : "not computable"
-          }
-          vaporCheckPasses={vaporCheck.computable ? vaporCheck.passes : null}
+          vaporCheckLabel={vaporCheckDisplay.label}
+          // ⚠ `false` ONLY for a real failure — it is what reddens the cell.
+          // `null` for "not computable" and for "open both ways", neither of
+          // which is a fault in the wall.
+          vaporCheckPasses={vaporCheckDisplay.isFailure ? false : null}
           foundationConcreteNote={foundationConcreteNote}
           floorJoistNote={floorJoistNote}
           roofMaterialNote={roofMaterialNote}
@@ -19668,12 +19683,8 @@ export default function LayoutEditor() {
               </tr>
               <tr>
                 <td>Vapor-openness rule</td>
-                <td className={vaporCheck.passes === false ? styles.fail : undefined}>
-                  {vaporCheck.computable
-                    ? vaporCheck.passes
-                      ? "PASS — exterior is more vapor-open than interior"
-                      : "FAIL — exterior is not more vapor-open than interior"
-                    : "not computable — one or both finishes lack a numeric perm rating"}
+                <td className={vaporCheckDisplay.isFailure ? styles.fail : undefined}>
+                  {vaporCheckDisplay.label}
                 </td>
               </tr>
             </tbody>
@@ -20322,12 +20333,8 @@ export default function LayoutEditor() {
                 </tr>
                 <tr>
                   <td>Vapor-openness rule</td>
-                  <td className={vaporCheck.passes === false ? styles.fail : undefined}>
-                    {vaporCheck.computable
-                      ? vaporCheck.passes
-                        ? "PASS — exterior is more vapor-open than interior"
-                        : "FAIL — exterior is not more vapor-open than interior"
-                      : "not computable — one or both finishes lack a numeric perm rating"}
+                  <td className={vaporCheckDisplay.isFailure ? styles.fail : undefined}>
+                    {vaporCheckDisplay.label}
                   </td>
                 </tr>
                 <tr>
